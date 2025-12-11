@@ -1,0 +1,41 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+homepage = "https://lamco.io"
+repository = "https://github.com/lamco-admin/lamco-wayland"
+authors = ["Greg Lamberson <greg@lamco.io>"]
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+invalid_reference_casting = "warn"
+unused_unsafe = "warn"
+elided_lifetimes_in_paths = "warn"
+single_use_lifetimes = "warn"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+# Unsafe code
+undocumented_unsafe_blocks = "warn"
+multiple_unsafe_ops_per_block = "warn"
+missing_safety_doc = "warn"
+
+# Correctness
+as_conversions = "warn"
+cast_lossless = "warn"
+cast_possible_truncation = "warn"
+cast_possible_wrap = "warn"
+unwrap_used = "warn"
+panic = "warn"
+
+# Style and readability
+similar_names = "warn"
+wildcard_imports = "warn"
+
+# Performance
+large_futures = "warn"
+rc_buffer = "warn"
+or_fun_call = "warn"
