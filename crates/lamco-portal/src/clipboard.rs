@@ -137,7 +137,7 @@ impl ClipboardManager {
 
                     while let Some((_, change)) = stream.next().await {
                         event_count += 1;
-                        info!("🔔 SelectionOwnerChanged event #{}: received from Portal", event_count);
+                        info!("SelectionOwnerChanged event #{}: received from Portal", event_count);
 
                         // Check if we are the owner (we just set the clipboard)
                         let is_owner = change.session_is_owner().unwrap_or(false);
@@ -153,7 +153,7 @@ impl ClipboardManager {
 
                         // Another application owns the clipboard - announce to RDP clients
                         info!(
-                            "📋 Local clipboard changed - new owner has {} formats: {:?}",
+                            "Local clipboard changed - new owner has {} formats: {:?}",
                             mime_types.len(),
                             mime_types
                         );
