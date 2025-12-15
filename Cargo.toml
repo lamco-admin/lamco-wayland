@@ -1,3 +1,104 @@
+[package]
+# ============================================================================
+# PACKAGE IDENTITY
+# ============================================================================
+name = "lamco-wayland"
+version = "0.1.0"
+
+# ============================================================================
+# PACKAGE CONFIGURATION (inherited from workspace)
+# ============================================================================
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+# ============================================================================
+# CRATE-SPECIFIC METADATA
+# ============================================================================
+description = "Wayland screen capture, XDG Portal integration, and video processing for Rust"
+documentation = "https://docs.rs/lamco-wayland"
+readme = "README.md"
+
+# Keywords for crates.io search (max 5, max 20 chars each)
+keywords = ["wayland", "screen-capture", "pipewire", "portal", "video"]
+
+# Categories for crates.io browsing (max 5)
+# See: https://crates.io/category_slugs
+categories = [
+    "multimedia::video",   # Video capture and processing
+    "os::unix-apis",       # Linux/Unix specific functionality
+    "asynchronous",        # Async/await API design
+    "api-bindings",        # Portal and PipeWire bindings
+]
+
+# ============================================================================
+# PUBLISHING CONFIGURATION
+# ============================================================================
+
+# Files to exclude from the published crate (reduces download size)
+exclude = [
+    "/.github/",
+    "/crates/",
+    "*.orig",
+    "*.original",
+    "*.bak",
+]
+
+# ============================================================================
+# BADGES (maintenance status)
+# ============================================================================
+[badges]
+maintenance = { status = "actively-developed" }
+
+# ============================================================================
+# DOCS.RS CONFIGURATION
+# ============================================================================
+[package.metadata.docs.rs]
+# Build docs with all features enabled for comprehensive documentation
+all-features = true
+# docs.rs is Linux-only, which matches our target
+targets = ["x86_64-unknown-linux-gnu"]
+# Enable docsrs cfg for conditional documentation
+rustdoc-args = ["--cfg", "docsrs"]
+
+# ============================================================================
+# FEATURES
+# ============================================================================
+[features]
+default = ["portal", "pipewire", "video"]
+
+# XDG Desktop Portal integration (screencast, remote desktop, clipboard)
+portal = ["dep:lamco-portal"]
+
+# PipeWire screen capture with DMA-BUF support
+pipewire = ["dep:lamco-pipewire"]
+
+# Video frame processing and RDP bitmap conversion
+video = ["dep:lamco-video"]
+
+# Enable all features from sub-crates
+full = ["portal", "pipewire", "video", "lamco-pipewire?/full", "lamco-video?/full"]
+
+# ============================================================================
+# LINTS (use workspace)
+# ============================================================================
+[lints]
+workspace = true
+
+# ============================================================================
+# DEPENDENCIES
+# ============================================================================
+[dependencies]
+lamco-portal = { version = "0.1.1", optional = true }
+lamco-pipewire = { version = "0.1.1", optional = true }
+lamco-video = { version = "0.1.0", optional = true }
+
+# ============================================================================
+# WORKSPACE CONFIGURATION
+# ============================================================================
 [workspace]
 members = ["crates/*"]
 resolver = "2"
@@ -27,6 +128,7 @@ repository = "https://github.com/lamco-admin/lamco-wayland"
 authors = ["Greg Lamberson <greg@lamco.io>"]
 
 [workspace.lints.rust]
+unsafe_code = "warn"
 unsafe_op_in_unsafe_fn = "warn"
 invalid_reference_casting = "warn"
 unused_unsafe = "warn"
@@ -56,3 +158,9 @@ wildcard_imports = "warn"
 large_futures = "warn"
 rc_buffer = "warn"
 or_fun_call = "warn"
+
+# Relaxed lints appropriate for this workspace
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
