@@ -2,8 +2,8 @@
 # ============================================================================
 # PACKAGE IDENTITY
 # ============================================================================
-name = "lamco-portal"
-version = "0.1.1"
+name = "lamco-video"
+version = "0.1.0"
 
 # ============================================================================
 # PACKAGE CONFIGURATION (will use workspace inheritance when added to workspace)
@@ -18,18 +18,18 @@ authors = ["Greg Lamberson <greg@lamco.io>"]
 # ============================================================================
 # CRATE-SPECIFIC METADATA
 # ============================================================================
-description = "XDG Desktop Portal integration for Wayland screen capture and input control"
-documentation = "https://docs.rs/lamco-portal"
+description = "Video frame processing and RDP bitmap conversion for Wayland screen capture"
+documentation = "https://docs.rs/lamco-video"
 readme = "README.md"
 
 # Keywords for crates.io search (max 5, max 20 chars each)
-keywords = ["wayland", "portal", "screencast", "pipewire", "screen-capture"]
+keywords = ["video", "rdp", "bitmap", "wayland", "screen-capture"]
 
 # Categories for crates.io browsing (max 5)
 # See: https://crates.io/category_slugs
 categories = [
-    "api-bindings",        # Wrapper around D-Bus portal interfaces
-    "os::unix-apis",       # Linux/Unix specific functionality
+    "multimedia::video",   # Video processing
+    "graphics",            # Bitmap/image operations
     "asynchronous",        # Async/await API design
 ]
 
@@ -60,8 +60,19 @@ maintenance = { status = "actively-developed" }
 all-features = true
 # docs.rs is Linux-only, which matches our target
 targets = ["x86_64-unknown-linux-gnu"]
-# Enable docsrs cfg for conditional documentation
+# Allow building even if lamco-pipewire fails (it needs PipeWire system libs)
+# The documentation will still be useful as API reference
 rustdoc-args = ["--cfg", "docsrs"]
+
+# ============================================================================
+# FEATURES
+# ============================================================================
+[features]
+default = []
+# Full damage region tracking with advanced comparison
+damage = []
+# Enable all optional features
+full = ["damage"]
 
 # ============================================================================
 # LINTS
@@ -69,18 +80,21 @@ rustdoc-args = ["--cfg", "docsrs"]
 # Will use `[lints] workspace = true` when added to workspace
 # ============================================================================
 [lints.rust]
-# No unsafe code in this crate - pure async D-Bus operations
+# No unsafe code in this crate - pure Rust processing
 unsafe_code = "warn"
 elided_lifetimes_in_paths = "warn"
 single_use_lifetimes = "warn"
 unreachable_pub = "warn"
 
 [lints.clippy]
-# Correctness
-as_conversions = "warn"
-cast_lossless = "warn"
-cast_possible_truncation = "warn"
-cast_possible_wrap = "warn"
+# Correctness - relaxed for video processing code
+# Video processing requires heavy numeric conversions for stride calculations,
+# pixel format conversion, and damage region handling. These conversions are
+# intentional and operate on known-safe value ranges (video dimensions).
+as_conversions = "allow"
+cast_lossless = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
 unwrap_used = "warn"
 panic = "warn"
 
@@ -98,18 +112,17 @@ missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 module_name_repetitions = "allow"
 must_use_candidate = "allow"
+needless_range_loop = "allow"
 
 # ============================================================================
 # DEPENDENCIES
 # ============================================================================
 [dependencies]
-# Portal and D-Bus integration
-ashpd = "0.12.0"
-zbus = "4.0"
+# PipeWire frame types (VideoFrame, PixelFormat, DamageRegion)
+lamco-pipewire = "0.1"
 
 # Async runtime
-tokio = { version = "1.35", features = ["sync", "macros", "rt-multi-thread", "signal"] }
-futures-util = "0.3"
+tokio = { version = "1", features = ["sync", "rt", "time"] }
 
 # Logging
 tracing = "0.1"
@@ -117,12 +130,9 @@ tracing = "0.1"
 # Error handling
 thiserror = "1.0"
 
-# For bitflags (transitive from ashpd but used explicitly)
-enumflags2 = "0.7"
-
-# For FD operations
-libc = "0.2"
+# Concurrency
+parking_lot = "0.12"
 
 [dev-dependencies]
-tokio-test = "0.4"
+tokio = { version = "1", features = ["sync", "rt", "time", "macros", "rt-multi-thread"] }
 tracing-subscriber = "0.3"

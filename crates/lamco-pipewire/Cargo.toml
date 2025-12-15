@@ -2,7 +2,7 @@
 # ============================================================================
 # PACKAGE IDENTITY
 # ============================================================================
-name = "lamco-portal"
+name = "lamco-pipewire"
 version = "0.1.1"
 
 # ============================================================================
@@ -18,19 +18,20 @@ authors = ["Greg Lamberson <greg@lamco.io>"]
 # ============================================================================
 # CRATE-SPECIFIC METADATA
 # ============================================================================
-description = "XDG Desktop Portal integration for Wayland screen capture and input control"
-documentation = "https://docs.rs/lamco-portal"
+description = "High-performance PipeWire screen capture for Wayland with DMA-BUF support"
+documentation = "https://docs.rs/lamco-pipewire"
 readme = "README.md"
 
 # Keywords for crates.io search (max 5, max 20 chars each)
-keywords = ["wayland", "portal", "screencast", "pipewire", "screen-capture"]
+keywords = ["pipewire", "wayland", "screen-capture", "dmabuf", "video"]
 
 # Categories for crates.io browsing (max 5)
 # See: https://crates.io/category_slugs
 categories = [
-    "api-bindings",        # Wrapper around D-Bus portal interfaces
+    "multimedia::video",   # Video capture and processing
     "os::unix-apis",       # Linux/Unix specific functionality
     "asynchronous",        # Async/await API design
+    "api-bindings",        # Wrapper around PipeWire C library
 ]
 
 # ============================================================================
@@ -64,18 +65,44 @@ targets = ["x86_64-unknown-linux-gnu"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 # ============================================================================
+# FEATURES
+# ============================================================================
+[features]
+default = ["dmabuf"]
+# DMA-BUF zero-copy buffer support (requires compatible GPU)
+dmabuf = []
+# YUV format conversion utilities (NV12, I420, YUY2 to BGRA)
+yuv = []
+# Hardware cursor extraction from PipeWire metadata
+cursor = []
+# Region damage tracking for efficient encoding
+damage = []
+# Adaptive bitrate helpers for streaming scenarios
+adaptive = []
+# Enable all optional features
+full = ["dmabuf", "yuv", "cursor", "damage", "adaptive"]
+
+# ============================================================================
 # LINTS
 # Matches lamco-wayland workspace standards for consistency
 # Will use `[lints] workspace = true` when added to workspace
 # ============================================================================
 [lints.rust]
-# No unsafe code in this crate - pure async D-Bus operations
+# Unsafe code is expected in this low-level PipeWire integration crate
 unsafe_code = "warn"
+unsafe_op_in_unsafe_fn = "warn"
+invalid_reference_casting = "warn"
+unused_unsafe = "warn"
 elided_lifetimes_in_paths = "warn"
 single_use_lifetimes = "warn"
 unreachable_pub = "warn"
 
 [lints.clippy]
+# Unsafe code documentation
+undocumented_unsafe_blocks = "warn"
+multiple_unsafe_ops_per_block = "warn"
+missing_safety_doc = "warn"
+
 # Correctness
 as_conversions = "warn"
 cast_lossless = "warn"
@@ -93,7 +120,7 @@ large_futures = "warn"
 rc_buffer = "warn"
 or_fun_call = "warn"
 
-# Relaxed lints appropriate for this crate
+# Relaxed lints appropriate for this low-level crate
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 module_name_repetitions = "allow"
@@ -103,13 +130,16 @@ must_use_candidate = "allow"
 # DEPENDENCIES
 # ============================================================================
 [dependencies]
-# Portal and D-Bus integration
-ashpd = "0.12.0"
-zbus = "4.0"
+# PipeWire bindings
+pipewire = "0.8"
+libspa = "0.8"
+libspa-sys = "0.8"
 
 # Async runtime
-tokio = { version = "1.35", features = ["sync", "macros", "rt-multi-thread", "signal"] }
-futures-util = "0.3"
+tokio = { version = "1", features = ["sync", "rt", "time"] }
+
+# Futures utilities (for block_on in sync contexts)
+futures = "0.3"
 
 # Logging
 tracing = "0.1"
@@ -117,12 +147,13 @@ tracing = "0.1"
 # Error handling
 thiserror = "1.0"
 
-# For bitflags (transitive from ashpd but used explicitly)
-enumflags2 = "0.7"
+# Concurrency
+parking_lot = "0.12"
 
-# For FD operations
+# Low-level operations
 libc = "0.2"
+nix = { version = "0.27", features = ["mman"] }
 
 [dev-dependencies]
-tokio-test = "0.4"
+tokio = { version = "1", features = ["sync", "rt", "time", "macros", "rt-multi-thread"] }
 tracing-subscriber = "0.3"

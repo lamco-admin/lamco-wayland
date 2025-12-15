@@ -216,7 +216,7 @@ mod tests {
         let connection = zbus::Connection::session().await.unwrap();
         let config = PortalConfig::default();
 
-        let _manager = RemoteDesktopManager::new(connection, &config).await.unwrap();
+        let manager = RemoteDesktopManager::new(connection, &config).await.unwrap();
 
         // This will trigger permission dialog
         // let session = manager.create_session().await;
