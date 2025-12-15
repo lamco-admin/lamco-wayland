@@ -1,17 +1,62 @@
 [package]
+# ============================================================================
+# PACKAGE IDENTITY
+# ============================================================================
 name = "lamco-portal"
 version = "0.1.0"
-edition = "2021"
-authors = ["Greg Lamberson <greg@lamco.io>"]
+
+# ============================================================================
+# INHERITED FROM WORKSPACE
+# These fields use workspace values for consistency across all lamco-wayland crates
+# ============================================================================
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+# ============================================================================
+# CRATE-SPECIFIC METADATA
+# ============================================================================
 description = "XDG Desktop Portal integration for Wayland screen capture and input control"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/lamco-admin/lamco-wayland"
-homepage = "https://lamco.io"
 documentation = "https://docs.rs/lamco-portal"
 readme = "README.md"
-keywords = ["wayland", "portal", "screencast", "pipewire", "screen-capture"]
-categories = ["api-bindings", "os::unix-apis"]
 
+# Keywords for crates.io search (max 5, max 20 chars each)
+keywords = ["wayland", "portal", "screencast", "pipewire", "screen-capture"]
+
+# Categories for crates.io browsing (max 5)
+# See: https://crates.io/category_slugs
+categories = [
+    "api-bindings",        # Idiomatic wrapper for XDG portal APIs
+    "os::unix-apis",       # Linux/Unix specific functionality
+    "multimedia::video",   # Screen capture relates to video
+    "asynchronous",        # Async/await API design
+]
+
+# ============================================================================
+# PUBLISHING CONFIGURATION
+# ============================================================================
+
+# Files to exclude from the published crate (reduces download size)
+exclude = [
+    "/.github/",
+    "/tests/",
+    "*.orig",
+    "*.original",
+    "*.bak",
+]
+
+# ============================================================================
+# BADGES (maintenance status)
+# ============================================================================
+[badges]
+maintenance = { status = "actively-developed" }
+
+# ============================================================================
+# LINTS
+# ============================================================================
 [lints]
 workspace = true
 
