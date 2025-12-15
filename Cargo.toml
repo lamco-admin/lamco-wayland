@@ -2,11 +2,28 @@
 members = ["crates/*"]
 resolver = "2"
 
+# ============================================================================
+# WORKSPACE PACKAGE METADATA
+# Shared configuration inherited by all workspace crates via `field.workspace = true`
+# See: https://doc.rust-lang.org/cargo/reference/workspaces.html#the-package-table
+# ============================================================================
+
 [workspace.package]
+# Rust edition - 2021 is current stable
 edition = "2021"
+
+# Minimum Supported Rust Version
+# Determined by dependency chain: zbus requires 1.77, ashpd requires 1.75
+rust-version = "1.77"
+
+# Dual license (permissive, industry standard)
 license = "MIT OR Apache-2.0"
-homepage = "https://lamco.io"
+
+# Organization URLs
+homepage = "https://lamco.ai"
 repository = "https://github.com/lamco-admin/lamco-wayland"
+
+# Primary author/maintainer
 authors = ["Greg Lamberson <greg@lamco.io>"]
 
 [workspace.lints.rust]
