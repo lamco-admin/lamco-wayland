@@ -277,8 +277,6 @@ impl ClipboardChangeReceiverInner for TokioChangeReceiver {
     }
 }
 
-// Safety: The inner types are Send
-unsafe impl Send for TokioChangeReceiver {}
 
 impl std::fmt::Debug for PortalClipboardSink {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
