@@ -100,6 +100,14 @@ module_name_repetitions = "allow"
 must_use_candidate = "allow"
 
 # ============================================================================
+# FEATURES
+# ============================================================================
+[features]
+default = []
+# Enable ClipboardSink trait implementation for lamco-clipboard-core integration
+clipboard-sink = ["lamco-clipboard-core"]
+
+# ============================================================================
 # DEPENDENCIES
 # ============================================================================
 [dependencies]
@@ -122,6 +130,9 @@ enumflags2 = "0.7"
 
 # For FD operations
 libc = "0.2"
+
+# Optional: ClipboardSink trait implementation
+lamco-clipboard-core = { version = "0.1", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
