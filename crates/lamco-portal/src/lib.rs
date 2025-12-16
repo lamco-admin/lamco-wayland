@@ -146,11 +146,19 @@ pub mod remote_desktop;
 pub mod screencast;
 pub mod session;
 
+// Optional ClipboardSink implementation (requires lamco-clipboard-core)
+#[cfg(feature = "clipboard-sink")]
+pub mod clipboard_sink;
+
 pub use clipboard::ClipboardManager;
 pub use config::{PortalConfig, PortalConfigBuilder};
 pub use error::{PortalError, Result};
 pub use remote_desktop::RemoteDesktopManager;
 pub use screencast::ScreenCastManager;
+
+// Re-export ClipboardSink implementation when feature is enabled
+#[cfg(feature = "clipboard-sink")]
+pub use clipboard_sink::PortalClipboardSink;
 pub use session::{PortalSessionHandle, SourceType, StreamInfo};
 
 /// Portal manager coordinates all portal interactions
