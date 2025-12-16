@@ -362,7 +362,7 @@ impl PortalManager {
             .map_err(|e| PortalError::session_creation(format!("Session start: {}", e)))?;
 
         info!("Portal session started successfully");
-        info!("  PipeWire FD: {}", pipewire_fd);
+        info!("  PipeWire FD: {:?}", pipewire_fd);
         info!("  Streams: {}", streams.len());
 
         if streams.is_empty() {

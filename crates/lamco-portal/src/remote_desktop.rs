@@ -4,7 +4,6 @@
 
 use ashpd::desktop::remote_desktop::{DeviceType, KeyState, RemoteDesktop};
 use enumflags2::BitFlags;
-use std::os::fd::{AsRawFd, RawFd};
 use tracing::{debug, info};
 
 use super::session::StreamInfo;
@@ -68,7 +67,7 @@ impl RemoteDesktopManager {
     pub async fn start_session(
         &self,
         session: &ashpd::desktop::Session<'_, RemoteDesktop<'_>>,
-    ) -> Result<(RawFd, Vec<StreamInfo>)> {
+    ) -> Result<(std::os::fd::OwnedFd, Vec<StreamInfo>)> {
         info!("Starting RemoteDesktop session");
 
         let proxy = RemoteDesktop::new().await?;
@@ -94,8 +93,7 @@ impl RemoteDesktopManager {
         let screencast_proxy = Screencast::new().await?;
         let fd = screencast_proxy.open_pipe_wire_remote(session).await?;
 
-        let raw_fd = fd.as_raw_fd();
-        info!("PipeWire FD obtained: {}", raw_fd);
+        info!("PipeWire FD obtained: {:?}", fd);
 
         // Convert stream info using new API
         let stream_info: Vec<StreamInfo> = selected
@@ -119,10 +117,8 @@ impl RemoteDesktopManager {
             })
             .unwrap_or_default();
 
-        // Don't close fd - we need to keep it
-        std::mem::forget(fd);
-
-        Ok((raw_fd, stream_info))
+        // Transfer ownership of fd - caller is responsible for closing
+        Ok((fd, stream_info))
     }
 
     /// Inject pointer motion (relative)
