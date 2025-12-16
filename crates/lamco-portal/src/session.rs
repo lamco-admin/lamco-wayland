@@ -2,8 +2,7 @@
 //!
 //! Manages the lifecycle of portal sessions and associated resources.
 
-use crate::error::Result;
-use std::os::fd::RawFd;
+use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use tracing::info;
 
 /// Information about a PipeWire stream from the portal
@@ -76,8 +75,8 @@ pub struct PortalSessionHandle {
     /// Session identifier from portal
     pub session_id: String,
 
-    /// PipeWire file descriptor
-    pub pipewire_fd: RawFd,
+    /// PipeWire file descriptor (owned - will be closed on drop)
+    pipewire_fd: OwnedFd,
 
     /// Available streams (one per monitor typically)
     pub streams: Vec<StreamInfo>,
@@ -93,13 +92,13 @@ impl PortalSessionHandle {
     /// Create new session handle
     pub fn new(
         session_id: String,
-        pipewire_fd: RawFd,
+        pipewire_fd: OwnedFd,
         streams: Vec<StreamInfo>,
         remote_desktop_session: Option<String>,
         session: ashpd::desktop::Session<'static, ashpd::desktop::remote_desktop::RemoteDesktop<'static>>,
     ) -> Self {
         info!(
-            "Created portal session handle: {}, {} streams, fd: {}",
+            "Created portal session handle: {}, {} streams, fd: {:?}",
             session_id,
             streams.len(),
             pipewire_fd
@@ -114,9 +113,12 @@ impl PortalSessionHandle {
         }
     }
 
-    /// Get PipeWire file descriptor
+    /// Get PipeWire file descriptor as raw fd
+    ///
+    /// Returns the raw file descriptor for use with PipeWire. The fd remains
+    /// owned by this handle and will be closed when the handle is dropped.
     pub fn pipewire_fd(&self) -> RawFd {
-        self.pipewire_fd
+        self.pipewire_fd.as_raw_fd()
     }
 
     /// Get stream information
@@ -159,20 +161,15 @@ impl PortalSessionHandle {
         &self.session
     }
 
-    /// Close the portal session
-    pub async fn close(self) -> Result<()> {
+    /// Explicitly close the portal session
+    ///
+    /// This consumes the handle and closes all resources. The same effect can
+    /// be achieved by simply dropping the handle, but this method provides
+    /// explicit logging.
+    pub fn close(self) {
         info!("Closing portal session: {}", self.session_id);
-
-        // Close PipeWire FD
-        // SAFETY: self.pipewire_fd is a valid file descriptor obtained from Portal.
-        // This is the final use of the FD as self is consumed by this method.
-        unsafe {
-            libc::close(self.pipewire_fd);
-        }
-
-        // Portal sessions are automatically cleaned up when dropped
-
-        Ok(())
+        // OwnedFd and Session are automatically closed on drop
+        drop(self);
     }
 }
 
