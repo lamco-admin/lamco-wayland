@@ -106,6 +106,8 @@ must_use_candidate = "allow"
 default = []
 # Enable ClipboardSink trait implementation for lamco-clipboard-core integration
 clipboard-sink = ["lamco-clipboard-core"]
+# Enable D-Bus clipboard bridge for GNOME fallback (SelectionOwnerChanged workaround)
+dbus-clipboard = []
 
 # ============================================================================
 # DEPENDENCIES
