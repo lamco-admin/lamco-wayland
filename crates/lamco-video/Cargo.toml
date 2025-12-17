@@ -3,17 +3,17 @@
 # PACKAGE IDENTITY
 # ============================================================================
 name = "lamco-video"
-version = "0.1.0"
+version = "0.1.1"
 
 # ============================================================================
-# PACKAGE CONFIGURATION (will use workspace inheritance when added to workspace)
+# PACKAGE CONFIGURATION (inherited from workspace)
 # ============================================================================
-edition = "2021"
-rust-version = "1.77"
-license = "MIT OR Apache-2.0"
-homepage = "https://lamco.ai"
-repository = "https://github.com/lamco-admin/lamco-wayland"
-authors = ["Greg Lamberson <greg@lamco.io>"]
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+authors.workspace = true
 
 # ============================================================================
 # CRATE-SPECIFIC METADATA
@@ -75,26 +75,24 @@ damage = []
 full = ["damage"]
 
 # ============================================================================
-# LINTS
-# Matches lamco-wayland workspace standards for consistency
-# Will use `[lints] workspace = true` when added to workspace
+# LINTS (manual - requires numeric cast overrides for video processing)
+# Video processing requires extensive numeric conversions for stride
+# calculations, pixel format conversion, and damage region handling.
 # ============================================================================
 [lints.rust]
-# No unsafe code in this crate - pure Rust processing
 unsafe_code = "warn"
 elided_lifetimes_in_paths = "warn"
 single_use_lifetimes = "warn"
 unreachable_pub = "warn"
 
 [lints.clippy]
-# Correctness - relaxed for video processing code
-# Video processing requires heavy numeric conversions for stride calculations,
-# pixel format conversion, and damage region handling. These conversions are
-# intentional and operate on known-safe value ranges (video dimensions).
+# Numeric casts - ALLOWED for video processing code
 as_conversions = "allow"
 cast_lossless = "allow"
 cast_possible_truncation = "allow"
 cast_possible_wrap = "allow"
+
+# Correctness
 unwrap_used = "warn"
 panic = "warn"
 
@@ -107,7 +105,7 @@ large_futures = "warn"
 rc_buffer = "warn"
 or_fun_call = "warn"
 
-# Relaxed lints appropriate for this crate
+# Relaxed lints
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 module_name_repetitions = "allow"

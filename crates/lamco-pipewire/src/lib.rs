@@ -1,3 +1,5 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 //! # lamco-pipewire
 //!
 //! High-performance PipeWire integration for Wayland screen capture with
@@ -243,14 +245,11 @@ pub use manager::{ManagerState, ManagerStats, PipeWireManager, StreamHandle};
 
 // Configuration
 pub use config::{
-    AdaptiveBitrateConfig, AdaptiveBitrateConfigBuilder, PipeWireConfig, PipeWireConfigBuilder,
-    QualityPreset,
+    AdaptiveBitrateConfig, AdaptiveBitrateConfigBuilder, PipeWireConfig, PipeWireConfigBuilder, QualityPreset,
 };
 
 // Errors
-pub use error::{
-    classify_error, ErrorContext, ErrorType, PipeWireError, RecoveryAction, Result, RetryConfig,
-};
+pub use error::{classify_error, ErrorContext, ErrorType, PipeWireError, RecoveryAction, Result, RetryConfig};
 
 // Stream types
 pub use coordinator::{MonitorEvent, MonitorInfo, MultiStreamConfig, SourceType, StreamInfo};
@@ -274,12 +273,12 @@ pub use buffer::{BufferManager, BufferType, ManagedBuffer, SharedBufferManager};
 pub use pw_thread::{PipeWireThreadCommand, PipeWireThreadManager};
 
 // Coordinator
-pub use coordinator::{MultiStreamCoordinator, DispatcherConfig, FrameDispatcher, CoordinatorStats};
+pub use coordinator::{CoordinatorStats, DispatcherConfig, FrameDispatcher, MultiStreamCoordinator};
 
 // FFI utilities
 pub use ffi::{
-    calculate_buffer_size, calculate_stride, drm_fourcc, get_bytes_per_pixel,
-    spa_video_format_to_drm_fourcc, DamageRegion as FfiDamageRegion, SpaDataType,
+    calculate_buffer_size, calculate_stride, drm_fourcc, get_bytes_per_pixel, spa_video_format_to_drm_fourcc,
+    DamageRegion as FfiDamageRegion, SpaDataType,
 };
 
 // =============================================================================
@@ -452,7 +451,7 @@ mod tests {
         assert_eq!(recommended_frame_buffer_size(60), 60);
         assert_eq!(recommended_frame_buffer_size(144), 144);
         assert_eq!(recommended_frame_buffer_size(200), 144); // Capped at 144
-        assert_eq!(recommended_frame_buffer_size(10), 30);   // Minimum 30
+        assert_eq!(recommended_frame_buffer_size(10), 30); // Minimum 30
     }
 
     #[test]

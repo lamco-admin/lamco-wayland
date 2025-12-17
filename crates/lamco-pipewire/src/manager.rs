@@ -211,9 +211,7 @@ impl PipeWireManager {
     pub async fn connect(&mut self, fd: RawFd) -> Result<()> {
         let current_state = *self.state.read().await;
         if current_state == ManagerState::Connected {
-            return Err(PipeWireError::InvalidState(
-                "Already connected".to_string(),
-            ));
+            return Err(PipeWireError::InvalidState("Already connected".to_string()));
         }
 
         *self.state.write().await = ManagerState::Connecting;
@@ -240,9 +238,7 @@ impl PipeWireManager {
 
         #[cfg(feature = "adaptive")]
         if let Some(ref adaptive_config) = self.config.adaptive_bitrate {
-            self.bitrate_controller = Some(Arc::new(Mutex::new(BitrateController::new(
-                adaptive_config.clone(),
-            ))));
+            self.bitrate_controller = Some(Arc::new(Mutex::new(BitrateController::new(adaptive_config.clone()))));
             debug!("Bitrate controller enabled");
         }
 
@@ -317,13 +313,9 @@ impl PipeWireManager {
             response_rx
                 .recv()
                 .map_err(|_| {
-                    PipeWireError::ThreadCommunicationFailed(
-                        "CreateStream response channel closed".to_string(),
-                    )
+                    PipeWireError::ThreadCommunicationFailed("CreateStream response channel closed".to_string())
                 })?
-                .map_err(|e| {
-                    PipeWireError::StreamCreationFailed(format!("Stream creation failed: {}", e))
-                })?;
+                .map_err(|e| PipeWireError::StreamCreationFailed(format!("Stream creation failed: {}", e)))?;
         }
 
         // Create handle
@@ -381,10 +373,7 @@ impl PipeWireManager {
         // Send command to PipeWire thread
         if let Some(ref thread_manager) = self.thread_manager {
             let (response_tx, response_rx) = std_mpsc::sync_channel(1);
-            thread_manager.send_command(PipeWireThreadCommand::DestroyStream {
-                stream_id,
-                response_tx,
-            })?;
+            thread_manager.send_command(PipeWireThreadCommand::DestroyStream { stream_id, response_tx })?;
 
             // Wait for response (ignore errors during shutdown cleanup)
             if let Ok(result) = response_rx.recv() {
@@ -506,10 +495,7 @@ mod tests {
 
     #[test]
     fn test_manager_with_config() {
-        let config = PipeWireConfig::builder()
-            .buffer_count(5)
-            .max_streams(4)
-            .build();
+        let config = PipeWireConfig::builder().buffer_count(5).max_streams(4).build();
 
         let manager = PipeWireManager::new(config);
         assert!(manager.is_ok());

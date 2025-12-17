@@ -117,14 +117,7 @@ impl Default for FrameFlags {
 
 impl VideoFrame {
     /// Create a new video frame
-    pub fn new(
-        frame_id: u64,
-        width: u32,
-        height: u32,
-        stride: u32,
-        format: PixelFormat,
-        monitor_index: u32,
-    ) -> Self {
+    pub fn new(frame_id: u64, width: u32, height: u32, stride: u32, format: PixelFormat, monitor_index: u32) -> Self {
         Self {
             frame_id,
             pts: 0,

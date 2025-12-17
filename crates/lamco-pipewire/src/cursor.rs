@@ -156,14 +156,7 @@ impl CursorExtractor {
     /// * `height` - Bitmap height
     /// * `hotspot_x` - Hotspot X offset
     /// * `hotspot_y` - Hotspot Y offset
-    pub fn update_bitmap(
-        &mut self,
-        bitmap: Vec<u8>,
-        width: u32,
-        height: u32,
-        hotspot_x: i32,
-        hotspot_y: i32,
-    ) {
+    pub fn update_bitmap(&mut self, bitmap: Vec<u8>, width: u32, height: u32, hotspot_x: i32, hotspot_y: i32) {
         self.current.serial += 1;
         self.current.size = (width, height);
         self.current.hotspot = (hotspot_x, hotspot_y);

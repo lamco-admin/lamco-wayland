@@ -1,3 +1,5 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 //! XDG Desktop Portal integration for Wayland screen capture and input control
 //!
 //! This library provides a high-level Rust interface to the XDG Desktop Portal,

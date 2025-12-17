@@ -207,9 +207,9 @@ impl BitrateController {
 
         // Skip more frames at higher congestion
         let skip_threshold = match self.config.quality_preset {
-            QualityPreset::LowLatency => 2,   // Skip every 2nd frame at high congestion
-            QualityPreset::Balanced => 3,     // Skip every 3rd frame
-            QualityPreset::HighQuality => 4,  // Skip every 4th frame
+            QualityPreset::LowLatency => 2,  // Skip every 2nd frame at high congestion
+            QualityPreset::Balanced => 3,    // Skip every 3rd frame
+            QualityPreset::HighQuality => 4, // Skip every 4th frame
         };
 
         self.skip_counter += 1;
@@ -265,8 +265,7 @@ impl BitrateController {
         let encode_budget_ratio = avg_encode_us as f64 / target_frame_time_us as f64;
 
         // Estimate current bitrate from frame sizes
-        let estimated_bitrate_kbps =
-            (avg_frame_bytes * 8 * self.config.target_fps as usize) / 1000;
+        let estimated_bitrate_kbps = (avg_frame_bytes * 8 * self.config.target_fps as usize) / 1000;
 
         // Adjust bitrate
         let mut new_bitrate = self.current_bitrate;

@@ -99,8 +99,7 @@ pub fn convert_format(
             for y in 0..height {
                 let src_offset = (y * src_stride) as usize;
                 let dst_offset = (y * dst_stride) as usize;
-                dst[dst_offset..dst_offset + row_bytes]
-                    .copy_from_slice(&src[src_offset..src_offset + row_bytes]);
+                dst[dst_offset..dst_offset + row_bytes].copy_from_slice(&src[src_offset..src_offset + row_bytes]);
             }
         }
         return Ok(());
@@ -109,27 +108,19 @@ pub fn convert_format(
     // Conversion needed
     match (src_format, dst_format) {
         // RGB to BGRA
-        (PixelFormat::RGB, PixelFormat::BGRA) => {
-            convert_rgb_to_bgra(src, dst, width, height, src_stride, dst_stride)
-        }
+        (PixelFormat::RGB, PixelFormat::BGRA) => convert_rgb_to_bgra(src, dst, width, height, src_stride, dst_stride),
 
         // RGBA to BGRA
-        (PixelFormat::RGBA, PixelFormat::BGRA) => {
-            convert_rgba_to_bgra(src, dst, width, height, src_stride, dst_stride)
-        }
+        (PixelFormat::RGBA, PixelFormat::BGRA) => convert_rgba_to_bgra(src, dst, width, height, src_stride, dst_stride),
 
         // BGR to BGRA
-        (PixelFormat::BGR, PixelFormat::BGRA) => {
-            convert_bgr_to_bgra(src, dst, width, height, src_stride, dst_stride)
-        }
+        (PixelFormat::BGR, PixelFormat::BGRA) => convert_bgr_to_bgra(src, dst, width, height, src_stride, dst_stride),
 
         // NV12 to BGRA
         (PixelFormat::NV12, PixelFormat::BGRA) => convert_nv12_to_bgra(src, dst, width, height),
 
         // YUY2 to BGRA
-        (PixelFormat::YUY2, PixelFormat::BGRA) => {
-            convert_yuy2_to_bgra(src, dst, width, height, src_stride, dst_stride)
-        }
+        (PixelFormat::YUY2, PixelFormat::BGRA) => convert_yuy2_to_bgra(src, dst, width, height, src_stride, dst_stride),
 
         // I420 to BGRA
         (PixelFormat::I420, PixelFormat::BGRA) => convert_i420_to_bgra(src, dst, width, height),
@@ -345,11 +336,7 @@ fn yuv_to_rgb(y: i32, u: i32, v: i32) -> (u8, u8, u8) {
     let g = (298 * c - 100 * d - 208 * e + 128) >> 8;
     let b = (298 * c + 516 * d + 128) >> 8;
 
-    (
-        clamp(r, 0, 255) as u8,
-        clamp(g, 0, 255) as u8,
-        clamp(b, 0, 255) as u8,
-    )
+    (clamp(r, 0, 255) as u8, clamp(g, 0, 255) as u8, clamp(b, 0, 255) as u8)
 }
 
 /// Clamp value to range
@@ -370,10 +357,7 @@ mod tests {
 
     #[test]
     fn test_pixel_format_conversion() {
-        assert_eq!(
-            PixelFormat::from_spa(VideoFormat::BGRA),
-            Some(PixelFormat::BGRA)
-        );
+        assert_eq!(PixelFormat::from_spa(VideoFormat::BGRA), Some(PixelFormat::BGRA));
         assert_eq!(PixelFormat::BGRA.to_spa(), VideoFormat::BGRA);
     }
 

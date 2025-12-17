@@ -213,13 +213,8 @@ impl FrameDispatcher {
     /// * `stream_id` - Unique stream identifier (monitor index)
     /// * `priority` - Stream priority
     pub fn register_stream(&self, stream_id: u32, priority: StreamPriority) {
-        self.streams
-            .write()
-            .insert(stream_id, StreamState::new(priority));
-        debug!(
-            "Registered stream {} with priority {:?}",
-            stream_id, priority
-        );
+        self.streams.write().insert(stream_id, StreamState::new(priority));
+        debug!("Registered stream {} with priority {:?}", stream_id, priority);
     }
 
     /// Unregister a stream
@@ -366,10 +361,7 @@ impl FrameDispatcher {
     }
 
     /// Dispatch frames from the queue
-    async fn dispatch_frames(
-        &self,
-        output: &mpsc::Sender<VideoFrame>,
-    ) -> Result<(), DispatchError> {
+    async fn dispatch_frames(&self, output: &mpsc::Sender<VideoFrame>) -> Result<(), DispatchError> {
         let mut queue = self.priority_queue.write();
 
         // Process all available frames

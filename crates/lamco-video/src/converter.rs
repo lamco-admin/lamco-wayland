@@ -99,10 +99,7 @@ impl Rectangle {
 
     /// Check if this rectangle intersects another
     pub fn intersects(&self, other: &Rectangle) -> bool {
-        !(self.right <= other.left
-            || other.right <= self.left
-            || self.bottom <= other.top
-            || other.bottom <= self.top)
+        !(self.right <= other.left || other.right <= self.left || self.bottom <= other.top || other.bottom <= self.top)
     }
 
     /// Merge with another rectangle (union)
@@ -169,10 +166,7 @@ impl BufferPool {
             free_indices.push(i);
         }
 
-        Self {
-            buffers,
-            free_indices,
-        }
+        Self { buffers, free_indices }
     }
 
     /// Acquire a buffer from the pool
@@ -363,8 +357,7 @@ impl ConversionStats {
         if self.conversion_time_ns == 0 {
             0.0
         } else {
-            (self.bytes_processed as f64 / 1_048_576.0)
-                / (self.conversion_time_ns as f64 / 1_000_000_000.0)
+            (self.bytes_processed as f64 / 1_048_576.0) / (self.conversion_time_ns as f64 / 1_000_000_000.0)
         }
     }
 }
@@ -465,13 +458,7 @@ impl BitmapConverter {
         let mut rectangles = Vec::new();
 
         for region in damage_regions {
-            let bitmap_data = self.create_bitmap_data(
-                &output_buffer,
-                region,
-                frame.width,
-                frame.height,
-                rdp_format,
-            )?;
+            let bitmap_data = self.create_bitmap_data(&output_buffer, region, frame.width, frame.height, rdp_format)?;
             rectangles.push(bitmap_data);
         }
 
@@ -639,17 +626,20 @@ pub enum ConversionError {
 // - u64 is Send
 // - bool is Send
 // - Arc<RwLock<ConversionStats>> is Send when ConversionStats is Send (derives)
+#[allow(unsafe_code)]
 unsafe impl Send for BitmapConverter {}
 
 // SAFETY: BufferPool is Send because all its fields are Send:
 // - Vec<Option<PooledBuffer>> is Send when PooledBuffer is Send
 // - PooledBuffer contains Vec<u8>, usize, Instant - all Send
 // - Vec<usize> is Send
+#[allow(unsafe_code)]
 unsafe impl Send for BufferPool {}
 
 // SAFETY: DamageTracker is Send because all its fields are Send:
 // - Vec<Rectangle> is Send (Rectangle is Copy and contains only primitives)
 // - bool, u16 are Send
+#[allow(unsafe_code)]
 unsafe impl Send for DamageTracker {}
 
 #[cfg(test)]

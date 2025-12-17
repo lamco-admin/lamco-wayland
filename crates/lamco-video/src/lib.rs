@@ -1,3 +1,5 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 //! # lamco-video
 //!
 //! Video frame processing and RDP bitmap conversion for Wayland screen capture.
@@ -166,14 +168,11 @@ pub mod processor;
 
 // Converter types
 pub use converter::{
-    BitmapConverter, BitmapData, BitmapUpdate, ConversionError, ConversionStats, RdpPixelFormat,
-    Rectangle,
+    BitmapConverter, BitmapData, BitmapUpdate, ConversionError, ConversionStats, RdpPixelFormat, Rectangle,
 };
 
 // Dispatcher types
-pub use dispatcher::{
-    DispatchError, DispatcherConfig, DispatcherStats, FrameDispatcher, StreamPriority,
-};
+pub use dispatcher::{DispatchError, DispatcherConfig, DispatcherStats, FrameDispatcher, StreamPriority};
 
 // Processor types
 pub use processor::{FrameProcessor, ProcessingError, ProcessingStats, ProcessorConfig};

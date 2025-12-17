@@ -3,17 +3,17 @@
 # PACKAGE IDENTITY
 # ============================================================================
 name = "lamco-portal"
-version = "0.1.1"
+version = "0.1.2"
 
 # ============================================================================
-# PACKAGE CONFIGURATION (will use workspace inheritance when added to workspace)
+# PACKAGE CONFIGURATION (inherited from workspace)
 # ============================================================================
-edition = "2021"
-rust-version = "1.77"
-license = "MIT OR Apache-2.0"
-homepage = "https://lamco.ai"
-repository = "https://github.com/lamco-admin/lamco-wayland"
-authors = ["Greg Lamberson <greg@lamco.io>"]
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+authors.workspace = true
 
 # ============================================================================
 # CRATE-SPECIFIC METADATA
@@ -64,40 +64,10 @@ targets = ["x86_64-unknown-linux-gnu"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 # ============================================================================
-# LINTS
-# Matches lamco-wayland workspace standards for consistency
-# Will use `[lints] workspace = true` when added to workspace
+# LINTS (inherited from workspace)
 # ============================================================================
-[lints.rust]
-# No unsafe code in this crate - pure async D-Bus operations
-unsafe_code = "warn"
-elided_lifetimes_in_paths = "warn"
-single_use_lifetimes = "warn"
-unreachable_pub = "warn"
-
-[lints.clippy]
-# Correctness
-as_conversions = "warn"
-cast_lossless = "warn"
-cast_possible_truncation = "warn"
-cast_possible_wrap = "warn"
-unwrap_used = "warn"
-panic = "warn"
-
-# Style and readability
-similar_names = "warn"
-wildcard_imports = "warn"
-
-# Performance
-large_futures = "warn"
-rc_buffer = "warn"
-or_fun_call = "warn"
-
-# Relaxed lints appropriate for this crate
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
-module_name_repetitions = "allow"
-must_use_candidate = "allow"
+[lints]
+workspace = true
 
 # ============================================================================
 # FEATURES

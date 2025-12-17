@@ -20,9 +20,7 @@ use lamco_pipewire::{MonitorInfo, MultiStreamConfig, PipeWireConfig, PipeWireMan
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .init();
+    tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
 
     println!("lamco-pipewire Multi-Monitor Example");
     println!("====================================");
@@ -84,10 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let buffers = lamco_pipewire::recommended_buffer_count(monitor.refresh_rate);
         let frame_buffer = lamco_pipewire::recommended_frame_buffer_size(monitor.refresh_rate);
 
-        println!(
-            "  {}: {} buffers, {} frame buffer",
-            monitor.name, buffers, frame_buffer
-        );
+        println!("  {}: {} buffers, {} frame buffer", monitor.name, buffers, frame_buffer);
     }
 
     // Show MultiStreamConfig defaults

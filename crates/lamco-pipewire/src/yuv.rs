@@ -229,11 +229,7 @@ fn yuv_to_rgb(y: i32, u: i32, v: i32) -> (u8, u8, u8) {
     let g = (Y_SCALE * y - U_TO_G * u - V_TO_G * v + 128) >> 8;
     let b = (Y_SCALE * y + U_TO_B * u + 128) >> 8;
 
-    (
-        r.clamp(0, 255) as u8,
-        g.clamp(0, 255) as u8,
-        b.clamp(0, 255) as u8,
-    )
+    (r.clamp(0, 255) as u8, g.clamp(0, 255) as u8, b.clamp(0, 255) as u8)
 }
 
 /// YUV format converter with caching and format detection
@@ -263,13 +259,7 @@ impl YuvConverter {
     /// # Returns
     ///
     /// Reference to internal BGRA buffer (valid until next conversion)
-    pub fn convert_to_bgra(
-        &mut self,
-        src: &[u8],
-        width: u32,
-        height: u32,
-        format: PixelFormat,
-    ) -> Option<&[u8]> {
+    pub fn convert_to_bgra(&mut self, src: &[u8], width: u32, height: u32, format: PixelFormat) -> Option<&[u8]> {
         let result = match format {
             PixelFormat::NV12 => nv12_to_bgra(src, width, height),
             PixelFormat::I420 => i420_to_bgra(src, width, height),
@@ -328,7 +318,7 @@ mod tests {
         let bgra = nv12_to_bgra(&nv12, 2, 2);
 
         assert_eq!(bgra.len(), 16); // 2x2x4
-        // All pixels should be near-black
+                                    // All pixels should be near-black
         assert!(bgra[0] < 5 && bgra[1] < 5 && bgra[2] < 5);
         assert_eq!(bgra[3], 255); // Alpha
     }
@@ -337,9 +327,9 @@ mod tests {
     fn test_i420_to_bgra() {
         // 2x2 black frame in I420
         let i420 = vec![
-            16, 16, 16, 16, // Y plane
-            128,            // U plane (1 byte for 2x2)
-            128,            // V plane
+            16, 16, 16, 16,  // Y plane
+            128, // U plane (1 byte for 2x2)
+            128, // V plane
         ];
         let bgra = i420_to_bgra(&i420, 2, 2);
 

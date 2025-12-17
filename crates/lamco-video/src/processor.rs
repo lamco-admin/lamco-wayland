@@ -25,7 +25,6 @@ const DEFAULT_QUEUE_SIZE: usize = 30;
 /// Default target frame rate (FPS)
 const DEFAULT_TARGET_FPS: u32 = 30;
 
-
 /// Maximum frame age before dropping (milliseconds)
 const MAX_FRAME_AGE_MS: u64 = 100;
 
@@ -192,10 +191,7 @@ impl FrameProcessor {
     ) -> Result<(), ProcessingError> {
         *self.running.write() = true;
 
-        debug!(
-            "Frame processor started with target {} FPS",
-            self.config.target_fps
-        );
+        debug!("Frame processor started with target {} FPS", self.config.target_fps);
 
         while *self.running.read() {
             // Wait for next frame
@@ -213,9 +209,7 @@ impl FrameProcessor {
                     }
 
                     // Check if queue is too full
-                    if queue_depth >= self.config.max_queue_depth
-                        && self.config.drop_on_full_queue
-                    {
+                    if queue_depth >= self.config.max_queue_depth && self.config.drop_on_full_queue {
                         warn!(
                             "Frame queue full ({} frames), dropping frame {}",
                             queue_depth, frame.frame_id
@@ -322,10 +316,7 @@ impl FrameProcessor {
         if !frame.damage_regions.is_empty() {
             let has_damage = frame.has_significant_damage(self.config.damage_threshold);
             if !has_damage {
-                trace!(
-                    "Frame {} has insignificant damage, skipping",
-                    frame.frame_id
-                );
+                trace!("Frame {} has insignificant damage, skipping", frame.frame_id);
                 return Ok(BitmapUpdate { rectangles: vec![] });
             }
         }
@@ -418,7 +409,7 @@ mod tests {
         stats.total_processing_time_ns = 500_000_000; // 500ms
 
         assert_eq!(stats.drop_rate(), 0.1); // 10% drop rate
-        // Use approximate comparison for floating-point
+                                            // Use approximate comparison for floating-point
         let avg_time = stats.avg_processing_time_ms();
         let expected = 500.0 / 90.0; // ~5.556ms per frame
         assert!((avg_time - expected).abs() < 1e-10);

@@ -60,7 +60,10 @@ fn main() {
     let damage_ratio = tracker.damage_ratio(frame_size);
 
     println!("\nDamage statistics:");
-    println!("  Frame size: {}x{} ({} pixels)", frame_size.0, frame_size.1, total_pixels);
+    println!(
+        "  Frame size: {}x{} ({} pixels)",
+        frame_size.0, frame_size.1, total_pixels
+    );
     println!("  Total damaged area: {} pixels", tracker.total_damaged_area());
     println!("  Damage ratio: {:.2}%", damage_ratio * 100.0);
 
