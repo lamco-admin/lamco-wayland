@@ -214,11 +214,7 @@ impl MultiStreamCoordinator {
     }
 
     /// Add a stream for a monitor
-    pub async fn add_stream(
-        &self,
-        monitor: MonitorInfo,
-        connection: &mut PipeWireConnection,
-    ) -> Result<u32> {
+    pub async fn add_stream(&self, monitor: MonitorInfo, connection: &mut PipeWireConnection) -> Result<u32> {
         // Check stream limit
         if self.streams.read().await.len() >= self.config.max_streams {
             return Err(PipeWireError::TooManyStreams(self.config.max_streams));
@@ -230,9 +226,7 @@ impl MultiStreamCoordinator {
             .with_framerate(monitor.refresh_rate);
 
         // Create PipeWire stream via connection
-        let stream_id = connection
-            .create_stream(stream_config, monitor.node_id)
-            .await?;
+        let stream_id = connection.create_stream(stream_config, monitor.node_id).await?;
 
         // Get the stream
         if let Some(stream_arc) = connection.get_stream(stream_id).await {
@@ -334,11 +328,7 @@ impl MultiStreamCoordinator {
 
     /// Get stream by monitor ID
     pub async fn get_stream(&self, monitor_id: u32) -> Option<Arc<Mutex<PipeWireStream>>> {
-        self.streams
-            .read()
-            .await
-            .get(&monitor_id)
-            .map(|h| h.stream.clone())
+        self.streams.read().await.get(&monitor_id).map(|h| h.stream.clone())
     }
 
     /// Get frame receiver for a monitor

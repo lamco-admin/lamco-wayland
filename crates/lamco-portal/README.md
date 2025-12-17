@@ -68,6 +68,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+## Feature Flags
+
+```toml
+[dependencies]
+# Default - basic portal functionality
+lamco-portal = "0.1"
+
+# With D-Bus clipboard bridge for GNOME (SelectionOwnerChanged workaround)
+lamco-portal = { version = "0.1", features = ["dbus-clipboard"] }
+
+# With ClipboardSink trait for lamco-clipboard-core integration
+lamco-portal = { version = "0.1", features = ["clipboard-sink"] }
+```
+
+| Feature | Description |
+|---------|-------------|
+| `dbus-clipboard` | D-Bus clipboard bridge for GNOME - works around missing SelectionOwnerChanged signals |
+| `clipboard-sink` | ClipboardSink trait implementation for lamco-clipboard-core integration |
+
 ## Configuration
 
 Customize Portal behavior:

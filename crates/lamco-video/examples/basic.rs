@@ -9,9 +9,7 @@
 //! demonstrates the API. For actual frame processing, you need
 //! lamco-pipewire to capture frames from PipeWire.
 
-use lamco_video::{
-    BitmapConverter, DispatcherConfig, ProcessorConfig, RdpPixelFormat, Rectangle,
-};
+use lamco_video::{BitmapConverter, DispatcherConfig, ProcessorConfig, RdpPixelFormat, Rectangle};
 
 fn main() {
     println!("lamco-video v{}", lamco_video::VERSION);
@@ -65,9 +63,15 @@ fn main() {
     let rect1 = Rectangle::new(0, 0, 100, 100);
     let rect2 = Rectangle::new(50, 50, 150, 150);
     println!("Rectangle operations:");
-    println!("  rect1: ({}, {}) to ({}, {})", rect1.left, rect1.top, rect1.right, rect1.bottom);
+    println!(
+        "  rect1: ({}, {}) to ({}, {})",
+        rect1.left, rect1.top, rect1.right, rect1.bottom
+    );
     println!("  rect1 area: {} pixels", rect1.area());
-    println!("  rect2: ({}, {}) to ({}, {})", rect2.left, rect2.top, rect2.right, rect2.bottom);
+    println!(
+        "  rect2: ({}, {}) to ({}, {})",
+        rect2.left, rect2.top, rect2.right, rect2.bottom
+    );
     println!("  Intersects: {}", rect1.intersects(&rect2));
     println!();
 

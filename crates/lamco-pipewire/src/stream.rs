@@ -237,8 +237,6 @@ impl PipeWireStream {
     /// - Connection to node fails
     /// - Format negotiation fails
     pub async fn connect(&mut self, core: &pipewire::core::Core, node_id: u32) -> Result<()> {
-        
-        
         use pipewire::spa::pod::Pod;
         use pipewire::spa::utils::Direction;
         use pipewire::stream::StreamFlags;
@@ -273,14 +271,8 @@ impl PipeWireStream {
         props.insert("node.target".to_string(), node_id.to_string());
 
         // Create the stream on the core
-        let pw_stream = pipewire::stream::Stream::new(
-            core,
-            &stream_name,
-            props,
-        )
-        .map_err(|e| {
-            PipeWireError::StreamCreationFailed(format!("Failed to create stream: {}", e))
-        })?;
+        let pw_stream = pipewire::stream::Stream::new(core, &stream_name, props)
+            .map_err(|e| PipeWireError::StreamCreationFailed(format!("Failed to create stream: {}", e)))?;
 
         // Connect stream with format parameters
         // Note: In pipewire-rs, we connect first then params are negotiated via events
@@ -292,9 +284,7 @@ impl PipeWireStream {
                 StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS,
                 &mut params, // Params will be negotiated via events
             )
-            .map_err(|e| {
-                PipeWireError::ConnectionFailed(format!("Stream connect failed: {}", e))
-            })?;
+            .map_err(|e| PipeWireError::ConnectionFailed(format!("Stream connect failed: {}", e)))?;
 
         // Store the stream reference
         // Note: The actual Stream object needs to be managed carefully
@@ -382,8 +372,7 @@ impl PipeWireStream {
                     id
                 };
 
-                let pixel_format =
-                    PixelFormat::from_spa(format.format).unwrap_or(PixelFormat::BGRA);
+                let pixel_format = PixelFormat::from_spa(format.format).unwrap_or(PixelFormat::BGRA);
 
                 let mut frame = VideoFrame::with_data(
                     frame_id,

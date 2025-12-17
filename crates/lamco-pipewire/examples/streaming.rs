@@ -15,8 +15,8 @@
 
 #[cfg(feature = "adaptive")]
 use lamco_pipewire::{
-    config::{AdaptiveBitrateConfig, QualityPreset},
     bitrate::BitrateController,
+    config::{AdaptiveBitrateConfig, QualityPreset},
 };
 
 #[cfg(feature = "adaptive")]
@@ -34,7 +34,10 @@ fn main() {
         .build();
 
     println!("\nConfiguration:");
-    println!("  Bitrate range: {} - {} kbps", config.min_bitrate_kbps, config.max_bitrate_kbps);
+    println!(
+        "  Bitrate range: {} - {} kbps",
+        config.min_bitrate_kbps, config.max_bitrate_kbps
+    );
     println!("  Target FPS: {}", config.target_fps);
     println!("  Quality preset: {:?}", config.quality_preset);
     println!("  Calculation window: {} frames", config.calculation_window);

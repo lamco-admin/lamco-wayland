@@ -18,6 +18,11 @@ pub(crate) struct SendPtr(*mut u8);
 // 2. Managed by BufferManager which ensures exclusive access during mutations
 // 3. Only accessed through ManagedBuffer which tracks lifetime and use count
 unsafe impl Send for SendPtr {}
+
+// SAFETY: SendPtr is Sync because:
+// 1. The underlying pointer is to shared memory (mmap MAP_SHARED)
+// 2. All access is coordinated through BufferManager's acquire/release
+// 3. No unsynchronized mutations occur - buffer state is protected by locks
 unsafe impl Sync for SendPtr {}
 
 impl SendPtr {
@@ -291,10 +296,7 @@ impl BufferManager {
             self.stats.releases += 1;
             Ok(())
         } else {
-            Err(PipeWireError::InvalidParameter(format!(
-                "Buffer {} not found",
-                id
-            )))
+            Err(PipeWireError::InvalidParameter(format!("Buffer {} not found", id)))
         }
     }
 
@@ -316,10 +318,7 @@ impl BufferManager {
             self.stats.total_freed += 1;
             Ok(())
         } else {
-            Err(PipeWireError::InvalidParameter(format!(
-                "Buffer {} not found",
-                id
-            )))
+            Err(PipeWireError::InvalidParameter(format!("Buffer {} not found", id)))
         }
     }
 
@@ -386,8 +385,7 @@ impl BufferStats {
         if self.acquisitions == 0 {
             0.0
         } else {
-            self.acquisition_failures as f64
-                / (self.acquisitions + self.acquisition_failures) as f64
+            self.acquisition_failures as f64 / (self.acquisitions + self.acquisition_failures) as f64
         }
     }
 }
@@ -413,10 +411,7 @@ impl SharedBufferManager {
         fd: Option<RawFd>,
         modifier: u64,
     ) -> Result<u32> {
-        self.inner
-            .lock()
-            .await
-            .register_buffer(buffer_type, size, fd, modifier)
+        self.inner.lock().await.register_buffer(buffer_type, size, fd, modifier)
     }
 
     /// Acquire a buffer
@@ -506,12 +501,8 @@ mod tests {
         let mut mgr = BufferManager::new(5);
 
         // Register buffers
-        let _id1 = mgr
-            .register_buffer(BufferType::MemPtr, 1024, None, 0)
-            .unwrap();
-        let _id2 = mgr
-            .register_buffer(BufferType::MemPtr, 2048, None, 0)
-            .unwrap();
+        let _id1 = mgr.register_buffer(BufferType::MemPtr, 1024, None, 0).unwrap();
+        let _id2 = mgr.register_buffer(BufferType::MemPtr, 2048, None, 0).unwrap();
 
         assert_eq!(mgr.total_count(), 2);
         assert_eq!(mgr.free_count(), 2);
@@ -531,10 +522,8 @@ mod tests {
     fn test_buffer_limit() {
         let mut mgr = BufferManager::new(2);
 
-        mgr.register_buffer(BufferType::MemPtr, 1024, None, 0)
-            .unwrap();
-        mgr.register_buffer(BufferType::MemPtr, 1024, None, 0)
-            .unwrap();
+        mgr.register_buffer(BufferType::MemPtr, 1024, None, 0).unwrap();
+        mgr.register_buffer(BufferType::MemPtr, 1024, None, 0).unwrap();
 
         // Should fail due to limit
         let result = mgr.register_buffer(BufferType::MemPtr, 1024, None, 0);
@@ -545,10 +534,7 @@ mod tests {
     async fn test_shared_buffer_manager() {
         let mgr = SharedBufferManager::new(5);
 
-        let id = mgr
-            .register_buffer(BufferType::MemPtr, 1024, None, 0)
-            .await
-            .unwrap();
+        let id = mgr.register_buffer(BufferType::MemPtr, 1024, None, 0).await.unwrap();
         assert_eq!(mgr.free_count().await, 1);
 
         let acquired = mgr.acquire_buffer().await.unwrap();

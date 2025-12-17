@@ -289,20 +289,12 @@ impl PipeWireConfigBuilder {
             max_streams: self.max_streams.unwrap_or(defaults.max_streams),
             frame_buffer_size: self.frame_buffer_size.unwrap_or(defaults.frame_buffer_size),
             enable_cursor: self.enable_cursor.unwrap_or(defaults.enable_cursor),
-            enable_damage_tracking: self
-                .enable_damage_tracking
-                .unwrap_or(defaults.enable_damage_tracking),
+            enable_damage_tracking: self.enable_damage_tracking.unwrap_or(defaults.enable_damage_tracking),
             adaptive_bitrate: self.adaptive_bitrate.or(defaults.adaptive_bitrate),
-            stream_name_prefix: self
-                .stream_name_prefix
-                .unwrap_or(defaults.stream_name_prefix),
-            connection_timeout_ms: self
-                .connection_timeout_ms
-                .unwrap_or(defaults.connection_timeout_ms),
+            stream_name_prefix: self.stream_name_prefix.unwrap_or(defaults.stream_name_prefix),
+            connection_timeout_ms: self.connection_timeout_ms.unwrap_or(defaults.connection_timeout_ms),
             auto_reconnect: self.auto_reconnect.unwrap_or(defaults.auto_reconnect),
-            max_reconnect_attempts: self
-                .max_reconnect_attempts
-                .unwrap_or(defaults.max_reconnect_attempts),
+            max_reconnect_attempts: self.max_reconnect_attempts.unwrap_or(defaults.max_reconnect_attempts),
         }
     }
 }

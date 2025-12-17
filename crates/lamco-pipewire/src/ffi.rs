@@ -4,7 +4,6 @@
 //! This module extends the pipewire-rs crate with additional functionality
 //! needed for DMA-BUF handling and advanced features.
 
-
 // Re-export from pipewire crate
 pub use pipewire::{
     context::Context,
@@ -143,12 +142,7 @@ pub struct DamageRegion {
 
 impl DamageRegion {
     pub fn new(x: i32, y: i32, width: u32, height: u32) -> Self {
-        Self {
-            x,
-            y,
-            width,
-            height,
-        }
+        Self { x, y, width, height }
     }
 
     pub fn is_valid(&self) -> bool {
@@ -179,12 +173,7 @@ pub trait StreamEventsListener: Send + Sync {
 /// Note: This is a placeholder. Actual format parameter construction
 /// would be done using PipeWire stream builder in production code.
 /// The pipewire crate provides higher-level APIs for this.
-pub fn build_format_params(
-    _width: u32,
-    _height: u32,
-    _framerate: Fraction,
-    _formats: &[VideoFormat],
-) -> Vec<u8> {
+pub fn build_format_params(_width: u32, _height: u32, _framerate: Fraction, _formats: &[VideoFormat]) -> Vec<u8> {
     // In production, use pipewire::stream::StreamBuilder with appropriate parameters
     // This would use the PipeWire C API directly or through pipewire-rs
     Vec::new()
@@ -194,12 +183,7 @@ pub fn build_format_params(
 ///
 /// Note: This is a placeholder. Actual buffer parameter construction
 /// would be done using PipeWire stream builder in production code.
-pub fn build_buffer_params(
-    _buffer_count: u32,
-    _buffer_size: u32,
-    _stride: u32,
-    _support_dmabuf: bool,
-) -> Vec<u8> {
+pub fn build_buffer_params(_buffer_count: u32, _buffer_size: u32, _stride: u32, _support_dmabuf: bool) -> Vec<u8> {
     // In production, use pipewire::stream::StreamBuilder with appropriate parameters
     Vec::new()
 }
@@ -249,10 +233,7 @@ mod tests {
     #[test]
     fn test_buffer_size_calculation() {
         // 1920x1080 BGRA: 1920 * 4 * 1080 = 8294400
-        assert_eq!(
-            calculate_buffer_size(1920, 1080, VideoFormat::BGRA),
-            7680 * 1080
-        );
+        assert_eq!(calculate_buffer_size(1920, 1080, VideoFormat::BGRA), 7680 * 1080);
     }
 
     #[test]

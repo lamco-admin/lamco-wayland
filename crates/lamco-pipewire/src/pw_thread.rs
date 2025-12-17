@@ -93,12 +93,12 @@
 //! - **Thread overhead:** ~0.5ms per iteration
 //! - **Supports:** Up to 144Hz refresh rates
 
-use pipewire::{context::Context, core::Core, main_loop::MainLoop};
 use pipewire::properties::Properties;
 use pipewire::spa::param::ParamType;
 use pipewire::spa::pod::Pod;
 use pipewire::spa::utils::Direction;
 use pipewire::stream::{Stream, StreamFlags, StreamState};
+use pipewire::{context::Context, core::Core, main_loop::MainLoop};
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::os::fd::{FromRawFd, OwnedFd, RawFd};
@@ -353,8 +353,8 @@ fn run_pipewire_main_loop(
     // DMA-BUF mmap cache: Maps FD -> (ptr, size) to avoid remapping every frame
     // Using Rc<RefCell<>> because we're on a single thread (PipeWire doesn't support multi-threading)
     // This cache is shared with all stream process() callbacks
-    use std::rc::Rc;
     use std::cell::RefCell;
+    use std::rc::Rc;
     let dmabuf_mmap_cache: Rc<RefCell<HashMap<RawFd, (*mut libc::c_void, usize)>>> =
         Rc::new(RefCell::new(HashMap::new()));
 
@@ -393,10 +393,7 @@ fn run_pipewire_main_loop(
                     }
                 }
 
-                PipeWireThreadCommand::DestroyStream {
-                    stream_id,
-                    response_tx,
-                } => {
+                PipeWireThreadCommand::DestroyStream { stream_id, response_tx } => {
                     debug!("Destroying stream {}", stream_id);
 
                     if let Some(managed_stream) = streams.remove(&stream_id) {
@@ -425,10 +422,7 @@ fn run_pipewire_main_loop(
                     }
                 }
 
-                PipeWireThreadCommand::GetStreamState {
-                    stream_id,
-                    response_tx,
-                } => {
+                PipeWireThreadCommand::GetStreamState { stream_id, response_tx } => {
                     // StreamState doesn't implement Clone, so we match and reconstruct
                     let state = streams.get(&stream_id).map(|s| match &s.state {
                         StreamState::Error(msg) => StreamState::Error(msg.clone()),
@@ -503,7 +497,7 @@ fn run_pipewire_main_loop(
 /// - No pointer aliasing (we copy, not reference)
 fn mmap_fd_buffer(fd: std::os::fd::RawFd, size: usize, offset: usize) -> Result<Vec<u8>> {
     use nix::sys::mman::{mmap, munmap, MapFlags, ProtFlags};
-    use std::os::fd::{BorrowedFd};
+    use std::os::fd::BorrowedFd;
 
     // Calculate page-aligned mapping
     // SAFETY: sysconf(_SC_PAGESIZE) is safe and always returns a valid value
@@ -512,8 +506,10 @@ fn mmap_fd_buffer(fd: std::os::fd::RawFd, size: usize, offset: usize) -> Result<
     let map_size = size + (offset - map_offset);
     let data_offset_in_map = offset - map_offset;
 
-    info!("mmap: fd={}, size={}, offset={}, page_size={}, map_offset={}, map_size={}",
-          fd, size, offset, page_size, map_offset, map_size);
+    info!(
+        "mmap: fd={}, size={}, offset={}, page_size={}, map_offset={}, map_size={}",
+        fd, size, offset, page_size, map_offset, map_size
+    );
 
     // Memory map the file descriptor
     // SAFETY:
@@ -552,9 +548,7 @@ fn mmap_fd_buffer(fd: std::os::fd::RawFd, size: usize, offset: usize) -> Result<
     // SAFETY: addr and map_size are from the successful mmap above.
     // We've finished reading, so unmapping is safe.
     unsafe {
-        munmap(addr, map_size)
-            .map_err(|e| warn!("munmap warning: {}", e))
-            .ok();
+        munmap(addr, map_size).map_err(|e| warn!("munmap warning: {}", e)).ok();
     }
 
     info!("mmap successful: extracted {} bytes", result.len());
@@ -618,12 +612,18 @@ fn create_stream_on_thread(
         })
         .param_changed(move |_stream, _user_data, param_id, _param| {
             if param_id == ParamType::Format.as_raw() {
-                info!("📐 Stream {} format negotiated via param_changed", stream_id_for_callbacks);
+                info!(
+                    "📐 Stream {} format negotiated via param_changed",
+                    stream_id_for_callbacks
+                );
                 // Note: Extracting format from param Pod requires parsing SPA POD format
                 // This is complex and requires spa::pod::deserialize
                 // For now, we log that negotiation occurred and rely on config.preferred_format
                 // TODO: Add full SPA POD parsing to extract actual negotiated format
-                info!("   Configured format: {:?}", config.preferred_format.unwrap_or(PixelFormat::BGRx));
+                info!(
+                    "   Configured format: {:?}",
+                    config.preferred_format.unwrap_or(PixelFormat::BGRx)
+                );
             }
         })
         .process(move |stream, _user_data| {
@@ -645,7 +645,13 @@ fn create_stream_on_thread(
                     let raw_data = data.as_raw();
                     let fd = raw_data.fd as RawFd;
 
-                    info!("🎬 Buffer: type={}, size={}, offset={}, fd={}", data_type.as_raw(), size, offset, fd);
+                    info!(
+                        "🎬 Buffer: type={}, size={}, offset={}, fd={}",
+                        data_type.as_raw(),
+                        size,
+                        offset,
+                        fd
+                    );
 
                     let pixel_data: Option<Vec<u8>> = match data_type {
                         // MemPtr: Direct memory access via data.data()
@@ -655,7 +661,12 @@ fn create_stream_on_thread(
                                     info!("🎬 MemPtr buffer: copying {} bytes (offset={})", size, offset);
                                     Some(mapped_data[offset..offset + size].to_vec())
                                 } else {
-                                    warn!("MemPtr buffer bounds invalid: offset={}, size={}, len={}", offset, size, mapped_data.len());
+                                    warn!(
+                                        "MemPtr buffer bounds invalid: offset={}, size={}, len={}",
+                                        offset,
+                                        size,
+                                        mapped_data.len()
+                                    );
                                     None
                                 }
                             } else {
@@ -671,7 +682,12 @@ fn create_stream_on_thread(
                                     info!("🎬 MemFd buffer: copying {} bytes (offset={})", size, offset);
                                     Some(mapped_data[offset..offset + size].to_vec())
                                 } else {
-                                    warn!("MemFd buffer bounds invalid: offset={}, size={}, len={}", offset, size, mapped_data.len());
+                                    warn!(
+                                        "MemFd buffer bounds invalid: offset={}, size={}, len={}",
+                                        offset,
+                                        size,
+                                        mapped_data.len()
+                                    );
                                     None
                                 }
                             } else if fd >= 0 {
@@ -773,9 +789,15 @@ fn create_stream_on_thread(
 
                         // Unknown/Invalid type
                         _ => {
-                            warn!("Unknown buffer type: {} (raw={})",
-                                  if data_type == libspa::buffer::DataType::Invalid { "Invalid" } else { "Unknown" },
-                                  data_type.as_raw());
+                            warn!(
+                                "Unknown buffer type: {} (raw={})",
+                                if data_type == libspa::buffer::DataType::Invalid {
+                                    "Invalid"
+                                } else {
+                                    "Unknown"
+                                },
+                                data_type.as_raw()
+                            );
                             None
                         }
                     };
@@ -803,19 +825,26 @@ fn create_stream_on_thread(
 
                         if frame_count < 5 {
                             info!("📐 Buffer analysis frame {}:", frame_count);
-                            info!("   Size: {} bytes, Width: {}, Height: {}", size, config.width, config.height);
-                            info!("   Calculated stride: {} bytes/row (16-byte aligned)", calculated_stride);
+                            info!(
+                                "   Size: {} bytes, Width: {}, Height: {}",
+                                size, config.width, config.height
+                            );
+                            info!(
+                                "   Calculated stride: {} bytes/row (16-byte aligned)",
+                                calculated_stride
+                            );
                             info!("   Actual stride: {} bytes/row", actual_stride);
                             info!("   Expected buffer size: {} bytes", expected_size);
                             info!("   Buffer type: {} (1=MemPtr, 2=MemFd, 3=DmaBuf)", data_type.as_raw());
-                            info!("   Pixel format: {:?}", config.preferred_format.unwrap_or(PixelFormat::BGRx));
+                            info!(
+                                "   Pixel format: {:?}",
+                                config.preferred_format.unwrap_or(PixelFormat::BGRx)
+                            );
 
                             // Log first 32 bytes as hex to verify byte order
                             if pixel_data.len() >= 32 {
-                                let hex_preview: Vec<String> = pixel_data[0..32]
-                                    .iter()
-                                    .map(|b| format!("{:02x}", b))
-                                    .collect();
+                                let hex_preview: Vec<String> =
+                                    pixel_data[0..32].iter().map(|b| format!("{:02x}", b)).collect();
                                 info!("   First 32 bytes (hex): {}", hex_preview.join(" "));
                             }
                         }
@@ -857,7 +886,10 @@ fn create_stream_on_thread(
                     warn!("No data in buffer for stream {}", stream_id_for_callbacks);
                 }
             } else {
-                debug!("No buffer available (dequeue returned None) for stream {}", stream_id_for_callbacks);
+                debug!(
+                    "No buffer available (dequeue returned None) for stream {}",
+                    stream_id_for_callbacks
+                );
             }
         })
         .register()
@@ -887,7 +919,10 @@ fn create_stream_on_thread(
         .set_active(true)
         .map_err(|e| PipeWireError::StreamCreationFailed(format!("Failed to activate stream {}: {}", stream_id, e)))?;
 
-    info!("Stream {} activated - buffers will now be delivered to process() callback", stream_id);
+    info!(
+        "Stream {} activated - buffers will now be delivered to process() callback",
+        stream_id
+    );
 
     Ok(ManagedStream {
         id: stream_id,

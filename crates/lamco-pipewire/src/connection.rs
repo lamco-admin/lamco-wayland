@@ -308,9 +308,7 @@ impl PipeWireConnection {
     /// Returns error if not connected or stream creation fails
     pub async fn create_stream(&mut self, config: StreamConfig, node_id: u32) -> Result<u32> {
         if !self.is_connected().await {
-            return Err(PipeWireError::ConnectionFailed(
-                "Not connected to PipeWire".to_string(),
-            ));
+            return Err(PipeWireError::ConnectionFailed("Not connected to PipeWire".to_string()));
         }
 
         // Generate stream ID
@@ -426,12 +424,18 @@ impl Drop for PipeWireConnection {
     }
 }
 
-// SAFETY: PipeWireConnection is safe to send/share across threads because:
+// SAFETY: PipeWireConnection is Send because:
 // 1. All PipeWire operations occur on a dedicated thread (not the caller's thread)
 // 2. Communication is via thread-safe channels (std::sync::mpsc, tokio::sync)
 // 3. State access uses Arc<RwLock<>> for safe concurrent access
 // 4. The thread handle itself is only accessed during cleanup (Drop)
 unsafe impl Send for PipeWireConnection {}
+
+// SAFETY: PipeWireConnection is Sync because:
+// 1. All state access goes through Arc<RwLock<>> which is Sync
+// 2. Command channels use thread-safe std::sync::mpsc::SyncSender
+// 3. No direct access to PipeWire types from outside the dedicated thread
+// 4. Methods that access shared state use proper synchronization (await on locks)
 unsafe impl Sync for PipeWireConnection {}
 
 #[cfg(test)]

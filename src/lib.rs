@@ -182,9 +182,7 @@ pub mod prelude {
     pub use lamco_pipewire::{PipeWireConfig, PipeWireError, PipeWireManager, VideoFrame};
 
     #[cfg(feature = "video")]
-    pub use lamco_video::{
-        BitmapConverter, BitmapUpdate, FrameDispatcher, FrameProcessor, ProcessorConfig,
-    };
+    pub use lamco_video::{BitmapConverter, BitmapUpdate, FrameDispatcher, FrameProcessor, ProcessorConfig};
 }
 
 #[cfg(test)]

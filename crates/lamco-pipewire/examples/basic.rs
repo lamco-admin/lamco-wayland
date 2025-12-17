@@ -15,16 +15,12 @@
 //! cargo run --example basic
 //! ```
 
-use lamco_pipewire::{
-    PipeWireConfig, PipeWireManager, PixelFormat, SourceType, StreamInfo,
-};
+use lamco_pipewire::{PipeWireConfig, PipeWireManager, PixelFormat, SourceType, StreamInfo};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize tracing for debug output
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .init();
+    tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).init();
 
     println!("lamco-pipewire Basic Example");
     println!("============================");
@@ -99,10 +95,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Check DMA-BUF support
     println!("\nSystem capabilities:");
-    println!(
-        "  DMA-BUF likely supported: {}",
-        lamco_pipewire::is_dmabuf_supported()
-    );
+    println!("  DMA-BUF likely supported: {}", lamco_pipewire::is_dmabuf_supported());
 
     println!("\nSupported formats:");
     for (i, format) in lamco_pipewire::supported_formats().iter().enumerate() {
