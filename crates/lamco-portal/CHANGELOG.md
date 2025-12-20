@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2025-12-21
+
+### Added
+- `dbus-clipboard` feature for D-Bus clipboard integration (GNOME fallback when Portal clipboard unavailable)
+
 ## [0.1.2] - 2025-12-17
 
 ### Fixed
@@ -51,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Linux only (Wayland required)
 - Tested on GNOME, KDE Plasma, Sway
 
-[Unreleased]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-portal-v0.1.2...HEAD
+[Unreleased]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-portal-v0.2.0...HEAD
+[0.2.0]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-portal-v0.1.2...lamco-portal-v0.2.0
 [0.1.2]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-portal-v0.1.1...lamco-portal-v0.1.2
 [0.1.1]: https://github.com/lamco-admin/lamco-wayland/releases/tag/lamco-portal-v0.1.1

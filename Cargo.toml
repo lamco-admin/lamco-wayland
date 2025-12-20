@@ -3,7 +3,7 @@
 # PACKAGE IDENTITY
 # ============================================================================
 name = "lamco-wayland"
-version = "0.1.1"
+version = "0.2.0"
 
 # ============================================================================
 # PACKAGE CONFIGURATION (inherited from workspace)
@@ -93,7 +93,7 @@ workspace = true
 # ============================================================================
 # NOTE: For local development, use path dependencies. For publishing, switch to version only.
 [dependencies]
-lamco-portal = { version = "0.1.2", path = "crates/lamco-portal", optional = true }
+lamco-portal = { version = "0.2", path = "crates/lamco-portal", optional = true }
 lamco-pipewire = { version = "0.1.2", path = "crates/lamco-pipewire", optional = true }
 lamco-video = { version = "0.1.1", path = "crates/lamco-video", optional = true }
 
