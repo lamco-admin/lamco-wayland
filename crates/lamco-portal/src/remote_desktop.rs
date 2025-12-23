@@ -4,7 +4,7 @@
 
 use ashpd::desktop::remote_desktop::{DeviceType, KeyState, RemoteDesktop};
 use enumflags2::BitFlags;
-use std::os::fd::{AsRawFd, RawFd};
+use std::os::fd::AsRawFd;
 use tracing::{debug, info};
 
 use super::session::StreamInfo;
@@ -228,7 +228,7 @@ mod tests {
         let connection = zbus::Connection::session().await.unwrap();
         let config = PortalConfig::default();
 
-        let manager = RemoteDesktopManager::new(connection, &config).await.unwrap();
+        let _manager = RemoteDesktopManager::new(connection, &config).await.unwrap();
 
         // This will trigger permission dialog
         // let session = manager.create_session().await;

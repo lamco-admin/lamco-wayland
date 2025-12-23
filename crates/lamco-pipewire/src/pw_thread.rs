@@ -334,9 +334,9 @@ fn run_pipewire_main_loop(
     };
 
     // Connect core using portal FD
+    info!("🔌 Connecting PipeWire Core to Portal FD {}", fd);
     // SAFETY: The FD was provided by XDG Desktop Portal via lamco-portal.
     // We take exclusive ownership - the FD is not used anywhere else.
-    info!("🔌 Connecting PipeWire Core to Portal FD {}", fd);
     let owned_fd = unsafe { OwnedFd::from_raw_fd(fd) };
     let core = match context.connect_fd(owned_fd, None) {
         Ok(c) => {

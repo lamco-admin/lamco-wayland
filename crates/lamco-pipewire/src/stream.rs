@@ -456,7 +456,7 @@ mod tests {
         assert_eq!(config.width, 1920);
         assert_eq!(config.height, 1080);
         assert_eq!(config.framerate, 60);
-        assert_eq!(config.use_dmabuf, true);
+        assert!(config.use_dmabuf);
         assert_eq!(config.buffer_count, 4);
     }
 
