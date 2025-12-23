@@ -4,6 +4,7 @@
 
 use ashpd::desktop::remote_desktop::{DeviceType, KeyState, RemoteDesktop};
 use enumflags2::BitFlags;
+use std::os::fd::{AsRawFd, RawFd};
 use tracing::{debug, info};
 
 use super::session::StreamInfo;
@@ -67,7 +68,7 @@ impl RemoteDesktopManager {
     pub async fn start_session(
         &self,
         session: &ashpd::desktop::Session<'_, RemoteDesktop<'_>>,
-    ) -> Result<(std::os::fd::OwnedFd, Vec<StreamInfo>)> {
+    ) -> Result<(std::os::fd::RawFd, Vec<StreamInfo>)> {
         info!("Starting RemoteDesktop session");
 
         let proxy = RemoteDesktop::new().await?;
@@ -102,10 +103,16 @@ impl RemoteDesktopManager {
                 streams
                     .iter()
                     .map(|stream| {
+                        let node_id = stream.pipe_wire_node_id();
                         let size = stream.size().unwrap_or((0, 0));
+                        let position = stream.position().unwrap_or((0, 0));
+
+                        info!("📺 Portal provided stream: node_id={}, size=({}, {}), position=({}, {})",
+                            node_id, size.0, size.1, position.0, position.1);
+
                         StreamInfo {
-                            node_id: stream.pipe_wire_node_id(),
-                            position: stream.position().unwrap_or((0, 0)),
+                            node_id,
+                            position,
                             size: (
                                 size.0.max(0).try_into().unwrap_or(0),
                                 size.1.max(0).try_into().unwrap_or(0),
@@ -117,8 +124,17 @@ impl RemoteDesktopManager {
             })
             .unwrap_or_default();
 
-        // Transfer ownership of fd - caller is responsible for closing
-        Ok((fd, stream_info))
+        info!("📊 Total streams from Portal: {}", stream_info.len());
+
+        // CRITICAL: Prevent FD from being closed
+        // PipeWireThreadManager will take ownership via from_raw_fd()
+        // If we return OwnedFd, it will be closed when PortalSessionHandle drops
+        let raw_fd = fd.as_raw_fd();
+        std::mem::forget(fd);  // Leak the OwnedFd to prevent auto-close
+
+        info!("🔒 FD {} ownership transferred (prevented auto-close)", raw_fd);
+
+        Ok((raw_fd, stream_info))
     }
 
     /// Inject pointer motion (relative)

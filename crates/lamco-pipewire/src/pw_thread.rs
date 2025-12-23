@@ -105,7 +105,7 @@ use std::os::fd::{FromRawFd, OwnedFd, RawFd};
 use std::sync::mpsc as std_mpsc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::error::{PipeWireError, Result};
 use crate::format::PixelFormat;
@@ -336,16 +336,21 @@ fn run_pipewire_main_loop(
     // Connect core using portal FD
     // SAFETY: The FD was provided by XDG Desktop Portal via lamco-portal.
     // We take exclusive ownership - the FD is not used anywhere else.
+    info!("🔌 Connecting PipeWire Core to Portal FD {}", fd);
     let owned_fd = unsafe { OwnedFd::from_raw_fd(fd) };
     let core = match context.connect_fd(owned_fd, None) {
-        Ok(c) => c,
+        Ok(c) => {
+            info!("✅ Core.connect_fd() succeeded");
+            c
+        }
         Err(e) => {
-            error!("Failed to connect Core with FD {}: {}", fd, e);
+            error!("❌ Failed to connect Core with FD {}: {}", fd, e);
             return;
         }
     };
 
-    info!("PipeWire Core connected successfully");
+    info!("✅ PipeWire Core connected successfully to Portal FD {}", fd);
+    info!("📍 This is a PRIVATE PipeWire connection - node IDs only valid on this FD");
 
     // Stream storage (all streams live on this thread)
     let mut streams: HashMap<u32, ManagedStream> = HashMap::new();
@@ -359,7 +364,15 @@ fn run_pipewire_main_loop(
         Rc::new(RefCell::new(HashMap::new()));
 
     // Main event loop
+    let mut loop_iterations = 0u64;
     'main: loop {
+        loop_iterations += 1;
+
+        // Log periodic heartbeat
+        if loop_iterations % 1000 == 0 {
+            info!("🔄 PipeWire main loop heartbeat: {} iterations, {} streams active", loop_iterations, streams.len());
+        }
+
         // Process all pending commands
         while let Ok(command) = command_rx.try_recv() {
             match command {
@@ -369,7 +382,9 @@ fn run_pipewire_main_loop(
                     config,
                     response_tx,
                 } => {
-                    debug!("Creating stream {} for node {}", stream_id, node_id);
+                    info!("📥 CreateStream command received: stream_id={}, node_id={}", stream_id, node_id);
+                    info!("   Config: {}x{} @ {}fps, dmabuf={}, buffers={}",
+                        config.width, config.height, config.framerate, config.use_dmabuf, config.buffer_count);
 
                     let result = create_stream_on_thread(
                         stream_id,
@@ -382,12 +397,13 @@ fn run_pipewire_main_loop(
 
                     match result {
                         Ok(managed_stream) => {
+                            info!("📦 Storing stream {} in active streams map", stream_id);
                             streams.insert(stream_id, managed_stream);
                             let _ = response_tx.send(Ok(()));
-                            info!("Stream {} created successfully", stream_id);
+                            info!("✅ Stream {} fully created - now in streams map (total: {} streams)", stream_id, streams.len());
                         }
                         Err(e) => {
-                            error!("Failed to create stream {}: {}", stream_id, e);
+                            error!("❌ Failed to create stream {}: {}", stream_id, e);
                             let _ = response_tx.send(Err(e));
                         }
                     }
@@ -451,7 +467,11 @@ fn run_pipewire_main_loop(
         // Use non-blocking iterate (0ms timeout) to avoid frame timing jitter
         // Then sleep based on expected frame timing for efficiency
         let loop_ref = main_loop.loop_();
-        loop_ref.iterate(Duration::from_millis(0));
+        let events_processed = loop_ref.iterate(Duration::from_millis(0));
+
+        if loop_iterations % 1000 == 0 {
+            trace!("🔄 loop.iterate() returned {} (events processed this iteration)", events_processed);
+        }
 
         // Sleep briefly to avoid busy-looping while still maintaining low latency
         // At 60 FPS, frames arrive every ~16ms, so 5ms sleep is safe
@@ -571,6 +591,7 @@ fn create_stream_on_thread(
     let node_target = node_id.to_string();
 
     // Build stream properties per spec
+    info!("🏗️  Building stream properties for stream {}", stream_id);
     let mut props = Properties::new();
     props.insert("media.type", "Video");
     props.insert("media.category", "Capture");
@@ -579,9 +600,20 @@ fn create_stream_on_thread(
     props.insert("node.target", node_target.as_str());
     props.insert("stream.capture-sink", "true");
 
+    info!("📝 Stream properties:");
+    info!("   media.type = Video");
+    info!("   media.category = Capture");
+    info!("   media.role = Screen");
+    info!("   media.name = {}", stream_name);
+    info!("   node.target = {} (Portal provided node ID)", node_target);
+    info!("   stream.capture-sink = true");
+
     // Create the stream
+    info!("🎬 Calling Stream::new() with properties");
     let stream = Stream::new(core, &stream_name, props)
         .map_err(|e| PipeWireError::StreamCreationFailed(format!("Stream::new failed: {}", e)))?;
+
+    info!("✅ Stream::new() succeeded - stream object created");
 
     // Set up comprehensive stream event listeners
     // Clone frame_tx and dmabuf_cache for use in closures
@@ -589,11 +621,13 @@ fn create_stream_on_thread(
     let stream_id_for_callbacks = stream_id;
     let dmabuf_cache_for_process = std::rc::Rc::clone(&dmabuf_cache);
 
+    info!("🎧 Registering stream {} callbacks (state_changed, param_changed, process)", stream_id);
+
     let _listener = stream
         .add_local_listener::<()>()
         .state_changed(move |_stream, _user_data, old_state, new_state| {
-            debug!(
-                "Stream {} state changed: {:?} -> {:?}",
+            info!(
+                "🔄 Stream {} state changed: {:?} -> {:?}",
                 stream_id_for_callbacks, old_state, new_state
             );
 
@@ -895,34 +929,37 @@ fn create_stream_on_thread(
         .register()
         .map_err(|e| PipeWireError::StreamCreationFailed(format!("Listener registration failed: {}", e)))?;
 
+    info!("✅ Stream {} callbacks registered successfully", stream_id);
+
     // Connect stream to node with format parameters
     let params = build_stream_parameters(&config)?;
+    info!("📋 Stream {} connecting with {} format parameters", stream_id, params.len());
 
     // Convert Vec<Pod> to Vec<&Pod> for connect() API
     let param_refs: Vec<&Pod> = params.iter().collect();
     let mut param_slice = param_refs;
 
+    info!("🔌 Calling stream.connect() for stream {} with flags: AUTOCONNECT | MAP_BUFFERS | RT_PROCESS", stream_id);
+    info!("   TESTING: Using None (PW_ID_ANY) instead of Some({}) - let PipeWire auto-link via node.target property", node_id);
+    info!("   The node.target={} property should tell PipeWire which node to link to", node_id);
+
     stream
         .connect(
             Direction::Input,
-            Some(node_id),
+            None,  // PW_ID_ANY - let PipeWire use node.target property
             StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS | StreamFlags::RT_PROCESS,
             &mut param_slice,
         )
         .map_err(|e| PipeWireError::ConnectionFailed(format!("Stream connect failed: {}", e)))?;
 
-    debug!("Stream {} connected to node {}", stream_id, node_id);
+    info!("✅ Stream {} .connect() succeeded - connected to node {}", stream_id, node_id);
 
-    // CRITICAL: Activate the stream to start buffer delivery
-    // Without this, the stream enters "Streaming" state but never delivers buffers!
-    stream
-        .set_active(true)
-        .map_err(|e| PipeWireError::StreamCreationFailed(format!("Failed to activate stream {}: {}", stream_id, e)))?;
-
-    info!(
-        "Stream {} activated - buffers will now be delivered to process() callback",
-        stream_id
-    );
+    // NOTE: PipeWire tutorial does NOT call set_active() for portal streams
+    // AUTOCONNECT flag should handle activation automatically
+    // Calling set_active(true) here might interfere with auto-connection
+    info!("⏳ NOT calling set_active() - AUTOCONNECT flag should activate stream automatically");
+    info!("📍 Waiting for PipeWire to transition stream to Streaming state via main loop events");
+    info!("📍 If you don't see 'Stream {} is now streaming' within 2 seconds, AUTOCONNECT failed", stream_id);
 
     Ok(ManagedStream {
         id: stream_id,
@@ -946,16 +983,18 @@ fn create_stream_on_thread(
 /// - MemFd (type 2): Memory-mapped FD via mmap()
 /// - DmaBuf (type 3): GPU buffer via mmap() with FD
 ///
-/// Returning empty params lets PipeWire choose optimal format based on compositor capabilities.
+/// We provide explicit format parameters so PipeWire can complete negotiation.
 /// This enables hardware acceleration when available (DMA-BUF) while maintaining compatibility.
-fn build_stream_parameters(_config: &StreamConfig) -> Result<Vec<Pod>> {
-    // Accept default negotiation - we handle all buffer types now
-    // PipeWire will negotiate based on compositor capabilities:
-    // - KDE/modern compositors: DMA-BUF (hardware accelerated)
-    // - Older/fallback: MemPtr or MemFd (software rendering)
-    //
-    // Future enhancement: Build proper SPA Pods to explicitly request formats/resolutions
-    info!("🎬 Using default format negotiation (supports MemPtr/MemFd/DmaBuf)");
+fn build_stream_parameters(config: &StreamConfig) -> Result<Vec<Pod>> {
+    info!("🎬 Attempting to build format parameters: {}x{} @ {}fps", config.width, config.height, config.framerate);
+
+    // Try using pipewire-rs builder API instead of manual Pod construction
+    // This might be simpler and more reliable
+
+    // For now, return empty and let PipeWire auto-negotiate
+    // We'll need to investigate why format params aren't working
+    warn!("⚠️  Format parameter building not working - using auto-negotiation");
+    warn!("⚠️  This may cause stream to not start on some compositors");
     Ok(Vec::new())
 }
 

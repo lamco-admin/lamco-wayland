@@ -2,7 +2,7 @@
 //!
 //! Manages the lifecycle of portal sessions and associated resources.
 
-use std::os::fd::{AsRawFd, OwnedFd, RawFd};
+use std::os::fd::RawFd;
 use tracing::info;
 
 /// Information about a PipeWire stream from the portal
@@ -75,8 +75,8 @@ pub struct PortalSessionHandle {
     /// Session identifier from portal
     pub session_id: String,
 
-    /// PipeWire file descriptor (owned - will be closed on drop)
-    pipewire_fd: OwnedFd,
+    /// PipeWire file descriptor (raw - ownership transferred to PipeWire thread)
+    pipewire_fd: RawFd,
 
     /// Available streams (one per monitor typically)
     pub streams: Vec<StreamInfo>,
@@ -92,7 +92,7 @@ impl PortalSessionHandle {
     /// Create new session handle
     pub fn new(
         session_id: String,
-        pipewire_fd: OwnedFd,
+        pipewire_fd: RawFd,
         streams: Vec<StreamInfo>,
         remote_desktop_session: Option<String>,
         session: ashpd::desktop::Session<'static, ashpd::desktop::remote_desktop::RemoteDesktop<'static>>,
@@ -115,10 +115,12 @@ impl PortalSessionHandle {
 
     /// Get PipeWire file descriptor as raw fd
     ///
-    /// Returns the raw file descriptor for use with PipeWire. The fd remains
-    /// owned by this handle and will be closed when the handle is dropped.
+    /// Returns the raw file descriptor for use with PipeWire.
+    ///
+    /// Note: Ownership was transferred when this handle was created (via std::mem::forget).
+    /// The FD will NOT be closed when this handle drops - PipeWire thread owns it.
     pub fn pipewire_fd(&self) -> RawFd {
-        self.pipewire_fd.as_raw_fd()
+        self.pipewire_fd
     }
 
     /// Get stream information
