@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2025-12-23
+
+### Fixed
+- **CRITICAL:** Fixed FD ownership issue causing PipeWire stream to close prematurely
+- Changed return type from `OwnedFd` to `RawFd` with `std::mem::forget()` to prevent auto-close
+- Fixes black screen bug where PipeWire stream stuck in Connecting state
+
+### Added
+- Enhanced debug logging for Portal session startup
+
 ## [0.2.0] - 2025-12-21
 
 ### Added
