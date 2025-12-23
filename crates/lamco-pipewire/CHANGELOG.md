@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2025-12-23
+
+### Changed
+- Removed `stream.set_active()` call - let AUTOCONNECT flag handle activation
+- Use `PW_ID_ANY` (None) instead of explicit node_id for portal streams
+
+### Added
+- Enhanced debug logging throughout stream lifecycle
+- Periodic heartbeat logging (every 1000 iterations)
+- Comprehensive stream state change logging
+
 ## [0.1.2] - 2025-12-17
 
 ### Fixed
