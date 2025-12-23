@@ -281,7 +281,8 @@ impl ClipboardManager {
         session: &Session<'_, RemoteDesktop<'_>>,
         mime_type: &str,
     ) -> crate::Result<Vec<u8>> {
-        use tokio::io::AsyncReadExt;
+        use std::os::fd::AsRawFd;
+        use std::io::Read;
 
         debug!("Reading local clipboard: {}", mime_type);
 
@@ -293,13 +294,30 @@ impl ClipboardManager {
 
         // Convert zvariant::OwnedFd to File
         let std_fd: std::os::fd::OwnedFd = fd.into();
-        let std_file = std::fs::File::from(std_fd);
-        let mut file = tokio::fs::File::from_std(std_file);
-        let mut data = Vec::new();
-        file.read_to_end(&mut data).await?;
+        let mut std_file = std::fs::File::from(std_fd);
 
-        info!("Read {} bytes from local clipboard ({})", data.len(), mime_type);
-        Ok(data)
+        // Portal returns a non-blocking pipe FD. We need to set it to blocking mode
+        // before reading, otherwise read_to_end() will fail with EAGAIN.
+        let raw_fd = std_file.as_raw_fd();
+        unsafe {
+            let flags = libc::fcntl(raw_fd, libc::F_GETFL);
+            if flags != -1 {
+                libc::fcntl(raw_fd, libc::F_SETFL, flags & !libc::O_NONBLOCK);
+            }
+        }
+
+        // Read synchronously on blocking threadpool (spawn_blocking)
+        let result = tokio::task::spawn_blocking(move || {
+            let mut data = Vec::new();
+            std_file.read_to_end(&mut data)?;
+            Ok::<Vec<u8>, std::io::Error>(data)
+        })
+        .await
+        .map_err(|e| crate::PortalError::clipboard(format!("Join error reading clipboard: {}", e)))?
+        .map_err(|e| crate::PortalError::clipboard(format!("I/O error reading clipboard: {}", e)))?;
+
+        info!("Read {} bytes from local clipboard ({})", result.len(), mime_type);
+        Ok(result)
     }
 
     /// Write clipboard data to Portal via file descriptor

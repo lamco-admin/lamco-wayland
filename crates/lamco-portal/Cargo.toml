@@ -100,6 +100,9 @@ thiserror = "1.0"
 # For bitflags (transitive from ashpd but used explicitly)
 enumflags2 = "0.7"
 
+# For setting FD flags (blocking mode for Portal clipboard pipes)
+libc = "0.2"
+
 # Optional: ClipboardSink trait implementation
 lamco-clipboard-core = { version = "0.1", optional = true }
 
