@@ -117,7 +117,7 @@ needless_range_loop = "allow"
 # ============================================================================
 [dependencies]
 # PipeWire frame types (VideoFrame, PixelFormat, DamageRegion)
-lamco-pipewire = "0.1"
+lamco-pipewire = { path = "../lamco-pipewire" }
 
 # Async runtime
 tokio = { version = "1", features = ["sync", "rt", "time"] }
