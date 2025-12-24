@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2025-12-24
+
+### Fixed
+- Fixed non-blocking FD handling for clipboard read (EAGAIN error)
+  - Portal's `selection_read()` returns a non-blocking pipe FD
+  - Now sets FD to blocking mode using fcntl before reading
+  - Uses `spawn_blocking` for proper blocking I/O on tokio threadpool
+  - Fixes Linux→Windows image clipboard copy which was failing with "Resource temporarily unavailable (os error 11)"
+
 ## [0.2.1] - 2025-12-23
 
 ### Fixed

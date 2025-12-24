@@ -249,19 +249,15 @@ impl DamageTracker {
 
         // Merge if close enough
         let dist_x = if a.x + a.width < b.x {
-            b.x - (a.x + a.width)
-        } else if b.x + b.width < a.x {
-            a.x - (b.x + b.width)
+            b.x.saturating_sub(a.x + a.width)
         } else {
-            0
+            a.x.saturating_sub(b.x + b.width)
         };
 
         let dist_y = if a.y + a.height < b.y {
-            b.y - (a.y + a.height)
-        } else if b.y + b.height < a.y {
-            a.y - (b.y + b.height)
+            b.y.saturating_sub(a.y + a.height)
         } else {
-            0
+            a.y.saturating_sub(b.y + b.height)
         };
 
         dist_x <= self.merge_distance && dist_y <= self.merge_distance

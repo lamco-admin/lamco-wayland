@@ -107,8 +107,10 @@ impl RemoteDesktopManager {
                         let size = stream.size().unwrap_or((0, 0));
                         let position = stream.position().unwrap_or((0, 0));
 
-                        info!("📺 Portal provided stream: node_id={}, size=({}, {}), position=({}, {})",
-                            node_id, size.0, size.1, position.0, position.1);
+                        info!(
+                            "📺 Portal provided stream: node_id={}, size=({}, {}), position=({}, {})",
+                            node_id, size.0, size.1, position.0, position.1
+                        );
 
                         StreamInfo {
                             node_id,
@@ -130,7 +132,7 @@ impl RemoteDesktopManager {
         // PipeWireThreadManager will take ownership via from_raw_fd()
         // If we return OwnedFd, it will be closed when PortalSessionHandle drops
         let raw_fd = fd.as_raw_fd();
-        std::mem::forget(fd);  // Leak the OwnedFd to prevent auto-close
+        std::mem::forget(fd); // Leak the OwnedFd to prevent auto-close
 
         info!("🔒 FD {} ownership transferred (prevented auto-close)", raw_fd);
 

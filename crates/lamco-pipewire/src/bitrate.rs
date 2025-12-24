@@ -56,7 +56,8 @@ struct FrameRecord {
     /// Encoded frame size (bytes)
     frame_size: usize,
 
-    /// Timestamp when frame was recorded
+    /// Timestamp when frame was recorded (retained for future analysis)
+    #[allow(dead_code)]
     timestamp: Instant,
 }
 
