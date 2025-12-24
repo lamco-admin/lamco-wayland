@@ -370,7 +370,11 @@ fn run_pipewire_main_loop(
 
         // Log periodic heartbeat
         if loop_iterations % 1000 == 0 {
-            info!("🔄 PipeWire main loop heartbeat: {} iterations, {} streams active", loop_iterations, streams.len());
+            info!(
+                "🔄 PipeWire main loop heartbeat: {} iterations, {} streams active",
+                loop_iterations,
+                streams.len()
+            );
         }
 
         // Process all pending commands
@@ -382,9 +386,14 @@ fn run_pipewire_main_loop(
                     config,
                     response_tx,
                 } => {
-                    info!("📥 CreateStream command received: stream_id={}, node_id={}", stream_id, node_id);
-                    info!("   Config: {}x{} @ {}fps, dmabuf={}, buffers={}",
-                        config.width, config.height, config.framerate, config.use_dmabuf, config.buffer_count);
+                    info!(
+                        "📥 CreateStream command received: stream_id={}, node_id={}",
+                        stream_id, node_id
+                    );
+                    info!(
+                        "   Config: {}x{} @ {}fps, dmabuf={}, buffers={}",
+                        config.width, config.height, config.framerate, config.use_dmabuf, config.buffer_count
+                    );
 
                     let result = create_stream_on_thread(
                         stream_id,
@@ -400,7 +409,11 @@ fn run_pipewire_main_loop(
                             info!("📦 Storing stream {} in active streams map", stream_id);
                             streams.insert(stream_id, managed_stream);
                             let _ = response_tx.send(Ok(()));
-                            info!("✅ Stream {} fully created - now in streams map (total: {} streams)", stream_id, streams.len());
+                            info!(
+                                "✅ Stream {} fully created - now in streams map (total: {} streams)",
+                                stream_id,
+                                streams.len()
+                            );
                         }
                         Err(e) => {
                             error!("❌ Failed to create stream {}: {}", stream_id, e);
@@ -470,7 +483,10 @@ fn run_pipewire_main_loop(
         let events_processed = loop_ref.iterate(Duration::from_millis(0));
 
         if loop_iterations % 1000 == 0 {
-            trace!("🔄 loop.iterate() returned {} (events processed this iteration)", events_processed);
+            trace!(
+                "🔄 loop.iterate() returned {} (events processed this iteration)",
+                events_processed
+            );
         }
 
         // Sleep briefly to avoid busy-looping while still maintaining low latency
@@ -621,7 +637,10 @@ fn create_stream_on_thread(
     let stream_id_for_callbacks = stream_id;
     let dmabuf_cache_for_process = std::rc::Rc::clone(&dmabuf_cache);
 
-    info!("🎧 Registering stream {} callbacks (state_changed, param_changed, process)", stream_id);
+    info!(
+        "🎧 Registering stream {} callbacks (state_changed, param_changed, process)",
+        stream_id
+    );
 
     let _listener = stream
         .add_local_listener::<()>()
@@ -933,33 +952,52 @@ fn create_stream_on_thread(
 
     // Connect stream to node with format parameters
     let params = build_stream_parameters(&config)?;
-    info!("📋 Stream {} connecting with {} format parameters", stream_id, params.len());
+    info!(
+        "📋 Stream {} connecting with {} format parameters",
+        stream_id,
+        params.len()
+    );
 
     // Convert Vec<Pod> to Vec<&Pod> for connect() API
     let param_refs: Vec<&Pod> = params.iter().collect();
     let mut param_slice = param_refs;
 
-    info!("🔌 Calling stream.connect() for stream {} with flags: AUTOCONNECT | MAP_BUFFERS | RT_PROCESS", stream_id);
-    info!("   TESTING: Using None (PW_ID_ANY) instead of Some({}) - let PipeWire auto-link via node.target property", node_id);
-    info!("   The node.target={} property should tell PipeWire which node to link to", node_id);
+    info!(
+        "🔌 Calling stream.connect() for stream {} with flags: AUTOCONNECT | MAP_BUFFERS | RT_PROCESS",
+        stream_id
+    );
+    info!(
+        "   TESTING: Using None (PW_ID_ANY) instead of Some({}) - let PipeWire auto-link via node.target property",
+        node_id
+    );
+    info!(
+        "   The node.target={} property should tell PipeWire which node to link to",
+        node_id
+    );
 
     stream
         .connect(
             Direction::Input,
-            None,  // PW_ID_ANY - let PipeWire use node.target property
+            None, // PW_ID_ANY - let PipeWire use node.target property
             StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS | StreamFlags::RT_PROCESS,
             &mut param_slice,
         )
         .map_err(|e| PipeWireError::ConnectionFailed(format!("Stream connect failed: {}", e)))?;
 
-    info!("✅ Stream {} .connect() succeeded - connected to node {}", stream_id, node_id);
+    info!(
+        "✅ Stream {} .connect() succeeded - connected to node {}",
+        stream_id, node_id
+    );
 
     // NOTE: PipeWire tutorial does NOT call set_active() for portal streams
     // AUTOCONNECT flag should handle activation automatically
     // Calling set_active(true) here might interfere with auto-connection
     info!("⏳ NOT calling set_active() - AUTOCONNECT flag should activate stream automatically");
     info!("📍 Waiting for PipeWire to transition stream to Streaming state via main loop events");
-    info!("📍 If you don't see 'Stream {} is now streaming' within 2 seconds, AUTOCONNECT failed", stream_id);
+    info!(
+        "📍 If you don't see 'Stream {} is now streaming' within 2 seconds, AUTOCONNECT failed",
+        stream_id
+    );
 
     Ok(ManagedStream {
         id: stream_id,
@@ -986,7 +1024,10 @@ fn create_stream_on_thread(
 /// We provide explicit format parameters so PipeWire can complete negotiation.
 /// This enables hardware acceleration when available (DMA-BUF) while maintaining compatibility.
 fn build_stream_parameters(config: &StreamConfig) -> Result<Vec<Pod>> {
-    info!("🎬 Attempting to build format parameters: {}x{} @ {}fps", config.width, config.height, config.framerate);
+    info!(
+        "🎬 Attempting to build format parameters: {}x{} @ {}fps",
+        config.width, config.height, config.framerate
+    );
 
     // Try using pipewire-rs builder API instead of manual Pod construction
     // This might be simpler and more reliable

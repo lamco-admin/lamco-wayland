@@ -276,13 +276,14 @@ impl ClipboardManager {
     /// # Returns
     ///
     /// Clipboard data in requested format
+    #[allow(unsafe_code)]
     pub async fn read_local_clipboard(
         &self,
         session: &Session<'_, RemoteDesktop<'_>>,
         mime_type: &str,
     ) -> crate::Result<Vec<u8>> {
-        use std::os::fd::AsRawFd;
         use std::io::Read;
+        use std::os::fd::AsRawFd;
 
         debug!("Reading local clipboard: {}", mime_type);
 
@@ -299,11 +300,13 @@ impl ClipboardManager {
         // Portal returns a non-blocking pipe FD. We need to set it to blocking mode
         // before reading, otherwise read_to_end() will fail with EAGAIN.
         let raw_fd = std_file.as_raw_fd();
-        unsafe {
-            let flags = libc::fcntl(raw_fd, libc::F_GETFL);
-            if flags != -1 {
-                libc::fcntl(raw_fd, libc::F_SETFL, flags & !libc::O_NONBLOCK);
-            }
+        // SAFETY: raw_fd is a valid file descriptor from std_file.as_raw_fd()
+        // fcntl F_GETFL returns the file status flags or -1 on error
+        let flags = unsafe { libc::fcntl(raw_fd, libc::F_GETFL) };
+        if flags != -1 {
+            // SAFETY: raw_fd is valid and flags contains the current status
+            // We clear O_NONBLOCK to enable blocking reads
+            unsafe { libc::fcntl(raw_fd, libc::F_SETFL, flags & !libc::O_NONBLOCK) };
         }
 
         // Read synchronously on blocking threadpool (spawn_blocking)
