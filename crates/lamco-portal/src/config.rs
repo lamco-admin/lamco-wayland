@@ -89,15 +89,15 @@ impl Default for PortalConfig {
     /// Create configuration with sensible defaults
     ///
     /// - Cursor as metadata (best for remote desktop)
-    /// - No persistence (request permission each time)
+    /// - Persist until explicitly revoked (enables unattended operation)
     /// - Both monitors and windows available
     /// - Keyboard + pointer input enabled
     /// - Multiple sources allowed
-    /// - No restore token
+    /// - No restore token (will be obtained after first grant)
     fn default() -> Self {
         Self {
             cursor_mode: CursorMode::Metadata,
-            persist_mode: PersistMode::DoNot,
+            persist_mode: PersistMode::ExplicitlyRevoked, // Mode 2 - persist indefinitely
             source_type: SourceType::Monitor | SourceType::Window,
             devices: DeviceType::Keyboard | DeviceType::Pointer,
             allow_multiple: true,
@@ -226,7 +226,7 @@ mod tests {
     fn test_default_config() {
         let config = PortalConfig::default();
         assert!(matches!(config.cursor_mode, CursorMode::Metadata));
-        assert!(matches!(config.persist_mode, PersistMode::DoNot));
+        assert!(matches!(config.persist_mode, PersistMode::ExplicitlyRevoked));
         assert!(config.allow_multiple);
         assert!(config.restore_token.is_none());
     }
@@ -235,7 +235,7 @@ mod tests {
     fn test_builder_with_defaults() {
         let config = PortalConfig::builder().build();
         assert!(matches!(config.cursor_mode, CursorMode::Metadata));
-        assert!(matches!(config.persist_mode, PersistMode::DoNot));
+        assert!(matches!(config.persist_mode, PersistMode::ExplicitlyRevoked));
     }
 
     #[test]
@@ -261,6 +261,6 @@ mod tests {
         };
 
         assert!(matches!(config.cursor_mode, CursorMode::Hidden));
-        assert!(matches!(config.persist_mode, PersistMode::DoNot)); // Still default
+        assert!(matches!(config.persist_mode, PersistMode::ExplicitlyRevoked)); // Still default
     }
 }

@@ -34,7 +34,7 @@
 //! let manager = PortalManager::with_default().await?;
 //!
 //! // Create a session (triggers permission dialog)
-//! let session = manager.create_session("my-session".to_string(), None).await?;
+//! let (session, restore_token) = manager.create_session("my-session".to_string(), None).await?;
 //!
 //! // Access PipeWire file descriptor for video capture
 //! let fd = session.pipewire_fd();
@@ -73,7 +73,7 @@
 //! # use lamco_portal::{PortalManager, PortalConfig};
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! # let manager = PortalManager::with_default().await?;
-//! # let session = manager.create_session("my-session".to_string(), None).await?;
+//! # let (session, _token) = manager.create_session("my-session".to_string(), None).await?;
 //! // Move mouse to absolute position
 //! manager.remote_desktop()
 //!     .notify_pointer_motion_absolute(
@@ -105,7 +105,7 @@
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! # let manager = PortalManager::with_default().await?;
 //! match manager.create_session("my-session".to_string(), None).await {
-//!     Ok(session) => {
+//!     Ok((session, _token)) => {
 //!         println!("Session created successfully");
 //!     }
 //!     Err(PortalError::PermissionDenied) => {
@@ -136,7 +136,7 @@
 //! - Input injection access (keyboard/mouse control)
 //! - Clipboard access (if using clipboard features)
 //!
-//! Permissions can be remembered per-application using [`PersistMode::Application`].
+//! Permissions can be remembered per-application using [`ashpd::desktop::PersistMode::Application`].
 
 use std::sync::Arc;
 use tracing::{debug, info, warn};
@@ -295,12 +295,15 @@ impl PortalManager {
     /// 2. Select devices (keyboard + pointer for input injection)
     /// 3. Select sources (monitors to capture for screen sharing)
     /// 4. Request clipboard access (if clipboard provided) ← BEFORE START
-    /// 5. Start session (triggers permission dialog)
-    /// 6. Get PipeWire FD and stream information
+    /// 5. Start session (triggers permission dialog, unless restore token valid)
+    /// 6. Get PipeWire FD, stream information, and restore token
     ///
     /// # Returns
     ///
-    /// PortalSessionHandle with PipeWire FD, stream information, and session reference
+    /// Tuple of (PortalSessionHandle, Optional restore token)
+    ///
+    /// The restore token should be stored securely and passed in the next
+    /// session's PortalConfig to avoid permission dialogs.
     ///
     /// # Examples
     ///
@@ -316,7 +319,7 @@ impl PortalManager {
         &self,
         session_id: String,
         clipboard: Option<&crate::clipboard::ClipboardManager>,
-    ) -> Result<PortalSessionHandle> {
+    ) -> Result<(PortalSessionHandle, Option<String>)> {
         info!("Creating combined portal session (ScreenCast + RemoteDesktop)");
 
         // Create RemoteDesktop session (this type of session can include screen sharing)
@@ -365,8 +368,8 @@ impl PortalManager {
             }
         }
 
-        // Start the combined session (triggers permission dialog)
-        let (pipewire_fd, streams) = self
+        // Start the combined session (triggers permission dialog, unless restore token valid)
+        let (pipewire_fd, streams, restore_token) = self
             .remote_desktop
             .start_session(&remote_desktop_session)
             .await
@@ -375,6 +378,12 @@ impl PortalManager {
         info!("Portal session started successfully");
         info!("  PipeWire FD: {:?}", pipewire_fd);
         info!("  Streams: {}", streams.len());
+
+        if let Some(ref token) = restore_token {
+            info!("  Restore Token: Received ({} chars)", token.len());
+        } else {
+            debug!("  Restore Token: None (portal may not support persistence)");
+        }
 
         if streams.is_empty() {
             return Err(PortalError::NoStreamsAvailable);
@@ -393,7 +402,7 @@ impl PortalManager {
 
         info!("Portal session handle created with {} streams", stream_count);
 
-        Ok(handle)
+        Ok((handle, restore_token))
     }
 
     /// Access the ScreenCast manager
@@ -416,7 +425,7 @@ impl PortalManager {
     /// # use lamco_portal::PortalManager;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let manager = PortalManager::with_default().await?;
-    /// # let session = manager.create_session("s1".to_string(), None).await?;
+    /// # let (session, _token) = manager.create_session("s1".to_string(), None).await?;
     /// // Inject mouse movement
     /// manager.remote_desktop()
     ///     .notify_pointer_motion_absolute(

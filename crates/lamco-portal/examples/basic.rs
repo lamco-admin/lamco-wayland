@@ -23,8 +23,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create a session (this will trigger the system permission dialog)
     println!("Creating session (permission dialog will appear)...");
-    let session = manager.create_session("basic-example".to_string(), None).await?;
+    let (session, restore_token) = manager.create_session("basic-example".to_string(), None).await?;
     println!("✓ Session created: {}\n", session.session_id());
+
+    if let Some(token) = restore_token {
+        println!("  Restore token received ({} chars)", token.len());
+        println!("  (Store this token to avoid dialogs on next run)\n");
+    }
 
     // Display PipeWire information
     println!("PipeWire Details:");

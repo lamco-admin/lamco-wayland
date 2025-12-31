@@ -73,14 +73,12 @@ impl ClipboardManager {
         &self,
         event_tx: mpsc::UnboundedSender<SelectionTransferEvent>,
     ) -> crate::Result<()> {
-        // Clone the Arc clipboard reference (cheap)
         let clipboard = Arc::clone(&self.clipboard);
 
-        // Start the stream in a task to avoid lifetime issues
+        // Task-based stream avoids borrow checker lifetime conflicts with long-lived session
         tokio::spawn(async move {
             use futures_util::stream::StreamExt;
 
-            // Create stream inside the task
             let stream_result = clipboard.receive_selection_transfer().await;
 
             match stream_result {

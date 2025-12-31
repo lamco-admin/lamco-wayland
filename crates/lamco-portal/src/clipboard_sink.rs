@@ -205,7 +205,6 @@ impl PortalClipboardSink {
 
                 debug!("SelectionTransfer received: mime={}, serial={}", mime_type, serial);
 
-                // Check for pending data for this MIME type
                 let data = {
                     let pending = pending_data.read().await;
                     pending.get(&mime_type).map(|p| p.data.clone())
@@ -213,7 +212,6 @@ impl PortalClipboardSink {
 
                 match data {
                     Some(data) => {
-                        // We have data - write it to Portal
                         let session_guard = session.lock().await;
                         match clipboard
                             .write_selection_data(&session_guard, serial, data.clone())
