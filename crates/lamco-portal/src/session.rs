@@ -39,7 +39,7 @@ pub enum SourceType {
 ///
 /// # Lifecycle
 ///
-/// Created by [`PortalManager::create_session`]. The session remains active
+/// Created by [`crate::PortalManager::create_session`]. The session remains active
 /// until this handle is dropped. Dropping the handle will automatically close
 /// the Portal session and stop all streams.
 ///
@@ -49,7 +49,7 @@ pub enum SourceType {
 /// # use lamco_portal::PortalManager;
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let manager = PortalManager::with_default().await?;
-/// let session = manager.create_session("my-session".to_string(), None).await?;
+/// let (session, _token) = manager.create_session("my-session".to_string(), None).await?;
 ///
 /// // Access PipeWire FD for video capture
 /// let fd = session.pipewire_fd();
@@ -140,7 +140,7 @@ impl PortalSessionHandle {
 
     /// Get reference to the underlying ashpd session
     ///
-    /// Required for input injection operations via [`RemoteDesktopManager`].
+    /// Required for input injection operations via [`crate::remote_desktop::RemoteDesktopManager`].
     /// Most operations that need this will accept `session.ashpd_session()`.
     ///
     /// # Examples
@@ -149,7 +149,7 @@ impl PortalSessionHandle {
     /// # use lamco_portal::PortalManager;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let manager = PortalManager::with_default().await?;
-    /// # let session = manager.create_session("s1".to_string(), None).await?;
+    /// # let (session, _token) = manager.create_session("s1".to_string(), None).await?;
     /// // Inject input using the ashpd session
     /// manager.remote_desktop()
     ///     .notify_pointer_button(session.ashpd_session(), 1, true)

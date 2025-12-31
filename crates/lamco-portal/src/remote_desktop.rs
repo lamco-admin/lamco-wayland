@@ -65,10 +65,15 @@ impl RemoteDesktopManager {
     }
 
     /// Start the remote desktop session
+    ///
+    /// Returns: (PipeWire FD, Stream info, Optional restore token)
+    ///
+    /// The restore token, if present, should be stored and passed in future
+    /// sessions via PortalConfig to avoid permission dialogs.
     pub async fn start_session(
         &self,
         session: &ashpd::desktop::Session<'_, RemoteDesktop<'_>>,
-    ) -> Result<(std::os::fd::RawFd, Vec<StreamInfo>)> {
+    ) -> Result<(std::os::fd::RawFd, Vec<StreamInfo>, Option<String>)> {
         info!("Starting RemoteDesktop session");
 
         let proxy = RemoteDesktop::new().await?;
@@ -79,6 +84,17 @@ impl RemoteDesktopManager {
 
         // Get the selected devices from the request response
         let selected = response.response()?;
+
+        // Extract restore token from SelectedDevices (portal v4+)
+        // The token allows restoring this session without user interaction
+        let restore_token = selected.restore_token().map(|s| s.to_string());
+
+        if let Some(ref token) = restore_token {
+            info!("Restore token received from portal (length: {} chars)", token.len());
+            debug!("Restore token: {}", token);
+        } else {
+            debug!("No restore token in response (portal may not support persistence)");
+        }
 
         let stream_count = selected.streams().map(|s| s.len()).unwrap_or(0);
         info!(
@@ -136,7 +152,7 @@ impl RemoteDesktopManager {
 
         info!("🔒 FD {} ownership transferred (prevented auto-close)", raw_fd);
 
-        Ok((raw_fd, stream_info))
+        Ok((raw_fd, stream_info, restore_token))
     }
 
     /// Inject pointer motion (relative)

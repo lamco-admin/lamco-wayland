@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-12-31
+
+### Added
+- **Restore token support** for session persistence (Portal v4+ required)
+  - `create_session()` now returns `(PortalSessionHandle, Option<String>)` with restore token
+  - `start_session()` now returns restore token from portal response
+  - Enables unattended operation - no permission dialogs on subsequent runs
+  - Token should be stored securely and passed via `PortalConfig::restore_token`
+
+### Changed
+- **BREAKING:** `PortalManager::create_session()` return type changed from `Result<PortalSessionHandle>` to `Result<(PortalSessionHandle, Option<String>)>`
+- **BREAKING:** `RemoteDesktopManager::start_session()` return type changed from `Result<(RawFd, Vec<StreamInfo>)>` to `Result<(RawFd, Vec<StreamInfo>, Option<String>)>`
+- Default `persist_mode` changed from `DoNot` to `ExplicitlyRevoked` for better session persistence UX
+
+### Notes
+- Restore tokens are only available on Portal v4+ (GNOME 45+, KDE Plasma 6+)
+- Tokens should be stored securely (e.g., system keyring, encrypted file)
+- If portal doesn't support tokens, returns `None` (behavior unchanged for Portal v3)
+- See examples and documentation for proper token storage and restoration patterns
+
 ## [0.2.2] - 2025-12-24
 
 ### Fixed
