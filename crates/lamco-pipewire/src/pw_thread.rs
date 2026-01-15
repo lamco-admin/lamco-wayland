@@ -371,7 +371,7 @@ fn run_pipewire_main_loop(
         // Log periodic heartbeat
         if loop_iterations % 1000 == 0 {
             info!(
-                "🔄 PipeWire main loop heartbeat: {} iterations, {} streams active",
+                "PipeWire main loop heartbeat: {} iterations, {} streams active",
                 loop_iterations,
                 streams.len()
             );
@@ -484,7 +484,7 @@ fn run_pipewire_main_loop(
 
         if loop_iterations % 1000 == 0 {
             trace!(
-                "🔄 loop.iterate() returned {} (events processed this iteration)",
+                "loop.iterate() returned {} (events processed this iteration)",
                 events_processed
             );
         }
@@ -625,7 +625,7 @@ fn create_stream_on_thread(
     info!("   stream.capture-sink = true");
 
     // Create the stream
-    info!("🎬 Calling Stream::new() with properties");
+    info!("Calling Stream::new() with properties");
     let stream = Stream::new(core, &stream_name, props)
         .map_err(|e| PipeWireError::StreamCreationFailed(format!("Stream::new failed: {}", e)))?;
 
@@ -646,7 +646,7 @@ fn create_stream_on_thread(
         .add_local_listener::<()>()
         .state_changed(move |_stream, _user_data, old_state, new_state| {
             info!(
-                "🔄 Stream {} state changed: {:?} -> {:?}",
+                "Stream {} state changed: {:?} -> {:?}",
                 stream_id_for_callbacks, old_state, new_state
             );
 
@@ -681,9 +681,9 @@ fn create_stream_on_thread(
         })
         .process(move |stream, _user_data| {
             // This callback is called when a new frame buffer is available
-            info!("🎬 process() callback fired for stream {}", stream_id_for_callbacks);
+            info!("process() callback fired for stream {}", stream_id_for_callbacks);
             if let Some(mut buffer) = stream.dequeue_buffer() {
-                info!("🎬 Got buffer from stream {}", stream_id_for_callbacks);
+                info!("Got buffer from stream {}", stream_id_for_callbacks);
 
                 // Extract frame data from buffer
                 if let Some(data) = buffer.datas_mut().first_mut() {
@@ -699,7 +699,7 @@ fn create_stream_on_thread(
                     let fd = raw_data.fd as RawFd;
 
                     info!(
-                        "🎬 Buffer: type={}, size={}, offset={}, fd={}",
+                        "Buffer: type={}, size={}, offset={}, fd={}",
                         data_type.as_raw(),
                         size,
                         offset,
@@ -711,7 +711,7 @@ fn create_stream_on_thread(
                         libspa::buffer::DataType::MemPtr => {
                             if let Some(mapped_data) = data.data() {
                                 if offset + size <= mapped_data.len() {
-                                    info!("🎬 MemPtr buffer: copying {} bytes (offset={})", size, offset);
+                                    info!("MemPtr buffer: copying {} bytes (offset={})", size, offset);
                                     Some(mapped_data[offset..offset + size].to_vec())
                                 } else {
                                     warn!(
@@ -732,7 +732,7 @@ fn create_stream_on_thread(
                         libspa::buffer::DataType::MemFd => {
                             if let Some(mapped_data) = data.data() {
                                 if offset + size <= mapped_data.len() {
-                                    info!("🎬 MemFd buffer: copying {} bytes (offset={})", size, offset);
+                                    info!("MemFd buffer: copying {} bytes (offset={})", size, offset);
                                     Some(mapped_data[offset..offset + size].to_vec())
                                 } else {
                                     warn!(
@@ -745,16 +745,22 @@ fn create_stream_on_thread(
                                 }
                             } else if fd >= 0 {
                                 // Fallback: manual mmap of MemFd
-                                info!("🎬 MemFd buffer: using manual mmap (FD={})", fd);
-                                match mmap_fd_buffer(fd, size, offset) {
-                                    Ok(data) => Some(data),
-                                    Err(e) => {
-                                        warn!("Failed to mmap MemFd buffer: {}", e);
-                                        None
+                                // Check for empty/skip frames (size=0 is normal PipeWire behavior)
+                                if size == 0 {
+                                    debug!("MemFd buffer: size=0 (empty/skip frame), ignoring");
+                                    None
+                                } else {
+                                    info!("MemFd buffer: using manual mmap (FD={})", fd);
+                                    match mmap_fd_buffer(fd, size, offset) {
+                                        Ok(data) => Some(data),
+                                        Err(e) => {
+                                            warn!("Failed to mmap MemFd buffer: {}", e);
+                                            None
+                                        }
                                     }
                                 }
                             } else {
-                                warn!("MemFd buffer but no valid FD (fd={})", fd);
+                                debug!("MemFd buffer but no valid FD (fd={})", fd);
                                 None
                             }
                         }
@@ -762,80 +768,86 @@ fn create_stream_on_thread(
                         // DmaBuf: GPU memory buffer - use cached mmap to avoid syscalls
                         libspa::buffer::DataType::DmaBuf => {
                             if fd >= 0 {
-                                // Check cache first
-                                let mut cache = dmabuf_cache_for_process.borrow_mut();
-
-                                // Check cache first, or create new mapping
-                                let mapped_ptr_opt = if let Some(&(ptr, _sz)) = cache.get(&fd) {
-                                    // Use cached mapping (no syscall!)
-                                    debug!("🎬 DMA-BUF FD={}: using cached mmap", fd);
-                                    Some(ptr)
+                                // Check for empty/skip frames (size=0 is normal PipeWire behavior)
+                                if size == 0 {
+                                    debug!("DMA-BUF buffer: size=0 (empty/skip frame), ignoring");
+                                    None
                                 } else {
-                                    // First time seeing this FD - mmap it
-                                    info!("🎬 DMA-BUF buffer: mmapping {} bytes from FD={} (first time)", size, fd);
+                                    // Check cache first
+                                    let mut cache = dmabuf_cache_for_process.borrow_mut();
 
-                                    use nix::sys::mman::{mmap, MapFlags, ProtFlags};
-                                    use std::os::fd::BorrowedFd;
+                                    // Check cache first, or create new mapping
+                                    let mapped_ptr_opt = if let Some(&(ptr, _sz)) = cache.get(&fd) {
+                                        // Use cached mapping (no syscall!)
+                                        debug!("DMA-BUF FD={}: using cached mmap", fd);
+                                        Some(ptr)
+                                    } else {
+                                        // First time seeing this FD - mmap it
+                                        info!("DMA-BUF buffer: mmapping {} bytes from FD={} (first time)", size, fd);
 
-                                    // Calculate page-aligned mapping
-                                    // SAFETY: sysconf(_SC_PAGESIZE) always returns a valid value
-                                    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
-                                    let map_offset = (offset / page_size) * page_size;
-                                    let map_size = size + (offset - map_offset);
+                                        use nix::sys::mman::{mmap, MapFlags, ProtFlags};
+                                        use std::os::fd::BorrowedFd;
 
-                                    match NonZeroUsize::new(map_size) {
-                                        Some(nz_size) => {
-                                            // SAFETY: FD is valid from PipeWire buffer (valid during callback).
-                                            // We cache the mapping for reuse across frames.
-                                            unsafe {
-                                                let borrowed_fd = BorrowedFd::borrow_raw(fd);
-                                                match mmap(
-                                                    None,
-                                                    nz_size,
-                                                    ProtFlags::PROT_READ,
-                                                    MapFlags::MAP_SHARED,
-                                                    Some(borrowed_fd),
-                                                    map_offset as i64,
-                                                ) {
-                                                    Ok(ptr) => {
-                                                        cache.insert(fd, (ptr, map_size));
-                                                        info!("🎬 DMA-BUF mmap cached for FD={}", fd);
-                                                        Some(ptr)
-                                                    }
-                                                    Err(e) => {
-                                                        warn!("Failed to mmap DMA-BUF FD={}: {}", fd, e);
-                                                        None
+                                        // Calculate page-aligned mapping
+                                        // SAFETY: sysconf(_SC_PAGESIZE) always returns a valid value
+                                        let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+                                        let map_offset = (offset / page_size) * page_size;
+                                        let map_size = size + (offset - map_offset);
+
+                                        match NonZeroUsize::new(map_size) {
+                                            Some(nz_size) => {
+                                                // SAFETY: FD is valid from PipeWire buffer (valid during callback).
+                                                // We cache the mapping for reuse across frames.
+                                                unsafe {
+                                                    let borrowed_fd = BorrowedFd::borrow_raw(fd);
+                                                    match mmap(
+                                                        None,
+                                                        nz_size,
+                                                        ProtFlags::PROT_READ,
+                                                        MapFlags::MAP_SHARED,
+                                                        Some(borrowed_fd),
+                                                        map_offset as i64,
+                                                    ) {
+                                                        Ok(ptr) => {
+                                                            cache.insert(fd, (ptr, map_size));
+                                                            info!("DMA-BUF mmap cached for FD={}", fd);
+                                                            Some(ptr)
+                                                        }
+                                                        Err(e) => {
+                                                            warn!("Failed to mmap DMA-BUF FD={}: {}", fd, e);
+                                                            None
+                                                        }
                                                     }
                                                 }
                                             }
+                                            None => {
+                                                warn!("Invalid map size for DMA-BUF FD={}", fd);
+                                                None
+                                            }
                                         }
-                                        None => {
-                                            warn!("Invalid map size for DMA-BUF FD={}", fd);
-                                            None
-                                        }
-                                    }
-                                };
-
-                                // Copy data from mapping (cached or fresh)
-                                if let Some(mapped_ptr) = mapped_ptr_opt {
-                                    // SAFETY: mapped_ptr is valid from successful mmap above or cache.
-                                    // offset + size <= map_size was verified during mmap.
-                                    // Vec capacity is allocated before writing.
-                                    let result = unsafe {
-                                        let src_ptr = (mapped_ptr as *const u8).add(offset);
-                                        let mut vec = Vec::with_capacity(size);
-                                        std::ptr::copy_nonoverlapping(src_ptr, vec.as_mut_ptr(), size);
-                                        vec.set_len(size);
-                                        vec
                                     };
-                                    debug!("🎬 DMA-BUF: extracted {} bytes from mapping", result.len());
-                                    Some(result)
-                                } else {
-                                    warn!("Failed to get DMA-BUF mapping for FD={}", fd);
-                                    None
+
+                                    // Copy data from mapping (cached or fresh)
+                                    if let Some(mapped_ptr) = mapped_ptr_opt {
+                                        // SAFETY: mapped_ptr is valid from successful mmap above or cache.
+                                        // offset + size <= map_size was verified during mmap.
+                                        // Vec capacity is allocated before writing.
+                                        let result = unsafe {
+                                            let src_ptr = (mapped_ptr as *const u8).add(offset);
+                                            let mut vec = Vec::with_capacity(size);
+                                            std::ptr::copy_nonoverlapping(src_ptr, vec.as_mut_ptr(), size);
+                                            vec.set_len(size);
+                                            vec
+                                        };
+                                        debug!("DMA-BUF: extracted {} bytes from mapping", result.len());
+                                        Some(result)
+                                    } else {
+                                        warn!("Failed to get DMA-BUF mapping for FD={}", fd);
+                                        None
+                                    }
                                 }
                             } else {
-                                warn!("DMA-BUF buffer but no valid FD (fd={})", fd);
+                                debug!("DMA-BUF buffer but no valid FD (fd={})", fd);
                                 None
                             }
                         }
@@ -856,10 +868,34 @@ fn create_stream_on_thread(
                     };
 
                     if let Some(pixel_data) = pixel_data {
+                        // === BUFFER VALIDATION ===
+                        // PipeWire sometimes provides zero-size or undersized buffers.
+                        // These MUST be rejected early to prevent visual corruption.
+                        // See: wrd-server-specs/docs/QUALITY-ISSUE-ANALYSIS-2025-12-27.md
+
+                        let bytes_per_pixel = 4; // BGRA/BGRx = 4 bytes
+                        let min_expected_size = (config.width * config.height * bytes_per_pixel) as usize;
+
+                        if pixel_data.is_empty() {
+                            // Empty buffers are normal - GNOME portal sends them as "no change" signals
+                            debug!("Skipping empty buffer (size=0) - compositor indicates no change");
+                            return;
+                        }
+
+                        if pixel_data.len() < min_expected_size {
+                            warn!(
+                                "⚠️  Rejecting undersized buffer: {} bytes < {} expected for {}×{}",
+                                pixel_data.len(),
+                                min_expected_size,
+                                config.width,
+                                config.height
+                            );
+                            return;
+                        }
+
                         // Calculate proper stride with alignment
                         // CRITICAL: Don't use (size/height) - that's wrong if buffer has padding
                         // Proper stride = width * bytes_per_pixel, aligned to 16 bytes
-                        let bytes_per_pixel = 4; // BGRA/BGRx = 4 bytes
                         let calculated_stride = ((config.width * bytes_per_pixel + 15) / 16) * 16;
 
                         // Verify our calculated stride matches buffer
@@ -871,6 +907,12 @@ fn create_stream_on_thread(
                             // This handles cases where compositor uses different alignment
                             (size / config.height as usize) as u32
                         };
+
+                        // Reject frames with zero stride (indicates corrupt buffer metadata)
+                        if actual_stride == 0 {
+                            warn!("⚠️  Rejecting buffer with zero stride - corrupt metadata");
+                            return;
+                        }
 
                         // Log stride calculation details for first few frames
                         static LOGGED_FRAMES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
@@ -951,16 +993,19 @@ fn create_stream_on_thread(
     info!("✅ Stream {} callbacks registered successfully", stream_id);
 
     // Connect stream to node with format parameters
-    let params = build_stream_parameters(&config)?;
+    let param_bytes = build_stream_parameters(&config)?;
+
+    // Convert bytes to Pod reference (Pod is a borrowed type referencing the bytes)
+    let pod = Pod::from_bytes(&param_bytes)
+        .ok_or_else(|| PipeWireError::FormatNegotiationFailed("Failed to parse format parameters".to_string()))?;
+
     info!(
-        "📋 Stream {} connecting with {} format parameters",
+        "📋 Stream {} connecting with format parameters ({} bytes)",
         stream_id,
-        params.len()
+        param_bytes.len()
     );
 
-    // Convert Vec<Pod> to Vec<&Pod> for connect() API
-    let param_refs: Vec<&Pod> = params.iter().collect();
-    let mut param_slice = param_refs;
+    let mut params = [pod];
 
     info!(
         "🔌 Calling stream.connect() for stream {} with flags: AUTOCONNECT | MAP_BUFFERS | RT_PROCESS",
@@ -980,7 +1025,7 @@ fn create_stream_on_thread(
             Direction::Input,
             None, // PW_ID_ANY - let PipeWire use node.target property
             StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS | StreamFlags::RT_PROCESS,
-            &mut param_slice,
+            &mut params,
         )
         .map_err(|e| PipeWireError::ConnectionFailed(format!("Stream connect failed: {}", e)))?;
 
@@ -1013,6 +1058,7 @@ fn create_stream_on_thread(
 /// Build stream parameters for format negotiation
 ///
 /// Constructs SPA Pod parameters for video format, size, and framerate negotiation.
+/// Returns raw bytes that can be converted to a Pod reference at the call site.
 ///
 /// # Format Negotiation Strategy
 ///
@@ -1023,20 +1069,93 @@ fn create_stream_on_thread(
 ///
 /// We provide explicit format parameters so PipeWire can complete negotiation.
 /// This enables hardware acceleration when available (DMA-BUF) while maintaining compatibility.
-fn build_stream_parameters(config: &StreamConfig) -> Result<Vec<Pod>> {
+fn build_stream_parameters(config: &StreamConfig) -> Result<Vec<u8>> {
+    use pipewire::spa;
+    use pipewire::spa::pod::serialize::PodSerializer;
+    use pipewire::spa::pod::Value;
+    use std::io::Cursor;
+
     info!(
-        "🎬 Attempting to build format parameters: {}x{} @ {}fps",
+        "Building format parameters: {}x{} @ {}fps",
         config.width, config.height, config.framerate
     );
 
-    // Try using pipewire-rs builder API instead of manual Pod construction
-    // This might be simpler and more reliable
+    // Build a video format object using pipewire-rs macros
+    // This specifies our preferred formats, size range, and framerate range
+    let format_obj = spa::pod::object!(
+        spa::utils::SpaTypes::ObjectParamFormat,
+        spa::param::ParamType::EnumFormat,
+        // Media type: Video
+        spa::pod::property!(
+            spa::param::format::FormatProperties::MediaType,
+            Id,
+            spa::param::format::MediaType::Video
+        ),
+        // Media subtype: Raw (uncompressed)
+        spa::pod::property!(
+            spa::param::format::FormatProperties::MediaSubtype,
+            Id,
+            spa::param::format::MediaSubtype::Raw
+        ),
+        // Video formats we accept (in order of preference)
+        // BGRx/BGRA are preferred as they're common on Linux desktops
+        spa::pod::property!(
+            spa::param::format::FormatProperties::VideoFormat,
+            Choice,
+            Enum,
+            Id,
+            spa::param::video::VideoFormat::BGRx, // Default/preferred
+            spa::param::video::VideoFormat::BGRx,
+            spa::param::video::VideoFormat::BGRA,
+            spa::param::video::VideoFormat::RGBx,
+            spa::param::video::VideoFormat::RGBA
+        ),
+        // Video size range (min to max, with our preferred size as default)
+        spa::pod::property!(
+            spa::param::format::FormatProperties::VideoSize,
+            Choice,
+            Range,
+            Rectangle,
+            spa::utils::Rectangle {
+                width: config.width,
+                height: config.height
+            },
+            spa::utils::Rectangle { width: 1, height: 1 },
+            spa::utils::Rectangle {
+                width: 8192,
+                height: 8192
+            }
+        ),
+        // Framerate range (0/1 to 1000/1, with our target as default)
+        spa::pod::property!(
+            spa::param::format::FormatProperties::VideoFramerate,
+            Choice,
+            Range,
+            Fraction,
+            spa::utils::Fraction {
+                num: config.framerate,
+                denom: 1
+            },
+            spa::utils::Fraction { num: 0, denom: 1 },
+            spa::utils::Fraction { num: 1000, denom: 1 }
+        ),
+    );
 
-    // For now, return empty and let PipeWire auto-negotiate
-    // We'll need to investigate why format params aren't working
-    warn!("⚠️  Format parameter building not working - using auto-negotiation");
-    warn!("⚠️  This may cause stream to not start on some compositors");
-    Ok(Vec::new())
+    // Serialize the object to bytes
+    let serialized = PodSerializer::serialize(Cursor::new(Vec::new()), &Value::Object(format_obj)).map_err(|e| {
+        warn!("Failed to serialize format parameters: {:?}", e);
+        PipeWireError::FormatNegotiationFailed(format!("Format serialization failed: {:?}", e))
+    })?;
+
+    let bytes = serialized.0.into_inner();
+
+    info!("✅ Format parameters built successfully ({} bytes)", bytes.len());
+    debug!(
+        "   Preferred format: BGRx, size: {}x{}, fps: {}",
+        config.width, config.height, config.framerate
+    );
+
+    Ok(bytes)
 }
 
 #[cfg(test)]

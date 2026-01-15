@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-01-15
+
+### Fixed
+
+- Handle PipeWire size=0 "skip" frames gracefully
+  - MemFd buffers with size=0 now logged and ignored instead of causing mmap failures
+  - DmaBuf buffers with size=0 now logged and ignored instead of causing mmap failures
+  - Eliminates "Invalid map size" errors during periods of no screen activity
+
+### Changed
+
+- Removed emojis from log messages for professional consistency
+
 ## [0.1.3] - 2025-12-23
 
 ### Changed
@@ -80,6 +93,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Linux only (Wayland required, PipeWire required)
 - Tested on GNOME, KDE Plasma, Sway
 
-[Unreleased]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.2...HEAD
+[Unreleased]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.4...HEAD
+[0.1.4]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.3...lamco-pipewire-v0.1.4
+[0.1.3]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.2...lamco-pipewire-v0.1.3
 [0.1.2]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.1...lamco-pipewire-v0.1.2
 [0.1.1]: https://github.com/lamco-admin/lamco-wayland/releases/tag/lamco-pipewire-v0.1.1
