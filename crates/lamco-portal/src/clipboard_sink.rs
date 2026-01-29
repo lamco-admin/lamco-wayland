@@ -57,8 +57,8 @@ use crate::clipboard::{ClipboardManager, SelectionTransferEvent};
 use ashpd::desktop::remote_desktop::RemoteDesktop;
 use ashpd::desktop::Session;
 use lamco_clipboard_core::{
-    ClipboardChange, ClipboardChangeReceiver, ClipboardChangeReceiverInner, ClipboardError, ClipboardResult,
-    ClipboardSink, FileInfo,
+    ClipboardChange, ClipboardChangeReceiver, ClipboardChangeReceiverInner, ClipboardError,
+    ClipboardResult, ClipboardSink, FileInfo,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -130,7 +130,10 @@ impl PortalClipboardSink {
     ///
     /// * `clipboard` - Portal clipboard manager instance
     /// * `session` - Active Portal session (wrapped in Arc<Mutex> for sharing)
-    pub fn new(clipboard: ClipboardManager, session: Arc<Mutex<Session<'static, RemoteDesktop<'static>>>>) -> Self {
+    pub fn new(
+        clipboard: ClipboardManager,
+        session: Arc<Mutex<Session<'static, RemoteDesktop<'static>>>>,
+    ) -> Self {
         let (change_tx, change_rx) = mpsc::unbounded_channel();
         let (transfer_tx, transfer_rx) = mpsc::unbounded_channel();
 
@@ -154,7 +157,9 @@ impl PortalClipboardSink {
         let (owner_tx, mut owner_rx) = mpsc::unbounded_channel::<Vec<String>>();
 
         // Start the Portal's owner changed listener
-        self.clipboard.start_owner_changed_listener(owner_tx).await?;
+        self.clipboard
+            .start_owner_changed_listener(owner_tx)
+            .await?;
 
         // Bridge Portal events to ClipboardChange format
         let change_tx = self.change_tx.clone();
@@ -203,7 +208,10 @@ impl PortalClipboardSink {
                 let mime_type = event.mime_type.clone();
                 let serial = event.serial;
 
-                debug!("SelectionTransfer received: mime={}, serial={}", mime_type, serial);
+                debug!(
+                    "SelectionTransfer received: mime={}, serial={}",
+                    mime_type, serial
+                );
 
                 let data = {
                     let pending = pending_data.read().await;
@@ -218,7 +226,12 @@ impl PortalClipboardSink {
                             .await
                         {
                             Ok(()) => {
-                                info!("Provided {} bytes for {} (serial {})", data.len(), mime_type, serial);
+                                info!(
+                                    "Provided {} bytes for {} (serial {})",
+                                    data.len(),
+                                    mime_type,
+                                    serial
+                                );
                                 // Remove from pending after successful write
                                 let mut pending = pending_data.write().await;
                                 pending.remove(&mime_type);
@@ -229,7 +242,10 @@ impl PortalClipboardSink {
                         }
                     }
                     None => {
-                        warn!("No pending data for mime type: {} (serial {})", mime_type, serial);
+                        warn!(
+                            "No pending data for mime type: {} (serial {})",
+                            mime_type, serial
+                        );
                         // Notify Portal of failure
                         let session_guard = session.lock().await;
                         let _ = clipboard
@@ -387,7 +403,11 @@ impl ClipboardSink for PortalClipboardSink {
             .await
             .map_err(|e| ClipboardError::Backend(e.to_string()))?;
 
-        debug!("Read {} bytes from Portal clipboard ({})", data.len(), mime_type);
+        debug!(
+            "Read {} bytes from Portal clipboard ({})",
+            data.len(),
+            mime_type
+        );
         Ok(data)
     }
 
@@ -431,7 +451,11 @@ impl ClipboardSink for PortalClipboardSink {
     async fn get_file_list(&self) -> ClipboardResult<Vec<FileInfo>> {
         // Try to read text/uri-list from clipboard
         let session = self.session.lock().await;
-        let uri_data = match self.clipboard.read_local_clipboard(&session, "text/uri-list").await {
+        let uri_data = match self
+            .clipboard
+            .read_local_clipboard(&session, "text/uri-list")
+            .await
+        {
             Ok(data) => data,
             Err(_) => {
                 // Also try x-special/gnome-copied-files (GNOME file manager format)
@@ -459,7 +483,12 @@ impl ClipboardSink for PortalClipboardSink {
     ///
     /// Uses the cached file list from `get_file_list()`.
     /// Files are read directly from the local filesystem.
-    async fn read_file_chunk(&self, index: u32, offset: u64, size: u32) -> ClipboardResult<Vec<u8>> {
+    async fn read_file_chunk(
+        &self,
+        index: u32,
+        offset: u64,
+        size: u32,
+    ) -> ClipboardResult<Vec<u8>> {
         use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
         let cached = self.cached_files.read().await;
@@ -467,9 +496,9 @@ impl ClipboardSink for PortalClipboardSink {
         let index_usize = usize::try_from(index)
             .map_err(|_| ClipboardError::InvalidState(format!("file index {} too large", index)))?;
 
-        let file_entry = cached
-            .get(index_usize)
-            .ok_or_else(|| ClipboardError::InvalidState(format!("file index {} out of range", index)))?;
+        let file_entry = cached.get(index_usize).ok_or_else(|| {
+            ClipboardError::InvalidState(format!("file index {} out of range", index))
+        })?;
 
         let path = &file_entry.path;
 
@@ -552,7 +581,9 @@ impl ClipboardSink for PortalClipboardSink {
                 }
                 counter += 1;
                 if counter > 1000 {
-                    return Err(ClipboardError::Backend("too many filename conflicts".to_string()));
+                    return Err(ClipboardError::Backend(
+                        "too many filename conflicts".to_string(),
+                    ));
                 }
             }
         } else {
@@ -638,7 +669,10 @@ mod tests {
     fn test_percent_decode() {
         assert_eq!(percent_decode("hello%20world"), "hello world");
         assert_eq!(percent_decode("/path/to/file"), "/path/to/file");
-        assert_eq!(percent_decode("/path%2Fwith%2Fencoded"), "/path/with/encoded");
+        assert_eq!(
+            percent_decode("/path%2Fwith%2Fencoded"),
+            "/path/with/encoded"
+        );
     }
 
     #[test]

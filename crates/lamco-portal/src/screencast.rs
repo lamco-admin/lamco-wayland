@@ -23,11 +23,15 @@ impl ScreenCastManager {
     /// ashpd creates its own connections internally.
     pub async fn new(_connection: zbus::Connection, config: &PortalConfig) -> Result<Self> {
         info!("Initializing ScreenCast portal manager");
-        Ok(Self { config: config.clone() })
+        Ok(Self {
+            config: config.clone(),
+        })
     }
 
     /// Create a screencast session
-    pub async fn create_session(&self) -> Result<ashpd::desktop::Session<'static, Screencast<'static>>> {
+    pub async fn create_session(
+        &self,
+    ) -> Result<ashpd::desktop::Session<'static, Screencast<'static>>> {
         info!("Creating ScreenCast session");
 
         let proxy = Screencast::new().await?;
@@ -53,7 +57,10 @@ impl ScreenCastManager {
         // Get the streams from the request response
         let streams = streams_request.response()?;
 
-        info!("Screencast started with {} streams", streams.streams().len());
+        info!(
+            "Screencast started with {} streams",
+            streams.streams().len()
+        );
 
         // Get PipeWire FD
         let fd = proxy.open_pipe_wire_remote(session).await?;

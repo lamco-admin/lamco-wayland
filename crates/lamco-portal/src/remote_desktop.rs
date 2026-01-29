@@ -23,11 +23,15 @@ impl RemoteDesktopManager {
     /// ashpd creates its own connections internally.
     pub async fn new(_connection: zbus::Connection, config: &PortalConfig) -> Result<Self> {
         info!("Initializing RemoteDesktop portal manager");
-        Ok(Self { config: config.clone() })
+        Ok(Self {
+            config: config.clone(),
+        })
     }
 
     /// Create a remote desktop session
-    pub async fn create_session(&self) -> Result<ashpd::desktop::Session<'static, RemoteDesktop<'static>>> {
+    pub async fn create_session(
+        &self,
+    ) -> Result<ashpd::desktop::Session<'static, RemoteDesktop<'static>>> {
         info!("Creating RemoteDesktop session");
 
         let proxy = RemoteDesktop::new().await?;
@@ -90,7 +94,10 @@ impl RemoteDesktopManager {
         let restore_token = selected.restore_token().map(|s| s.to_string());
 
         if let Some(ref token) = restore_token {
-            info!("Restore token received from portal (length: {} chars)", token.len());
+            info!(
+                "Restore token received from portal (length: {} chars)",
+                token.len()
+            );
             debug!("Restore token: {}", token);
         } else {
             debug!("No restore token in response (portal may not support persistence)");
@@ -142,15 +149,14 @@ impl RemoteDesktopManager {
             })
             .unwrap_or_default();
 
-        info!("📊 Total streams from Portal: {}", stream_info.len());
+        info!("Total streams from Portal: {}", stream_info.len());
 
-        // CRITICAL: Prevent FD from being closed
-        // PipeWireThreadManager will take ownership via from_raw_fd()
-        // If we return OwnedFd, it will be closed when PortalSessionHandle drops
+        // Prevent FD from being closed - PipeWire thread will take ownership.
+        // Returning OwnedFd would auto-close when PortalSessionHandle drops.
         let raw_fd = fd.as_raw_fd();
         std::mem::forget(fd); // Leak the OwnedFd to prevent auto-close
 
-        info!("🔒 FD {} ownership transferred (prevented auto-close)", raw_fd);
+        info!("FD {} ownership transferred (prevented auto-close)", raw_fd);
 
         Ok((raw_fd, stream_info, restore_token))
     }
@@ -175,7 +181,10 @@ impl RemoteDesktopManager {
         x: f64,
         y: f64,
     ) -> Result<()> {
-        debug!("Injecting pointer motion: stream={}, x={:.2}, y={:.2}", stream, x, y);
+        debug!(
+            "Injecting pointer motion: stream={}, x={:.2}, y={:.2}",
+            stream, x, y
+        );
         let proxy = RemoteDesktop::new().await?;
         proxy
             .notify_pointer_motion_absolute(session, stream, x, y)
@@ -192,9 +201,16 @@ impl RemoteDesktopManager {
         button: i32,
         pressed: bool,
     ) -> Result<()> {
-        debug!("Injecting pointer button: button={}, pressed={}", button, pressed);
+        debug!(
+            "Injecting pointer button: button={}, pressed={}",
+            button, pressed
+        );
         let proxy = RemoteDesktop::new().await?;
-        let state = if pressed { KeyState::Pressed } else { KeyState::Released };
+        let state = if pressed {
+            KeyState::Pressed
+        } else {
+            KeyState::Released
+        };
         proxy
             .notify_pointer_button(session, button, state)
             .await
@@ -224,9 +240,16 @@ impl RemoteDesktopManager {
         keycode: i32,
         pressed: bool,
     ) -> Result<()> {
-        debug!("Injecting keyboard: keycode={}, pressed={}", keycode, pressed);
+        debug!(
+            "Injecting keyboard: keycode={}, pressed={}",
+            keycode, pressed
+        );
         let proxy = RemoteDesktop::new().await?;
-        let state = if pressed { KeyState::Pressed } else { KeyState::Released };
+        let state = if pressed {
+            KeyState::Pressed
+        } else {
+            KeyState::Released
+        };
         proxy
             .notify_keyboard_keycode(session, keycode, state)
             .await
@@ -246,7 +269,9 @@ mod tests {
         let connection = zbus::Connection::session().await.unwrap();
         let config = PortalConfig::default();
 
-        let _manager = RemoteDesktopManager::new(connection, &config).await.unwrap();
+        let _manager = RemoteDesktopManager::new(connection, &config)
+            .await
+            .unwrap();
 
         // This will trigger permission dialog
         // let session = manager.create_session().await;

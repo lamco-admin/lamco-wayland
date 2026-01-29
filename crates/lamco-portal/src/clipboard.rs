@@ -16,7 +16,7 @@ use ashpd::desktop::remote_desktop::RemoteDesktop;
 use ashpd::desktop::Session;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 /// Selection transfer event from Portal
 #[derive(Debug, Clone)]
@@ -47,12 +47,15 @@ impl ClipboardManager {
     /// Clipboard manager instance with listeners started
     pub async fn new() -> crate::Result<Self> {
         info!("Initializing Portal Clipboard manager");
+        trace!("Creating ashpd Clipboard proxy (uses global D-Bus connection)");
 
-        let clipboard = Clipboard::new()
-            .await
-            .map_err(|e| crate::PortalError::clipboard(format!("Failed to create Portal Clipboard: {}", e)))?;
+        let clipboard = Clipboard::new().await.map_err(|e| {
+            warn!(error = %e, "Failed to create Portal Clipboard proxy");
+            crate::PortalError::clipboard(format!("Failed to create Portal Clipboard: {}", e))
+        })?;
 
-        info!("Portal Clipboard created (will be enabled when session is ready)");
+        trace!("ashpd Clipboard proxy created successfully");
+        info!("Portal Clipboard manager created (will be enabled when session is ready)");
 
         let manager = Self {
             clipboard: Arc::new(clipboard),
@@ -86,7 +89,10 @@ impl ClipboardManager {
                     let mut stream = Box::pin(stream);
 
                     while let Some((_, mime_type, serial)) = stream.next().await {
-                        debug!("SelectionTransfer signal: mime={}, serial={}", mime_type, serial);
+                        debug!(
+                            "SelectionTransfer signal: mime={}, serial={}",
+                            mime_type, serial
+                        );
 
                         let event = SelectionTransferEvent { mime_type, serial };
 
@@ -129,19 +135,27 @@ impl ClipboardManager {
 
             match stream_result {
                 Ok(stream) => {
-                    info!("SelectionOwnerChanged stream created successfully - waiting for signals");
+                    info!(
+                        "SelectionOwnerChanged stream created successfully - waiting for signals"
+                    );
                     let mut stream = Box::pin(stream);
                     let mut event_count = 0;
 
                     while let Some((_, change)) = stream.next().await {
                         event_count += 1;
-                        info!("SelectionOwnerChanged event #{}: received from Portal", event_count);
+                        info!(
+                            "SelectionOwnerChanged event #{}: received from Portal",
+                            event_count
+                        );
 
                         // Check if we are the owner (we just set the clipboard)
                         let is_owner = change.session_is_owner().unwrap_or(false);
                         let mime_types = change.mime_types();
 
-                        info!("   session_is_owner: {}, mime_types: {:?}", is_owner, mime_types);
+                        info!(
+                            "   session_is_owner: {}, mime_types: {:?}",
+                            is_owner, mime_types
+                        );
 
                         if is_owner {
                             // We own the clipboard (we just announced RDP data) - ignore
@@ -162,10 +176,13 @@ impl ClipboardManager {
                         }
                     }
 
-                    warn!("SelectionOwnerChanged listener task ended after {} events", event_count);
+                    warn!(
+                        "SelectionOwnerChanged listener task ended after {} events",
+                        event_count
+                    );
                 }
                 Err(e) => {
-                    error!("CRITICAL: Failed to receive SelectionOwnerChanged stream: {:#}", e);
+                    error!("Failed to receive SelectionOwnerChanged stream: {:#}", e);
                     error!("This means Linux→Windows clipboard will NOT work");
                     error!("Portal backend may not support this signal, or permission denied");
                 }
@@ -177,12 +194,37 @@ impl ClipboardManager {
     }
 
     /// Request clipboard access for session
-    pub async fn enable_for_session(&self, session: &Session<'_, RemoteDesktop<'_>>) -> crate::Result<()> {
-        self.clipboard.request(session).await.map_err(|e| {
-            crate::PortalError::clipboard(format!("Failed to request clipboard access for session: {}", e))
-        })?;
-        info!("Portal Clipboard enabled for session");
-        Ok(())
+    ///
+    /// This must be called BEFORE the session is started (session state must be INIT).
+    /// Per xdg-desktop-portal source, clipboard.request() requires:
+    ///   1. clipboard_requested flag must be FALSE
+    ///   2. RemoteDesktop backend version >= 2
+    ///   3. Session state must be INIT
+    pub async fn enable_for_session(
+        &self,
+        session: &Session<'_, RemoteDesktop<'_>>,
+    ) -> crate::Result<()> {
+        info!("Requesting clipboard access for session");
+        trace!("Calling clipboard.request() - requires session state INIT");
+
+        match self.clipboard.request(session).await {
+            Ok(()) => {
+                info!("Portal Clipboard enabled for session");
+                Ok(())
+            }
+            Err(e) => {
+                warn!(
+                    error = %e,
+                    error_debug = ?e,
+                    "clipboard.request() failed"
+                );
+                trace!("Possible causes: state != INIT, already requested, or RD version < 2");
+                Err(crate::PortalError::clipboard(format!(
+                    "Failed to request clipboard access for session: {}",
+                    e
+                )))
+            }
+        }
     }
 
     /// Announce RDP clipboard formats to Wayland (delayed rendering)
@@ -209,9 +251,15 @@ impl ClipboardManager {
         self.clipboard
             .set_selection(session, &mime_refs)
             .await
-            .map_err(|e| crate::PortalError::clipboard(format!("Failed to set Portal selection: {}", e)))?;
+            .map_err(|e| {
+                crate::PortalError::clipboard(format!("Failed to set Portal selection: {}", e))
+            })?;
 
-        info!("Announced {} RDP formats to Portal: {:?}", mime_types.len(), mime_types);
+        info!(
+            "Announced {} RDP formats to Portal: {:?}",
+            mime_types.len(),
+            mime_types
+        );
         Ok(())
     }
 
@@ -230,33 +278,36 @@ impl ClipboardManager {
     ) -> crate::Result<()> {
         use tokio::io::AsyncWriteExt;
 
-        // Get write file descriptor from Portal
         let fd = clipboard
             .selection_write(session, serial)
             .await
-            .map_err(|e| crate::PortalError::clipboard(format!("Failed to get SelectionWrite fd: {}", e)))?;
+            .map_err(|e| {
+                crate::PortalError::clipboard(format!("Failed to get SelectionWrite fd: {}", e))
+            })?;
 
-        // Convert zvariant::OwnedFd to File
-        // zvariant OwnedFd is an enum Fd::Owned(std::os::fd::OwnedFd)
-        // Extract the inner OwnedFd and convert to File
+        // zvariant wraps FDs in Fd::Owned enum - extract and convert for tokio async I/O
         let std_fd: std::os::fd::OwnedFd = fd.into();
         let std_file = std::fs::File::from(std_fd);
         let mut file = tokio::fs::File::from_std(std_file);
 
-        // Write data to fd
         file.write_all(data).await?;
         file.flush().await?;
-        drop(file); // Close fd
-
-        // Notify Portal of success
+        drop(file);
         clipboard
             .selection_write_done(session, serial, true)
             .await
             .map_err(|e| {
-                crate::PortalError::clipboard(format!("Failed to notify Portal of write completion: {}", e))
+                crate::PortalError::clipboard(format!(
+                    "Failed to notify Portal of write completion: {}",
+                    e
+                ))
             })?;
 
-        info!("Provided {} bytes to Portal (serial {})", data.len(), serial);
+        info!(
+            "Provided {} bytes to Portal (serial {})",
+            data.len(),
+            serial
+        );
         Ok(())
     }
 
@@ -289,14 +340,14 @@ impl ClipboardManager {
             .clipboard
             .selection_read(session, mime_type)
             .await
-            .map_err(|e| crate::PortalError::clipboard(format!("Failed to get SelectionRead fd: {}", e)))?;
+            .map_err(|e| {
+                crate::PortalError::clipboard(format!("Failed to get SelectionRead fd: {}", e))
+            })?;
 
-        // Convert zvariant::OwnedFd to File
         let std_fd: std::os::fd::OwnedFd = fd.into();
         let mut std_file = std::fs::File::from(std_fd);
 
-        // Portal returns a non-blocking pipe FD. We need to set it to blocking mode
-        // before reading, otherwise read_to_end() will fail with EAGAIN.
+        // Portal returns non-blocking pipe FD - set to blocking mode to avoid EAGAIN errors.
         let raw_fd = std_file.as_raw_fd();
         // SAFETY: raw_fd is a valid file descriptor from std_file.as_raw_fd()
         // fcntl F_GETFL returns the file status flags or -1 on error
@@ -307,7 +358,6 @@ impl ClipboardManager {
             unsafe { libc::fcntl(raw_fd, libc::F_SETFL, flags & !libc::O_NONBLOCK) };
         }
 
-        // Read synchronously on blocking threadpool (spawn_blocking)
         let result = tokio::task::spawn_blocking(move || {
             let mut data = Vec::new();
             std_file.read_to_end(&mut data)?;
@@ -315,9 +365,15 @@ impl ClipboardManager {
         })
         .await
         .map_err(|e| crate::PortalError::clipboard(format!("Join error reading clipboard: {}", e)))?
-        .map_err(|e| crate::PortalError::clipboard(format!("I/O error reading clipboard: {}", e)))?;
+        .map_err(|e| {
+            crate::PortalError::clipboard(format!("I/O error reading clipboard: {}", e))
+        })?;
 
-        info!("Read {} bytes from local clipboard ({})", result.len(), mime_type);
+        info!(
+            "Read {} bytes from local clipboard ({})",
+            result.len(),
+            mime_type
+        );
         Ok(result)
     }
 
@@ -334,48 +390,51 @@ impl ClipboardManager {
     ) -> crate::Result<()> {
         use tokio::io::AsyncWriteExt;
 
-        info!(
-            "Portal write_selection_data called: serial={}, data_len={} bytes",
-            serial,
-            data.len()
+        debug!(
+            "Writing {} bytes to Portal clipboard (serial {})",
+            data.len(),
+            serial
         );
 
-        // Get write file descriptor from Portal
-        info!("Calling clipboard.selection_write(session, serial={})...", serial);
         let fd = self
             .clipboard
             .selection_write(session, serial)
             .await
-            .map_err(|e| crate::PortalError::clipboard(format!("Failed to get SelectionWrite fd: {}", e)))?;
-
-        info!("Got FD from selection_write: {:?}", fd);
-
-        // Convert zvariant::OwnedFd to tokio File
+            .map_err(|e| {
+                crate::PortalError::clipboard(format!("Failed to get SelectionWrite fd: {}", e))
+            })?;
         let std_fd: std::os::fd::OwnedFd = fd.into();
         let std_file = std::fs::File::from(std_fd);
         let mut file = tokio::fs::File::from_std(std_file);
 
-        // Write data to file descriptor
         match file.write_all(&data).await {
             Ok(()) => {
                 file.flush().await?;
-                drop(file); // Close fd before notifying Portal
+                drop(file);
 
-                // Notify Portal of successful write
                 self.clipboard
                     .selection_write_done(session, serial, true)
                     .await
                     .map_err(|e| {
-                        crate::PortalError::clipboard(format!("Failed to notify Portal of write completion: {}", e))
+                        crate::PortalError::clipboard(format!(
+                            "Failed to notify write completion: {}",
+                            e
+                        ))
                     })?;
 
-                info!("Wrote {} bytes to Portal clipboard (serial {})", data.len(), serial);
+                info!(
+                    "Wrote {} bytes to Portal clipboard (serial {})",
+                    data.len(),
+                    serial
+                );
                 Ok(())
             }
             Err(e) => {
-                drop(file); // Close fd on error
-                            // Notify Portal of failed write
-                let _ = self.clipboard.selection_write_done(session, serial, false).await;
+                drop(file);
+                let _ = self
+                    .clipboard
+                    .selection_write_done(session, serial, false)
+                    .await;
                 Err(crate::PortalError::clipboard(format!(
                     "Failed to write clipboard data: {}",
                     e
