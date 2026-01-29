@@ -139,7 +139,7 @@
 //! Permissions can be remembered per-application using [`ashpd::desktop::PersistMode::Application`].
 
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 pub mod clipboard;
 pub mod config;
@@ -243,12 +243,20 @@ impl PortalManager {
         // Connect to session D-Bus
         let connection = zbus::Connection::session().await?;
 
-        debug!("Connected to D-Bus session bus");
+        // Log connection details for debugging session issues
+        if let Some(unique_name) = connection.unique_name() {
+            debug!(
+                dbus_unique_name = %unique_name,
+                "Connected to D-Bus session bus"
+            );
+        } else {
+            debug!("Connected to D-Bus session bus (no unique name yet)");
+        }
 
-        // Initialize portal managers
         let screencast = Arc::new(ScreenCastManager::new(connection.clone(), &config).await?);
 
-        let remote_desktop = Arc::new(RemoteDesktopManager::new(connection.clone(), &config).await?);
+        let remote_desktop =
+            Arc::new(RemoteDesktopManager::new(connection.clone(), &config).await?);
 
         // Clipboard manager requires a RemoteDesktop session
         // It will be created after session is established in create_session_with_clipboard()
@@ -322,58 +330,111 @@ impl PortalManager {
     ) -> Result<(PortalSessionHandle, Option<String>)> {
         info!("Creating combined portal session (ScreenCast + RemoteDesktop)");
 
-        // Create RemoteDesktop session (this type of session can include screen sharing)
-        let remote_desktop_session = self
-            .remote_desktop
-            .create_session()
-            .await
-            .map_err(|e| PortalError::session_creation(format!("RemoteDesktop session: {}", e)))?;
+        // RemoteDesktop session type supports both input injection and screen sharing
+        let remote_desktop_session =
+            self.remote_desktop.create_session().await.map_err(|e| {
+                PortalError::session_creation(format!("RemoteDesktop session: {}", e))
+            })?;
 
-        info!("RemoteDesktop session created");
+        // Log session creation for clipboard debugging
+        // Note: ashpd Session.path() is private, so we generate our own tracking ID
+        let session_tracking_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
+        info!(
+            session_id = %session_tracking_id,
+            "RemoteDesktop session created"
+        );
+        trace!(
+            session_id = %session_tracking_id,
+            "Session state is INIT (required for clipboard.request)"
+        );
 
-        // Select devices for input injection (from config)
-        self.remote_desktop
-            .select_devices(&remote_desktop_session, self.config.devices)
-            .await
-            .map_err(|e| PortalError::session_creation(format!("Device selection: {}", e)))?;
-
-        info!("Input devices selected from config");
-
-        // CRITICAL FIX: Also use ScreenCast to select screen sources
-        // This is what makes screens available for sharing
-        let screencast_proxy = ashpd::desktop::screencast::Screencast::new().await?;
-
-        screencast_proxy
-            .select_sources(
-                &remote_desktop_session,              // Use same session
-                self.config.cursor_mode,              // From config
-                self.config.source_type,              // From config (already BitFlags)
-                self.config.allow_multiple,           // From config
-                self.config.restore_token.as_deref(), // From config
-                self.config.persist_mode,             // From config
-            )
-            .await
-            .map_err(|e| PortalError::session_creation(format!("Source selection: {}", e)))?;
-
-        info!("Screen sources selected - permission dialog will appear");
-
-        // Request clipboard access BEFORE starting session (required by Portal spec)
+        // Portal spec requires clipboard.request() when session state is INIT,
+        // which means we must call it before SelectDevices or SelectSources.
         if let Some(clipboard_mgr) = clipboard {
-            info!("Requesting clipboard access for session");
-            if let Err(e) = clipboard_mgr.portal_clipboard().request(&remote_desktop_session).await {
-                warn!("Failed to request clipboard access: {}", e);
-                warn!("Clipboard will not be available");
-            } else {
-                info!("Clipboard access requested for session");
+            debug!(session_id = %session_tracking_id, "Requesting clipboard access");
+
+            match clipboard_mgr
+                .portal_clipboard()
+                .request(&remote_desktop_session)
+                .await
+            {
+                Ok(()) => {
+                    info!(session_id = %session_tracking_id, "Clipboard enabled for session");
+                }
+                Err(e) => {
+                    warn!(
+                        session_id = %session_tracking_id,
+                        error = %e,
+                        "Clipboard request failed"
+                    );
+                    if format!("{}", e).contains("Invalid state") {
+                        warn!("Portal daemon may have stale session state - clipboard unavailable");
+                    }
+                }
             }
         }
 
+        // Select devices for input injection (from config)
+        // Must close session on any error to prevent orphaned D-Bus state.
+        // ashpd's Session does NOT implement Drop with Close() - we must do it explicitly.
+        if let Err(e) = self
+            .remote_desktop
+            .select_devices(&remote_desktop_session, self.config.devices)
+            .await
+        {
+            warn!("Device selection failed, closing session: {}", e);
+            let _ = remote_desktop_session.close().await;
+            return Err(PortalError::session_creation(format!(
+                "Device selection: {}",
+                e
+            )));
+        }
+
+        info!("Input devices selected from config");
+
+        // ScreenCast is required to make screen sources available for sharing
+        let screencast_proxy = ashpd::desktop::screencast::Screencast::new().await?;
+
+        if let Err(e) = screencast_proxy
+            .select_sources(
+                &remote_desktop_session,
+                self.config.cursor_mode,
+                self.config.source_type,
+                self.config.allow_multiple,
+                self.config.restore_token.as_deref(),
+                self.config.persist_mode,
+            )
+            .await
+        {
+            // Close session before returning to prevent GNOME Shell from tracking stale state.
+            // Without cleanup, retry attempts fail with "Invalid state" from portal daemon.
+            warn!("Source selection failed, closing session: {}", e);
+            let _ = remote_desktop_session.close().await;
+            return Err(PortalError::session_creation(format!(
+                "Source selection: {}",
+                e
+            )));
+        }
+
+        info!("Screen sources selected - permission dialog will appear");
+
         // Start the combined session (triggers permission dialog, unless restore token valid)
-        let (pipewire_fd, streams, restore_token) = self
+        // Note: clipboard.request() was already called earlier, immediately after CreateSession
+        let (pipewire_fd, streams, restore_token) = match self
             .remote_desktop
             .start_session(&remote_desktop_session)
             .await
-            .map_err(|e| PortalError::session_creation(format!("Session start: {}", e)))?;
+        {
+            Ok(result) => result,
+            Err(e) => {
+                warn!("Session start failed, closing session: {}", e);
+                let _ = remote_desktop_session.close().await;
+                return Err(PortalError::session_creation(format!(
+                    "Session start: {}",
+                    e
+                )));
+            }
+        };
 
         info!("Portal session started successfully");
         info!("  PipeWire FD: {:?}", pipewire_fd);
@@ -386,11 +447,12 @@ impl PortalManager {
         }
 
         if streams.is_empty() {
+            warn!("No streams available, closing session");
+            let _ = remote_desktop_session.close().await;
             return Err(PortalError::NoStreamsAvailable);
         }
 
-        // Create session handle with session reference
-        // We need to keep the session alive for input injection
+        // Keep session alive for input injection to remain functional
         let stream_count = streams.len();
         let handle = PortalSessionHandle::new(
             session_id.clone(),
@@ -400,7 +462,10 @@ impl PortalManager {
             remote_desktop_session,   // Pass the actual ashpd session for input injection
         );
 
-        info!("Portal session handle created with {} streams", stream_count);
+        info!(
+            "Portal session handle created with {} streams",
+            stream_count
+        );
 
         Ok((handle, restore_token))
     }

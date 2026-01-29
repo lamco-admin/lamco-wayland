@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-01-29
+
+### Fixed
+- Fixed clipboard request timing - call immediately after CreateSession instead of after SelectDevices/SelectSources
+  - Portal spec requires clipboard.request() when session state is INIT
+  - Resolves "Invalid state" errors from portal daemon on GNOME Flatpak
+- Added session cleanup in all error paths to prevent orphaned D-Bus session objects
+  - Portal sessions now properly closed when device/source selection fails
+  - Prevents stale session state that causes subsequent clipboard requests to fail
+
+### Changed
+- Improved code quality and comment clarity
+- Reduced verbose logging in clipboard operations
+
 ## [0.3.0] - 2025-12-31
 
 ### Added

@@ -97,9 +97,9 @@ impl DbusClipboardBridge {
     /// let bridge = DbusClipboardBridge::connect().await?;
     /// ```
     pub async fn connect() -> Result<Self, PortalError> {
-        let connection = Connection::session()
-            .await
-            .map_err(|e| PortalError::session_creation(format!("D-Bus connection failed: {}", e)))?;
+        let connection = Connection::session().await.map_err(|e| {
+            PortalError::session_creation(format!("D-Bus connection failed: {}", e))
+        })?;
 
         let connection = Arc::new(connection);
         let (sender, _) = broadcast::channel(64);
@@ -166,10 +166,9 @@ impl DbusClipboardBridge {
             .await
             .map_err(|e| PortalError::session_creation(format!("Failed to create proxy: {}", e)))?;
 
-        let mut stream = proxy
-            .receive_clipboard_changed()
-            .await
-            .map_err(|e| PortalError::session_creation(format!("Failed to subscribe to signal: {}", e)))?;
+        let mut stream = proxy.receive_clipboard_changed().await.map_err(|e| {
+            PortalError::session_creation(format!("Failed to subscribe to signal: {}", e))
+        })?;
 
         debug!("Listening for D-Bus clipboard signals");
 
@@ -222,7 +221,9 @@ impl Default for DbusClipboardBridgeBuilder {
 impl DbusClipboardBridgeBuilder {
     /// Create a new builder with default settings.
     pub fn new() -> Self {
-        Self { channel_capacity: 64 }
+        Self {
+            channel_capacity: 64,
+        }
     }
 
     /// Set the broadcast channel capacity.
@@ -236,9 +237,9 @@ impl DbusClipboardBridgeBuilder {
 
     /// Build and connect the D-Bus clipboard bridge.
     pub async fn build(self) -> Result<DbusClipboardBridge, PortalError> {
-        let connection = Connection::session()
-            .await
-            .map_err(|e| PortalError::session_creation(format!("D-Bus connection failed: {}", e)))?;
+        let connection = Connection::session().await.map_err(|e| {
+            PortalError::session_creation(format!("D-Bus connection failed: {}", e))
+        })?;
 
         let connection = Arc::new(connection);
         let (sender, _) = broadcast::channel(self.channel_capacity);
@@ -252,12 +253,16 @@ impl DbusClipboardBridgeBuilder {
         let sender_clone = bridge.sender.clone();
         let conn_clone = connection.clone();
         tokio::spawn(async move {
-            if let Err(e) = DbusClipboardBridge::listen_for_signals(conn_clone, sender_clone).await {
+            if let Err(e) = DbusClipboardBridge::listen_for_signals(conn_clone, sender_clone).await
+            {
                 error!("D-Bus clipboard listener error: {}", e);
             }
         });
 
-        info!("D-Bus clipboard bridge connected (capacity={})", self.channel_capacity);
+        info!(
+            "D-Bus clipboard bridge connected (capacity={})",
+            self.channel_capacity
+        );
         Ok(bridge)
     }
 }

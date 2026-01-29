@@ -226,7 +226,10 @@ mod tests {
     fn test_default_config() {
         let config = PortalConfig::default();
         assert!(matches!(config.cursor_mode, CursorMode::Metadata));
-        assert!(matches!(config.persist_mode, PersistMode::ExplicitlyRevoked));
+        assert!(matches!(
+            config.persist_mode,
+            PersistMode::ExplicitlyRevoked
+        ));
         assert!(config.allow_multiple);
         assert!(config.restore_token.is_none());
     }
@@ -235,7 +238,10 @@ mod tests {
     fn test_builder_with_defaults() {
         let config = PortalConfig::builder().build();
         assert!(matches!(config.cursor_mode, CursorMode::Metadata));
-        assert!(matches!(config.persist_mode, PersistMode::ExplicitlyRevoked));
+        assert!(matches!(
+            config.persist_mode,
+            PersistMode::ExplicitlyRevoked
+        ));
     }
 
     #[test]
@@ -261,6 +267,9 @@ mod tests {
         };
 
         assert!(matches!(config.cursor_mode, CursorMode::Hidden));
-        assert!(matches!(config.persist_mode, PersistMode::ExplicitlyRevoked)); // Still default
+        assert!(matches!(
+            config.persist_mode,
+            PersistMode::ExplicitlyRevoked
+        )); // Still default
     }
 }

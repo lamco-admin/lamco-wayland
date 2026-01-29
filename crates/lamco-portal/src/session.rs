@@ -85,7 +85,8 @@ pub struct PortalSessionHandle {
     pub remote_desktop_session: Option<String>,
 
     /// Active ashpd session (needed for input injection)
-    pub session: ashpd::desktop::Session<'static, ashpd::desktop::remote_desktop::RemoteDesktop<'static>>,
+    pub session:
+        ashpd::desktop::Session<'static, ashpd::desktop::remote_desktop::RemoteDesktop<'static>>,
 }
 
 impl PortalSessionHandle {
@@ -95,7 +96,10 @@ impl PortalSessionHandle {
         pipewire_fd: RawFd,
         streams: Vec<StreamInfo>,
         remote_desktop_session: Option<String>,
-        session: ashpd::desktop::Session<'static, ashpd::desktop::remote_desktop::RemoteDesktop<'static>>,
+        session: ashpd::desktop::Session<
+            'static,
+            ashpd::desktop::remote_desktop::RemoteDesktop<'static>,
+        >,
     ) -> Self {
         info!(
             "Created portal session handle: {}, {} streams, fd: {:?}",
@@ -159,18 +163,22 @@ impl PortalSessionHandle {
     /// ```
     pub fn ashpd_session(
         &self,
-    ) -> &ashpd::desktop::Session<'static, ashpd::desktop::remote_desktop::RemoteDesktop<'static>> {
+    ) -> &ashpd::desktop::Session<'static, ashpd::desktop::remote_desktop::RemoteDesktop<'static>>
+    {
         &self.session
     }
 
     /// Explicitly close the portal session
     ///
-    /// This consumes the handle and closes all resources. The same effect can
-    /// be achieved by simply dropping the handle, but this method provides
-    /// explicit logging.
+    /// This consumes the handle and closes all resources.
+    ///
+    /// NOTE: OwnedFd auto-closes on drop, but ashpd's Session does NOT call
+    /// Close() on the D-Bus interface when dropped. For error paths during
+    /// session creation, we must call session.close() explicitly - see lib.rs.
+    /// For normally-started sessions, dropping the handle is typically fine
+    /// since the session will be closed by the compositor when we disconnect.
     pub fn close(self) {
         info!("Closing portal session: {}", self.session_id);
-        // OwnedFd and Session are automatically closed on drop
         drop(self);
     }
 }
