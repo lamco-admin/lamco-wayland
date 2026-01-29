@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-01-29
+
+### Changed
+- Updated lamco-portal dependency to v0.3.1 (clipboard timing and session cleanup fixes)
+
 ## [0.2.4] - 2026-01-15
 
 ### Changed
