@@ -47,7 +47,7 @@
 //! ```
 
 use std::collections::HashMap;
-use std::os::fd::RawFd;
+use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::sync::{mpsc as std_mpsc, Arc};
 
 use tokio::sync::{mpsc, Mutex, RwLock};
@@ -123,9 +123,10 @@ pub struct PipeWireManager {
     /// Next stream ID
     next_stream_id: Arc<Mutex<u32>>,
 
-    /// Portal file descriptor
+    /// Portal file descriptor (raw copy for diagnostics; OwnedFd is consumed on connect)
     portal_fd: Option<RawFd>,
-
+    // NOTE: We store RawFd here only for error context / diagnostics.
+    // The actual OwnedFd is consumed by PipeWireThreadManager::new().
     /// Cursor extractor (if enabled)
     #[cfg(feature = "cursor")]
     cursor_extractor: Option<Arc<Mutex<CursorExtractor>>>,
@@ -205,18 +206,19 @@ impl PipeWireManager {
     /// - Already connected
     /// - PipeWire initialization fails
     /// - Connection timeout exceeded
-    pub async fn connect(&mut self, fd: RawFd) -> Result<()> {
+    pub async fn connect(&mut self, fd: OwnedFd) -> Result<()> {
         let current_state = *self.state.read().await;
         if current_state == ManagerState::Connected {
             return Err(PipeWireError::InvalidState("Already connected".to_string()));
         }
 
         *self.state.write().await = ManagerState::Connecting;
-        info!("Connecting to PipeWire with FD {}", fd);
+        let raw_fd = fd.as_raw_fd();
+        info!("Connecting to PipeWire with FD {}", raw_fd);
 
-        self.portal_fd = Some(fd);
+        self.portal_fd = Some(raw_fd);
 
-        // Initialize PipeWire thread manager
+        // Initialize PipeWire thread manager (consumes the OwnedFd)
         let thread_manager = PipeWireThreadManager::new(fd)?;
         self.thread_manager = Some(thread_manager);
 

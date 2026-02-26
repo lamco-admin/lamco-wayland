@@ -37,8 +37,8 @@
 //! // Create manager with default configuration
 //! let mut manager = PipeWireManager::with_default()?;
 //!
-//! // Connect using portal-provided file descriptor (from lamco-portal)
-//! let fd = /* session.pipewire_fd() */;
+//! // Connect using portal-provided owned file descriptor (from lamco-portal)
+//! let fd: std::os::fd::OwnedFd = /* session.pipewire_fd() */;
 //! manager.connect(fd).await?;
 //!
 //! // Create stream for a monitor

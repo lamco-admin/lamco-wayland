@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-02-26
+
+### Changed
+
+- **BREAKING**: Public API now takes `OwnedFd` instead of `RawFd`
+  - `PipeWireThreadManager::new(fd: OwnedFd)` (was `RawFd`)
+  - `PipeWireConnection::new(fd: OwnedFd)` (was `RawFd`)
+  - `PipeWireManager::connect(&mut self, fd: OwnedFd)` (was `RawFd`)
+  - `PipeWireConnection::fd()` now returns `Option<RawFd>` (None after connect consumes it)
+- Removed all internal `unsafe { OwnedFd::from_raw_fd() }` — callers own the FD from the start
+- Internal buffer FDs remain `RawFd` (borrowed from PipeWire, not owned by us)
+
+### Migration
+
+Callers that previously passed a raw integer now pass an `OwnedFd`:
+
+```rust
+// Before (0.1.x)
+manager.connect(portal_fd).await?;
+
+// After (0.2.0)
+use std::os::fd::OwnedFd;
+manager.connect(owned_fd).await?;
+```
+
 ## [0.1.6] - 2026-02-26
 
 ### Changed
@@ -129,7 +154,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Linux only (Wayland required, PipeWire required)
 - Tested on GNOME, KDE Plasma, Sway
 
-[Unreleased]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.6...HEAD
+[Unreleased]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.2.0...HEAD
+[0.2.0]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.6...lamco-pipewire-v0.2.0
 [0.1.6]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.5...lamco-pipewire-v0.1.6
 [0.1.5]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.4...lamco-pipewire-v0.1.5
 [0.1.4]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.3...lamco-pipewire-v0.1.4
