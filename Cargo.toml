@@ -3,7 +3,7 @@
 # PACKAGE IDENTITY
 # ============================================================================
 name = "lamco-wayland"
-version = "0.2.5"
+version = "0.2.6"
 
 # ============================================================================
 # PACKAGE CONFIGURATION (inherited from workspace)
