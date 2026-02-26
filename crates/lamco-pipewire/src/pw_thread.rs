@@ -1092,38 +1092,28 @@ fn create_stream_on_thread(
 
     info!("✅ Stream {} callbacks registered successfully", stream_id);
 
-    // Connect stream to node with format parameters
-    let param_bytes = build_stream_parameters(&config)?;
-
-    // Convert bytes to Pod reference (Pod is a borrowed type referencing the bytes)
-    let pod = Pod::from_bytes(&param_bytes)
-        .ok_or_else(|| PipeWireError::FormatNegotiationFailed("Failed to parse format parameters".to_string()))?;
+    // Build format negotiation parameters
+    // When DmaBuf is enabled, produces two EnumFormat pods: DmaBuf (MANDATORY) + SHM fallback
+    // PipeWire tries params in order and skips MANDATORY params it can't satisfy
+    let param_pod_bytes = build_stream_parameters(&config)?;
+    let pods: Vec<&Pod> = param_pod_bytes
+        .iter()
+        .filter_map(|bytes| Pod::from_bytes(bytes))
+        .collect();
 
     info!(
-        "📋 Stream {} connecting with format parameters ({} bytes)",
+        "Stream {} connecting with {} format param(s), dmabuf={}",
         stream_id,
-        param_bytes.len()
+        pods.len(),
+        config.use_dmabuf
     );
 
-    let mut params = [pod];
-
-    info!(
-        "🔌 Calling stream.connect() for stream {} with flags: AUTOCONNECT | MAP_BUFFERS | RT_PROCESS",
-        stream_id
-    );
-    info!(
-        "   TESTING: Using None (PW_ID_ANY) instead of Some({}) - let PipeWire auto-link via node.target property",
-        node_id
-    );
-    info!(
-        "   The node.target={} property should tell PipeWire which node to link to",
-        node_id
-    );
+    let mut params: Vec<&Pod> = pods;
 
     stream
         .connect(
             Direction::Input,
-            None, // PW_ID_ANY - let PipeWire use node.target property
+            None, // PW_ID_ANY — let PipeWire use node.target property
             StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS | StreamFlags::RT_PROCESS,
             &mut params,
         )
@@ -1169,49 +1159,134 @@ fn create_stream_on_thread(
 ///
 /// We provide explicit format parameters so PipeWire can complete negotiation.
 /// This enables hardware acceleration when available (DMA-BUF) while maintaining compatibility.
-fn build_stream_parameters(config: &StreamConfig) -> Result<Vec<u8>> {
+/// Build format negotiation parameters for PipeWire stream connection.
+///
+/// When `config.use_dmabuf` is true, produces two EnumFormat pods following the
+/// PipeWire 1.x MANDATORY flag pattern:
+///   1. DmaBuf format with `SPA_FORMAT_VIDEO_modifier` carrying MANDATORY|DONT_FIXATE
+///   2. SHM fallback without modifier property
+///
+/// PipeWire tries params in order and skips MANDATORY params it can't satisfy,
+/// ensuring DmaBuf is preferred but SHM works as fallback.
+fn build_stream_parameters(config: &StreamConfig) -> Result<Vec<Vec<u8>>> {
     use std::io::Cursor;
 
     use pipewire::spa;
     use pipewire::spa::pod::serialize::PodSerializer;
-    use pipewire::spa::pod::Value;
+    use pipewire::spa::pod::{Property, PropertyFlags, Value};
 
     info!(
-        "Building format parameters: {}x{} @ {}fps",
-        config.width, config.height, config.framerate
+        "Building format parameters: {}x{} @ {}fps, dmabuf={}",
+        config.width, config.height, config.framerate, config.use_dmabuf
     );
 
-    // Build a video format object using pipewire-rs macros
-    // This specifies our preferred formats, size range, and framerate range
-    let format_obj = spa::pod::object!(
+    let mut param_pods = Vec::new();
+
+    // --- DmaBuf param (first = highest priority) ---
+    if config.use_dmabuf {
+        let mut dmabuf_obj = spa::pod::object!(
+            spa::utils::SpaTypes::ObjectParamFormat,
+            spa::param::ParamType::EnumFormat,
+            spa::pod::property!(
+                spa::param::format::FormatProperties::MediaType,
+                Id,
+                spa::param::format::MediaType::Video
+            ),
+            spa::pod::property!(
+                spa::param::format::FormatProperties::MediaSubtype,
+                Id,
+                spa::param::format::MediaSubtype::Raw
+            ),
+            spa::pod::property!(
+                spa::param::format::FormatProperties::VideoFormat,
+                Choice,
+                Enum,
+                Id,
+                spa::param::video::VideoFormat::BGRx,
+                spa::param::video::VideoFormat::BGRx,
+                spa::param::video::VideoFormat::BGRA,
+                spa::param::video::VideoFormat::RGBx,
+                spa::param::video::VideoFormat::RGBA
+            ),
+            spa::pod::property!(
+                spa::param::format::FormatProperties::VideoSize,
+                Choice,
+                Range,
+                Rectangle,
+                spa::utils::Rectangle {
+                    width: config.width,
+                    height: config.height
+                },
+                spa::utils::Rectangle { width: 1, height: 1 },
+                spa::utils::Rectangle {
+                    width: 8192,
+                    height: 8192
+                }
+            ),
+            spa::pod::property!(
+                spa::param::format::FormatProperties::VideoFramerate,
+                Choice,
+                Range,
+                Fraction,
+                spa::utils::Fraction {
+                    num: config.framerate,
+                    denom: 1
+                },
+                spa::utils::Fraction { num: 0, denom: 1 },
+                spa::utils::Fraction { num: 1000, denom: 1 }
+            ),
+        );
+
+        // Add modifier property with MANDATORY|DONT_FIXATE
+        // DRM_FORMAT_MOD_INVALID tells PipeWire "any modifier is acceptable"
+        // SPA Long type is i64, DRM modifiers are u64 — reinterpret bits
+        let mod_invalid = crate::ffi::drm_fourcc::DRM_FORMAT_MOD_INVALID as i64;
+        dmabuf_obj.properties.push(Property {
+            key: spa::param::format::FormatProperties::VideoModifier.as_raw(),
+            flags: PropertyFlags::MANDATORY | PropertyFlags::DONT_FIXATE,
+            value: Value::Choice(spa::pod::ChoiceValue::Long(spa::utils::Choice(
+                spa::utils::ChoiceFlags::empty(),
+                spa::utils::ChoiceEnum::Enum {
+                    default: mod_invalid,
+                    alternatives: vec![mod_invalid],
+                },
+            ))),
+        });
+
+        let serialized =
+            PodSerializer::serialize(Cursor::new(Vec::new()), &Value::Object(dmabuf_obj)).map_err(|e| {
+                PipeWireError::FormatNegotiationFailed(format!("DmaBuf format serialization failed: {e:?}"))
+            })?;
+        let bytes = serialized.0.into_inner();
+        info!("DmaBuf format param: {} bytes (MANDATORY|DONT_FIXATE)", bytes.len());
+        param_pods.push(bytes);
+    }
+
+    // --- SHM fallback param (no modifier property) ---
+    let shm_obj = spa::pod::object!(
         spa::utils::SpaTypes::ObjectParamFormat,
         spa::param::ParamType::EnumFormat,
-        // Media type: Video
         spa::pod::property!(
             spa::param::format::FormatProperties::MediaType,
             Id,
             spa::param::format::MediaType::Video
         ),
-        // Media subtype: Raw (uncompressed)
         spa::pod::property!(
             spa::param::format::FormatProperties::MediaSubtype,
             Id,
             spa::param::format::MediaSubtype::Raw
         ),
-        // Video formats we accept (in order of preference)
-        // BGRx/BGRA are preferred as they're common on Linux desktops
         spa::pod::property!(
             spa::param::format::FormatProperties::VideoFormat,
             Choice,
             Enum,
             Id,
-            spa::param::video::VideoFormat::BGRx, // Default/preferred
+            spa::param::video::VideoFormat::BGRx,
             spa::param::video::VideoFormat::BGRx,
             spa::param::video::VideoFormat::BGRA,
             spa::param::video::VideoFormat::RGBx,
             spa::param::video::VideoFormat::RGBA
         ),
-        // Video size range (min to max, with our preferred size as default)
         spa::pod::property!(
             spa::param::format::FormatProperties::VideoSize,
             Choice,
@@ -1227,7 +1302,6 @@ fn build_stream_parameters(config: &StreamConfig) -> Result<Vec<u8>> {
                 height: 8192
             }
         ),
-        // Framerate range (0/1 to 1000/1, with our target as default)
         spa::pod::property!(
             spa::param::format::FormatProperties::VideoFramerate,
             Choice,
@@ -1242,21 +1316,13 @@ fn build_stream_parameters(config: &StreamConfig) -> Result<Vec<u8>> {
         ),
     );
 
-    // Serialize the object to bytes
-    let serialized = PodSerializer::serialize(Cursor::new(Vec::new()), &Value::Object(format_obj)).map_err(|e| {
-        warn!("Failed to serialize format parameters: {:?}", e);
-        PipeWireError::FormatNegotiationFailed(format!("Format serialization failed: {:?}", e))
-    })?;
-
+    let serialized = PodSerializer::serialize(Cursor::new(Vec::new()), &Value::Object(shm_obj))
+        .map_err(|e| PipeWireError::FormatNegotiationFailed(format!("SHM format serialization failed: {e:?}")))?;
     let bytes = serialized.0.into_inner();
+    info!("SHM fallback format param: {} bytes", bytes.len());
+    param_pods.push(bytes);
 
-    info!("✅ Format parameters built successfully ({} bytes)", bytes.len());
-    debug!(
-        "   Preferred format: BGRx, size: {}x{}, fps: {}",
-        config.width, config.height, config.framerate
-    );
-
-    Ok(bytes)
+    Ok(param_pods)
 }
 
 #[cfg(test)]

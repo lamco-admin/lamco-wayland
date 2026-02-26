@@ -3,7 +3,7 @@
 # PACKAGE IDENTITY
 # ============================================================================
 name = "lamco-pipewire"
-version = "0.1.5"
+version = "0.1.6"
 
 # ============================================================================
 # PACKAGE CONFIGURATION (inherited from workspace)
@@ -147,9 +147,9 @@ should_implement_trait = "allow"
 # DEPENDENCIES
 # ============================================================================
 [dependencies]
-# PipeWire bindings
-pipewire = "0.8"
-libspa = "0.8"
+# PipeWire bindings — v0_3_33 enables PropertyFlags::DONT_FIXATE for DmaBuf negotiation
+pipewire = { version = "0.8", features = ["v0_3_33"] }
+libspa = { version = "0.8", features = ["v0_3_33"] }
 libspa-sys = "0.8"
 
 # Async runtime
