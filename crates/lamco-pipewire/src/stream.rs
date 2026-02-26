@@ -2,11 +2,12 @@
 //!
 //! Handles individual PipeWire streams for screen capture.
 
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime};
+
 use libspa::param::video::VideoFormat;
 use pipewire::spa::utils::Fraction;
 use pipewire::stream::{Stream, StreamState};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
 use tokio::sync::mpsc;
 
 use crate::buffer::SharedBufferManager;

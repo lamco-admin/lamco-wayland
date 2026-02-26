@@ -93,26 +93,27 @@
 //! - **Thread overhead:** ~0.5ms per iteration
 //! - **Supports:** Up to 144Hz refresh rates
 
+use std::collections::HashMap;
+use std::num::NonZeroUsize;
+use std::os::fd::{FromRawFd, OwnedFd, RawFd};
+use std::sync::{mpsc as std_mpsc, Arc as StdArc};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, SystemTime};
+
+use pipewire::context::Context;
+use pipewire::core::Core;
+use pipewire::main_loop::MainLoop;
 use pipewire::properties::Properties;
 use pipewire::spa::param::ParamType;
 use pipewire::spa::pod::Pod;
 use pipewire::spa::utils::Direction;
 use pipewire::stream::{Stream, StreamFlags, StreamState};
-use pipewire::{context::Context, core::Core, main_loop::MainLoop};
-use std::collections::HashMap;
-use std::num::NonZeroUsize;
-use std::os::fd::{FromRawFd, OwnedFd, RawFd};
-use std::sync::mpsc as std_mpsc;
-use std::thread::{self, JoinHandle};
-use std::time::Duration;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::error::{PipeWireError, Result};
 use crate::format::PixelFormat;
 use crate::frame::{FrameFlags, VideoFrame};
 use crate::stream::StreamConfig;
-use std::sync::Arc as StdArc;
-use std::time::SystemTime;
 
 /// Stream state change event pushed from the PipeWire thread.
 ///
@@ -616,8 +617,9 @@ fn run_pipewire_main_loop(
 /// - FD is owned by PipeWire buffer (valid during callback)
 /// - No pointer aliasing (we copy, not reference)
 fn mmap_fd_buffer(fd: std::os::fd::RawFd, size: usize, offset: usize) -> Result<Vec<u8>> {
-    use nix::sys::mman::{mmap, munmap, MapFlags, ProtFlags};
     use std::os::fd::BorrowedFd;
+
+    use nix::sys::mman::{mmap, munmap, MapFlags, ProtFlags};
 
     // Calculate page-aligned mapping
     // SAFETY: sysconf(_SC_PAGESIZE) is safe and always returns a valid value
@@ -628,7 +630,12 @@ fn mmap_fd_buffer(fd: std::os::fd::RawFd, size: usize, offset: usize) -> Result<
 
     trace!(
         "mmap: fd={}, size={}, offset={}, page_size={}, map_offset={}, map_size={}",
-        fd, size, offset, page_size, map_offset, map_size
+        fd,
+        size,
+        offset,
+        page_size,
+        map_offset,
+        map_size
     );
 
     // Memory map the file descriptor
@@ -877,8 +884,9 @@ fn create_stream_on_thread(
                                         // First time seeing this FD - mmap it
                                         debug!("DMA-BUF buffer: mmapping {} bytes from FD={} (first time)", size, fd);
 
-                                        use nix::sys::mman::{mmap, MapFlags, ProtFlags};
                                         use std::os::fd::BorrowedFd;
+
+                                        use nix::sys::mman::{mmap, MapFlags, ProtFlags};
 
                                         // Calculate page-aligned mapping
                                         // SAFETY: sysconf(_SC_PAGESIZE) always returns a valid value
@@ -1162,10 +1170,11 @@ fn create_stream_on_thread(
 /// We provide explicit format parameters so PipeWire can complete negotiation.
 /// This enables hardware acceleration when available (DMA-BUF) while maintaining compatibility.
 fn build_stream_parameters(config: &StreamConfig) -> Result<Vec<u8>> {
+    use std::io::Cursor;
+
     use pipewire::spa;
     use pipewire::spa::pod::serialize::PodSerializer;
     use pipewire::spa::pod::Value;
-    use std::io::Cursor;
 
     info!(
         "Building format parameters: {}x{} @ {}fps",
