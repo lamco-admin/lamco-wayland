@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-02-26
+
+### Changed
+
+- **PipeWire 1.x MANDATORY flag for DmaBuf negotiation**
+  - Format negotiation now produces two `EnumFormat` params when `use_dmabuf=true`:
+    first with `MANDATORY | DONT_FIXATE` modifier property for DmaBuf, second without
+    modifier for SHM fallback
+  - PipeWire tries DmaBuf first and falls back to SHM if hardware can't satisfy it
+  - Existing behavior preserved when `use_dmabuf=false` (SHM-only param)
+- Enabled `pipewire/v0_3_33` and `libspa/v0_3_33` features for `PropertyFlags::DONT_FIXATE`
+
 ## [0.1.5] - 2026-02-26
 
 ### Changed
@@ -117,7 +129,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Linux only (Wayland required, PipeWire required)
 - Tested on GNOME, KDE Plasma, Sway
 
-[Unreleased]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.5...HEAD
+[Unreleased]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.6...HEAD
+[0.1.6]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.5...lamco-pipewire-v0.1.6
 [0.1.5]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.4...lamco-pipewire-v0.1.5
 [0.1.4]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.3...lamco-pipewire-v0.1.4
 [0.1.3]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.2...lamco-pipewire-v0.1.3
