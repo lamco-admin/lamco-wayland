@@ -3,8 +3,9 @@
 //! Provides pixel format conversion between various video formats.
 //! Includes optimized SIMD implementations where available.
 
-use crate::error::{PipeWireError, Result};
 use libspa::param::video::VideoFormat;
+
+use crate::error::{PipeWireError, Result};
 
 /// Pixel format enum for our internal use
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -48,26 +48,23 @@
 
 use std::collections::HashMap;
 use std::os::fd::RawFd;
-use std::sync::mpsc as std_mpsc;
-use std::sync::Arc;
+use std::sync::{mpsc as std_mpsc, Arc};
+
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tracing::{debug, info, warn};
 
+#[cfg(feature = "adaptive")]
+use crate::bitrate::BitrateController;
 use crate::config::PipeWireConfig;
 use crate::coordinator::{SourceType, StreamInfo};
+#[cfg(feature = "cursor")]
+use crate::cursor::CursorExtractor;
+#[cfg(feature = "damage")]
+use crate::damage::DamageTracker;
 use crate::error::{PipeWireError, Result};
 use crate::frame::VideoFrame;
 use crate::pw_thread::{PipeWireThreadCommand, PipeWireThreadManager};
 use crate::stream::StreamConfig;
-
-#[cfg(feature = "cursor")]
-use crate::cursor::CursorExtractor;
-
-#[cfg(feature = "damage")]
-use crate::damage::DamageTracker;
-
-#[cfg(feature = "adaptive")]
-use crate::bitrate::BitrateController;
 
 /// Handle to an active stream
 #[derive(Debug, Clone)]

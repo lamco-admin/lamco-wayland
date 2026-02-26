@@ -241,67 +241,51 @@ pub mod bitrate;
 // =============================================================================
 
 // Manager (primary entry point)
-pub use manager::{ManagerState, ManagerStats, PipeWireManager, StreamHandle};
-
+#[cfg(feature = "adaptive")]
+pub use bitrate::{BitrateController, BitrateStats};
+// Buffer management
+pub use buffer::{BufferManager, BufferType, ManagedBuffer, SharedBufferManager};
 // Configuration
 pub use config::{
     AdaptiveBitrateConfig, AdaptiveBitrateConfigBuilder, PipeWireConfig, PipeWireConfigBuilder, QualityPreset,
 };
-
-// Errors
-pub use error::{classify_error, ErrorContext, ErrorType, PipeWireError, RecoveryAction, Result, RetryConfig};
-
-// Stream types
-pub use coordinator::{MonitorEvent, MonitorInfo, MultiStreamConfig, SourceType, StreamInfo};
-pub use stream::{NegotiatedFormat, PwStreamState, StreamConfig, StreamMetrics};
-
-// Frame types
-pub use format::{convert_format, PixelFormat};
-pub use frame::{FrameCallback, FrameFlags, FrameStats, VideoFrame};
-
 // =============================================================================
 // RE-EXPORTS - ADVANCED API
 // =============================================================================
 
 // Low-level connection (for advanced use cases)
 pub use connection::{ConnectionState, PipeWireConnection, PipeWireEvent};
-
-// Buffer management
-pub use buffer::{BufferManager, BufferType, ManagedBuffer, SharedBufferManager};
-
-// Thread management
-pub use pw_thread::{PipeWireThreadCommand, PipeWireThreadManager, StreamStateEvent, StreamStateSnapshot};
-
 // Coordinator
 pub use coordinator::{CoordinatorStats, DispatcherConfig, FrameDispatcher, MultiStreamCoordinator};
-
+// Stream types
+pub use coordinator::{MonitorEvent, MonitorInfo, MultiStreamConfig, SourceType, StreamInfo};
+#[cfg(feature = "cursor")]
+pub use cursor::{CursorExtractor, CursorInfo, CursorStats};
+#[cfg(feature = "damage")]
+pub use damage::{DamageRegion, DamageStats, DamageTracker};
+// Errors
+pub use error::{classify_error, ErrorContext, ErrorType, PipeWireError, RecoveryAction, Result, RetryConfig};
 // FFI utilities
 pub use ffi::{
     calculate_buffer_size, calculate_stride, drm_fourcc, get_bytes_per_pixel, spa_video_format_to_drm_fourcc,
     DamageRegion as FfiDamageRegion, SpaDataType,
 };
-
-// =============================================================================
-// FEATURE RE-EXPORTS
-// =============================================================================
-
-#[cfg(feature = "yuv")]
-pub use yuv::{i420_to_bgra, nv12_to_bgra, yuy2_to_bgra, YuvConverter};
-
-#[cfg(feature = "cursor")]
-pub use cursor::{CursorExtractor, CursorInfo, CursorStats};
-
-#[cfg(feature = "damage")]
-pub use damage::{DamageRegion, DamageStats, DamageTracker};
-
-#[cfg(feature = "adaptive")]
-pub use bitrate::{BitrateController, BitrateStats};
-
+// Frame types
+pub use format::{convert_format, PixelFormat};
+pub use frame::{FrameCallback, FrameFlags, FrameStats, VideoFrame};
 // =============================================================================
 // CRATE-LEVEL ITEMS
 // =============================================================================
-
 use libspa::param::video::VideoFormat;
+pub use manager::{ManagerState, ManagerStats, PipeWireManager, StreamHandle};
+// Thread management
+pub use pw_thread::{PipeWireThreadCommand, PipeWireThreadManager, StreamStateEvent, StreamStateSnapshot};
+pub use stream::{NegotiatedFormat, PwStreamState, StreamConfig, StreamMetrics};
+// =============================================================================
+// FEATURE RE-EXPORTS
+// =============================================================================
+#[cfg(feature = "yuv")]
+pub use yuv::{i420_to_bgra, nv12_to_bgra, yuy2_to_bgra, YuvConverter};
 
 /// Crate version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
