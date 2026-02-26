@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-02-26
+
+### Changed
+
+- Downgraded per-frame logging from `info!` to `trace!` in the process() callback
+  - `mmap_fd_buffer()` entry/exit logging → `trace!`
+  - `process() callback fired` → `trace!`
+  - `Got buffer from stream` → `trace!`
+  - Per-buffer type/size/offset/fd logging → `trace!`
+  - MemPtr/MemFd copy logging → `trace!`
+  - MemFd manual mmap logging → `trace!`
+  - DMA-BUF first-time mmap and cache logging → `debug!`
+  - Main loop heartbeat (every 1000 iterations) → `debug!`
+  - One-time messages (stream created, format negotiated, state changes) remain at `info!`
+
+### Added
+
+- **Stream state push notifications** via `StreamStateEvent` channel
+  - `PipeWireThreadManager::try_recv_state_event()` — non-blocking state poll
+  - `PipeWireThreadManager::drain_state_events()` — drain all pending events
+  - `StreamStateSnapshot` — Send-safe enum mirroring PipeWire stream states
+  - Enables health monitoring without polling via `GetStreamState` commands
+  - Events pushed from PipeWire thread's `state_changed` callback
+
 ## [0.1.4] - 2026-01-15
 
 ### Fixed
@@ -93,7 +117,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Linux only (Wayland required, PipeWire required)
 - Tested on GNOME, KDE Plasma, Sway
 
-[Unreleased]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.4...HEAD
+[Unreleased]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.5...HEAD
+[0.1.5]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.4...lamco-pipewire-v0.1.5
 [0.1.4]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.3...lamco-pipewire-v0.1.4
 [0.1.3]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.2...lamco-pipewire-v0.1.3
 [0.1.2]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.1...lamco-pipewire-v0.1.2

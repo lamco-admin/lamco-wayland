@@ -270,7 +270,7 @@ pub use connection::{ConnectionState, PipeWireConnection, PipeWireEvent};
 pub use buffer::{BufferManager, BufferType, ManagedBuffer, SharedBufferManager};
 
 // Thread management
-pub use pw_thread::{PipeWireThreadCommand, PipeWireThreadManager};
+pub use pw_thread::{PipeWireThreadCommand, PipeWireThreadManager, StreamStateEvent, StreamStateSnapshot};
 
 // Coordinator
 pub use coordinator::{CoordinatorStats, DispatcherConfig, FrameDispatcher, MultiStreamCoordinator};

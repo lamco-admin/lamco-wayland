@@ -114,6 +114,61 @@ use crate::stream::StreamConfig;
 use std::sync::Arc as StdArc;
 use std::time::SystemTime;
 
+/// Stream state change event pushed from the PipeWire thread.
+///
+/// Sent via `std::sync::mpsc` whenever a stream's state changes.
+/// Consumers can use this for health monitoring, UI updates, or
+/// recovery decisions without polling `GetStreamState`.
+#[derive(Debug, Clone)]
+pub struct StreamStateEvent {
+    /// Which stream changed
+    pub stream_id: u32,
+    /// New stream state (as a Send-safe enum)
+    pub state: StreamStateSnapshot,
+}
+
+/// Send-safe snapshot of PipeWire stream state.
+///
+/// Unlike `pipewire::stream::StreamState`, this type is `Send + Sync`
+/// and can safely cross thread boundaries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StreamStateSnapshot {
+    /// Stream is not connected
+    Unconnected,
+    /// Stream is connecting to node
+    Connecting,
+    /// Stream is paused (buffers allocated, not producing frames)
+    Paused,
+    /// Stream is actively producing frames
+    Streaming,
+    /// Stream encountered an error
+    Error(String),
+}
+
+impl StreamStateSnapshot {
+    fn from_pw(state: &StreamState) -> Self {
+        match *state {
+            StreamState::Unconnected => Self::Unconnected,
+            StreamState::Connecting => Self::Connecting,
+            StreamState::Paused => Self::Paused,
+            StreamState::Streaming => Self::Streaming,
+            StreamState::Error(ref msg) => Self::Error(msg.clone()),
+        }
+    }
+}
+
+impl std::fmt::Display for StreamStateSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unconnected => write!(f, "unconnected"),
+            Self::Connecting => write!(f, "connecting"),
+            Self::Paused => write!(f, "paused"),
+            Self::Streaming => write!(f, "streaming"),
+            Self::Error(msg) => write!(f, "error: {msg}"),
+        }
+    }
+}
+
 /// Commands sent to the PipeWire thread
 pub enum PipeWireThreadCommand {
     /// Create and connect a stream to a PipeWire node
@@ -182,6 +237,9 @@ pub struct PipeWireThreadManager {
     /// Frame channel receiver
     frame_rx: std_mpsc::Receiver<VideoFrame>,
 
+    /// Stream state change receiver (push notifications from PipeWire thread)
+    state_rx: std_mpsc::Receiver<StreamStateEvent>,
+
     /// Shutdown flag
     shutdown_tx: Option<std_mpsc::SyncSender<()>>,
 }
@@ -203,19 +261,21 @@ impl PipeWireThreadManager {
     pub fn new(fd: RawFd) -> Result<Self> {
         info!("Creating PipeWire thread manager for FD {}", fd);
 
-        // Create channels for commands and frames
-        // Using std::sync::mpsc (not tokio) because PipeWire thread is not async
+        // Create channels for commands, frames, and state events.
+        // Using std::sync::mpsc (not tokio) because PipeWire thread is not async.
         let (command_tx, command_rx) = std_mpsc::sync_channel::<PipeWireThreadCommand>(100);
         // Frame channel: increased from 64 to 256 to handle burst traffic
         // At 60 FPS capture / 30 FPS target = 2:1 ratio needs buffer
         let (frame_tx, frame_rx) = std_mpsc::sync_channel::<VideoFrame>(256);
+        // State events are infrequent (stream lifecycle transitions)
+        let (state_tx, state_rx) = std_mpsc::sync_channel::<StreamStateEvent>(32);
         let (shutdown_tx, shutdown_rx) = std_mpsc::sync_channel::<()>(1);
 
         // Spawn dedicated PipeWire thread
         let thread_handle = thread::Builder::new()
             .name("pipewire-main".to_string())
             .spawn(move || {
-                run_pipewire_main_loop(fd, command_rx, frame_tx, shutdown_rx);
+                run_pipewire_main_loop(fd, command_rx, frame_tx, state_tx, shutdown_rx);
             })
             .map_err(|e| PipeWireError::InitializationFailed(format!("Thread spawn failed: {}", e)))?;
 
@@ -225,6 +285,7 @@ impl PipeWireThreadManager {
             thread_handle: Some(thread_handle),
             command_tx,
             frame_rx,
+            state_rx,
             shutdown_tx: Some(shutdown_tx),
         })
     }
@@ -264,6 +325,27 @@ impl PipeWireThreadManager {
     /// Some(VideoFrame) if received within timeout, None otherwise
     pub fn recv_frame_timeout(&self, timeout: Duration) -> Option<VideoFrame> {
         self.frame_rx.recv_timeout(timeout).ok()
+    }
+
+    /// Try to receive a stream state change event (non-blocking).
+    ///
+    /// State events are pushed whenever a stream transitions between states
+    /// (Connecting → Paused → Streaming → Error, etc.). Use this for health
+    /// monitoring without polling via `GetStreamState` commands.
+    pub fn try_recv_state_event(&self) -> Option<StreamStateEvent> {
+        self.state_rx.try_recv().ok()
+    }
+
+    /// Drain all pending stream state change events.
+    ///
+    /// Returns all queued state events. Useful when catching up after
+    /// a period of not polling.
+    pub fn drain_state_events(&self) -> Vec<StreamStateEvent> {
+        let mut events = Vec::new();
+        while let Ok(event) = self.state_rx.try_recv() {
+            events.push(event);
+        }
+        events
     }
 
     /// Shutdown the PipeWire thread gracefully
@@ -308,6 +390,7 @@ fn run_pipewire_main_loop(
     fd: RawFd,
     command_rx: std_mpsc::Receiver<PipeWireThreadCommand>,
     frame_tx: std_mpsc::SyncSender<VideoFrame>,
+    state_tx: std_mpsc::SyncSender<StreamStateEvent>,
     shutdown_rx: std_mpsc::Receiver<()>,
 ) {
     info!("PipeWire main loop thread started");
@@ -370,7 +453,7 @@ fn run_pipewire_main_loop(
 
         // Log periodic heartbeat
         if loop_iterations % 1000 == 0 {
-            info!(
+            debug!(
                 "PipeWire main loop heartbeat: {} iterations, {} streams active",
                 loop_iterations,
                 streams.len()
@@ -401,6 +484,7 @@ fn run_pipewire_main_loop(
                         &core,
                         config,
                         frame_tx.clone(),
+                        state_tx.clone(),
                         Rc::clone(&dmabuf_mmap_cache),
                     );
 
@@ -542,7 +626,7 @@ fn mmap_fd_buffer(fd: std::os::fd::RawFd, size: usize, offset: usize) -> Result<
     let map_size = size + (offset - map_offset);
     let data_offset_in_map = offset - map_offset;
 
-    info!(
+    trace!(
         "mmap: fd={}, size={}, offset={}, page_size={}, map_offset={}, map_size={}",
         fd, size, offset, page_size, map_offset, map_size
     );
@@ -587,7 +671,7 @@ fn mmap_fd_buffer(fd: std::os::fd::RawFd, size: usize, offset: usize) -> Result<
         munmap(addr, map_size).map_err(|e| warn!("munmap warning: {}", e)).ok();
     }
 
-    info!("mmap successful: extracted {} bytes", result.len());
+    trace!("mmap successful: extracted {} bytes", result.len());
     Ok(result)
 }
 
@@ -601,6 +685,7 @@ fn create_stream_on_thread(
     core: &Core,
     config: StreamConfig,
     frame_tx: std_mpsc::SyncSender<VideoFrame>,
+    state_tx: std_mpsc::SyncSender<StreamStateEvent>,
     dmabuf_cache: std::rc::Rc<std::cell::RefCell<HashMap<RawFd, (*mut libc::c_void, usize)>>>,
 ) -> Result<ManagedStream> {
     let stream_name = format!("lamco-pw-{}", stream_id);
@@ -642,6 +727,7 @@ fn create_stream_on_thread(
         stream_id
     );
 
+    let state_tx_for_callback = state_tx;
     let _listener = stream
         .add_local_listener::<()>()
         .state_changed(move |_stream, _user_data, old_state, new_state| {
@@ -662,6 +748,12 @@ fn create_stream_on_thread(
                 }
                 _ => {}
             }
+
+            // Push state change to consumer (best-effort: drop if channel full)
+            let _ = state_tx_for_callback.try_send(StreamStateEvent {
+                stream_id: stream_id_for_callbacks,
+                state: StreamStateSnapshot::from_pw(&new_state),
+            });
         })
         .param_changed(move |_stream, _user_data, param_id, _param| {
             if param_id == ParamType::Format.as_raw() {
@@ -681,9 +773,9 @@ fn create_stream_on_thread(
         })
         .process(move |stream, _user_data| {
             // This callback is called when a new frame buffer is available
-            info!("process() callback fired for stream {}", stream_id_for_callbacks);
+            trace!("process() callback fired for stream {}", stream_id_for_callbacks);
             if let Some(mut buffer) = stream.dequeue_buffer() {
-                info!("Got buffer from stream {}", stream_id_for_callbacks);
+                trace!("Got buffer from stream {}", stream_id_for_callbacks);
 
                 // Extract frame data from buffer
                 if let Some(data) = buffer.datas_mut().first_mut() {
@@ -698,7 +790,7 @@ fn create_stream_on_thread(
                     let raw_data = data.as_raw();
                     let fd = raw_data.fd as RawFd;
 
-                    info!(
+                    trace!(
                         "Buffer: type={}, size={}, offset={}, fd={}",
                         data_type.as_raw(),
                         size,
@@ -711,7 +803,7 @@ fn create_stream_on_thread(
                         libspa::buffer::DataType::MemPtr => {
                             if let Some(mapped_data) = data.data() {
                                 if offset + size <= mapped_data.len() {
-                                    info!("MemPtr buffer: copying {} bytes (offset={})", size, offset);
+                                    trace!("MemPtr buffer: copying {} bytes (offset={})", size, offset);
                                     Some(mapped_data[offset..offset + size].to_vec())
                                 } else {
                                     warn!(
@@ -732,7 +824,7 @@ fn create_stream_on_thread(
                         libspa::buffer::DataType::MemFd => {
                             if let Some(mapped_data) = data.data() {
                                 if offset + size <= mapped_data.len() {
-                                    info!("MemFd buffer: copying {} bytes (offset={})", size, offset);
+                                    trace!("MemFd buffer: copying {} bytes (offset={})", size, offset);
                                     Some(mapped_data[offset..offset + size].to_vec())
                                 } else {
                                     warn!(
@@ -750,7 +842,7 @@ fn create_stream_on_thread(
                                     debug!("MemFd buffer: size=0 (empty/skip frame), ignoring");
                                     None
                                 } else {
-                                    info!("MemFd buffer: using manual mmap (FD={})", fd);
+                                    trace!("MemFd buffer: using manual mmap (FD={})", fd);
                                     match mmap_fd_buffer(fd, size, offset) {
                                         Ok(data) => Some(data),
                                         Err(e) => {
@@ -783,7 +875,7 @@ fn create_stream_on_thread(
                                         Some(ptr)
                                     } else {
                                         // First time seeing this FD - mmap it
-                                        info!("DMA-BUF buffer: mmapping {} bytes from FD={} (first time)", size, fd);
+                                        debug!("DMA-BUF buffer: mmapping {} bytes from FD={} (first time)", size, fd);
 
                                         use nix::sys::mman::{mmap, MapFlags, ProtFlags};
                                         use std::os::fd::BorrowedFd;
@@ -810,7 +902,7 @@ fn create_stream_on_thread(
                                                     ) {
                                                         Ok(ptr) => {
                                                             cache.insert(fd, (ptr, map_size));
-                                                            info!("DMA-BUF mmap cached for FD={}", fd);
+                                                            debug!("DMA-BUF mmap cached for FD={}", fd);
                                                             Some(ptr)
                                                         }
                                                         Err(e) => {
