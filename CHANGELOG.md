@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-02-26
+
+### Changed
+- Updated lamco-pipewire dependency to v0.2.0 (OwnedFd API, MANDATORY DmaBuf, stream state push)
+- Updated lamco-video dependency to v0.1.3 (lamco-pipewire 0.2.0 compatibility)
+
 ## [0.2.5] - 2026-01-29
 
 ### Changed
