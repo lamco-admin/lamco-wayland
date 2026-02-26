@@ -10,14 +10,15 @@
 //! The processor sits between PipeWire capture and the bitmap converter,
 //! managing the flow of frames and adapting to system load.
 
-use parking_lot::RwLock;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use lamco_pipewire::VideoFrame;
+use parking_lot::RwLock;
 use tokio::sync::mpsc;
 use tracing::{debug, trace, warn};
 
 use crate::converter::{BitmapConverter, BitmapUpdate};
-use lamco_pipewire::VideoFrame;
 
 /// Default frame queue size
 const DEFAULT_QUEUE_SIZE: usize = 30;
@@ -388,8 +389,9 @@ pub enum ProcessingError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use lamco_pipewire::PixelFormat;
+
+    use super::*;
 
     #[test]
     fn test_processor_config() {

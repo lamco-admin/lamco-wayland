@@ -170,10 +170,8 @@ pub mod processor;
 pub use converter::{
     BitmapConverter, BitmapData, BitmapUpdate, ConversionError, ConversionStats, RdpPixelFormat, Rectangle,
 };
-
 // Dispatcher types
 pub use dispatcher::{DispatchError, DispatcherConfig, DispatcherStats, FrameDispatcher, StreamPriority};
-
 // Processor types
 pub use processor::{FrameProcessor, ProcessingError, ProcessingStats, ProcessorConfig};
 
