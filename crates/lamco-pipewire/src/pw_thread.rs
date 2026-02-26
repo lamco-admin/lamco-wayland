@@ -60,8 +60,8 @@
 //! use lamco_pipewire::{PipeWireThreadManager, PipeWireThreadCommand};
 //! use lamco_pipewire::stream::StreamConfig;
 //!
-//! // Create thread manager with FD from portal
-//! let pipewire_fd = 42; // Obtained from lamco-portal
+//! // Create thread manager with OwnedFd from portal
+//! let pipewire_fd: std::os::fd::OwnedFd = /* from lamco-portal */;
 //! let manager = PipeWireThreadManager::new(pipewire_fd)?;
 //!
 //! // Create a stream (command sent to PipeWire thread)
@@ -95,7 +95,7 @@
 
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
-use std::os::fd::{FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::sync::{mpsc as std_mpsc, Arc as StdArc};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime};
@@ -259,8 +259,8 @@ impl PipeWireThreadManager {
     /// # Errors
     ///
     /// Returns error if thread creation fails
-    pub fn new(fd: RawFd) -> Result<Self> {
-        info!("Creating PipeWire thread manager for FD {}", fd);
+    pub fn new(fd: OwnedFd) -> Result<Self> {
+        info!("Creating PipeWire thread manager for FD {}", fd.as_raw_fd());
 
         // Create channels for commands, frames, and state events.
         // Using std::sync::mpsc (not tokio) because PipeWire thread is not async.
@@ -388,12 +388,13 @@ impl Drop for PipeWireThreadManager {
 /// This function owns all PipeWire types (MainLoop, Context, Core, Streams)
 /// and processes commands from the async runtime.
 fn run_pipewire_main_loop(
-    fd: RawFd,
+    fd: OwnedFd,
     command_rx: std_mpsc::Receiver<PipeWireThreadCommand>,
     frame_tx: std_mpsc::SyncSender<VideoFrame>,
     state_tx: std_mpsc::SyncSender<StreamStateEvent>,
     shutdown_rx: std_mpsc::Receiver<()>,
 ) {
+    let raw_fd = fd.as_raw_fd();
     info!("PipeWire main loop thread started");
 
     // Initialize PipeWire library
@@ -417,24 +418,20 @@ fn run_pipewire_main_loop(
         }
     };
 
-    // Connect core using portal FD
-    info!("🔌 Connecting PipeWire Core to Portal FD {}", fd);
-    // SAFETY: The FD was provided by XDG Desktop Portal via lamco-portal.
-    // We take exclusive ownership - the FD is not used anywhere else.
-    let owned_fd = unsafe { OwnedFd::from_raw_fd(fd) };
-    let core = match context.connect_fd(owned_fd, None) {
+    // Connect core using portal FD (ownership transferred to PipeWire)
+    info!("Connecting PipeWire Core to Portal FD {}", raw_fd);
+    let core = match context.connect_fd(fd, None) {
         Ok(c) => {
             info!("✅ Core.connect_fd() succeeded");
             c
         }
         Err(e) => {
-            error!("❌ Failed to connect Core with FD {}: {}", fd, e);
+            error!("Failed to connect Core with FD {}: {}", raw_fd, e);
             return;
         }
     };
 
-    info!("✅ PipeWire Core connected successfully to Portal FD {}", fd);
-    info!("📍 This is a PRIVATE PipeWire connection - node IDs only valid on this FD");
+    info!("PipeWire Core connected to Portal FD {}", raw_fd);
 
     // Stream storage (all streams live on this thread)
     let mut streams: HashMap<u32, ManagedStream> = HashMap::new();

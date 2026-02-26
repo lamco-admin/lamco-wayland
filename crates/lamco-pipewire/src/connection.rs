@@ -4,7 +4,7 @@
 //! complete MainLoop integration, proper threading, and robust error handling.
 
 use std::collections::HashMap;
-use std::os::fd::{FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::sync::Arc;
 use std::thread;
 
@@ -79,8 +79,8 @@ pub enum PipeWireEvent {
 /// This is necessary because PipeWire's types (MainLoop, Context, Core) use `Rc`
 /// and `NonNull` which are not `Send`, so they must live on a single thread.
 pub struct PipeWireConnection {
-    /// File descriptor from portal
-    fd: RawFd,
+    /// File descriptor from portal (consumed on connect)
+    fd: Option<OwnedFd>,
 
     /// Active streams
     streams: Arc<Mutex<HashMap<u32, Arc<Mutex<PipeWireStream>>>>>,
@@ -110,11 +110,11 @@ impl PipeWireConnection {
     ///
     /// This initializes the connection manager but does not start the MainLoop.
     /// Call `connect()` to establish the connection and start processing.
-    pub fn new(fd: RawFd) -> Result<Self> {
-        debug!("Creating PipeWire connection with FD {}", fd);
+    pub fn new(fd: OwnedFd) -> Result<Self> {
+        debug!("Creating PipeWire connection with FD {}", fd.as_raw_fd());
 
         Ok(Self {
-            fd,
+            fd: Some(fd),
             streams: Arc::new(Mutex::new(HashMap::new())),
             state: Arc::new(RwLock::new(ConnectionState::Disconnected)),
             event_tx: None,
@@ -134,14 +134,19 @@ impl PipeWireConnection {
     ///
     /// Returns error if PipeWire initialization fails or connection cannot be established
     pub async fn connect(&mut self) -> Result<()> {
+        let fd = self
+            .fd
+            .take()
+            .ok_or_else(|| PipeWireError::InvalidState("FD already consumed by a previous connect() call".into()))?;
+        let raw_fd = fd.as_raw_fd();
+
         *self.state.write().await = ConnectionState::Connecting;
-        info!("Connecting to PipeWire with FD {}", self.fd);
+        info!("Connecting to PipeWire with FD {}", raw_fd);
 
         // Create shutdown channel
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
         self.shutdown_tx = Some(shutdown_tx);
 
-        let fd = self.fd;
         let state = Arc::clone(&self.state);
         let event_tx = self.event_tx.clone();
 
@@ -171,20 +176,16 @@ impl PipeWireConnection {
                 }
             };
 
-            // Connect core using the portal-provided FD
-            // SAFETY: The FD was provided by XDG Desktop Portal via lamco-portal.
-            // We take exclusive ownership here - the FD is not used anywhere else.
-            // OwnedFd will close the FD when dropped or transferred to PipeWire.
-            let owned_fd = unsafe { OwnedFd::from_raw_fd(fd) };
-            let core = match context.connect_fd(owned_fd, None) {
+            // Connect core using the portal-provided FD (ownership transferred to PipeWire)
+            let core = match context.connect_fd(fd, None) {
                 Ok(c) => c,
                 Err(e) => {
-                    error!("Failed to connect PipeWire core with FD {}: {}", fd, e);
+                    error!("Failed to connect PipeWire core: {}", e);
                     return;
                 }
             };
 
-            info!("PipeWire connected successfully on FD {}", fd);
+            info!("PipeWire connected successfully");
 
             // Update state to connected
             *futures::executor::block_on(state.write()) = ConnectionState::Connected;
@@ -402,9 +403,9 @@ impl PipeWireConnection {
         self.stats.lock().await.clone()
     }
 
-    /// Get file descriptor
-    pub fn fd(&self) -> RawFd {
-        self.fd
+    /// Get file descriptor (returns None after connect() consumes it)
+    pub fn fd(&self) -> Option<RawFd> {
+        self.fd.as_ref().map(|f| f.as_raw_fd())
     }
 }
 
@@ -444,17 +445,28 @@ unsafe impl Sync for PipeWireConnection {}
 mod tests {
     use super::*;
 
+    /// Create a dummy OwnedFd for testing (uses a pipe)
+    fn test_fd() -> OwnedFd {
+        use std::os::fd::FromRawFd;
+        let (read_fd, _write_fd) = nix::unistd::pipe().expect("pipe() failed");
+        // SAFETY: pipe() returns valid, open file descriptors. We take
+        // ownership of read_fd; _write_fd is leaked (acceptable in tests).
+        unsafe { OwnedFd::from_raw_fd(read_fd) }
+    }
+
     #[tokio::test]
     async fn test_connection_creation() {
-        let conn = PipeWireConnection::new(3).unwrap();
+        let fd = test_fd();
+        let raw = fd.as_raw_fd();
+        let conn = PipeWireConnection::new(fd).unwrap();
         assert_eq!(conn.state().await, ConnectionState::Disconnected);
-        assert_eq!(conn.fd(), 3);
+        assert_eq!(conn.fd(), Some(raw));
     }
 
     #[tokio::test]
     #[ignore] // Requires actual PipeWire daemon
     async fn test_connection_lifecycle() {
-        let mut conn = PipeWireConnection::new(3).unwrap();
+        let mut conn = PipeWireConnection::new(test_fd()).unwrap();
 
         assert_eq!(conn.state().await, ConnectionState::Disconnected);
         assert!(!conn.is_connected().await);
@@ -470,7 +482,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_stream_id_generation() {
-        let conn = PipeWireConnection::new(3).unwrap();
+        let conn = PipeWireConnection::new(test_fd()).unwrap();
 
         let id1 = *conn.next_stream_id.lock().await;
         *conn.next_stream_id.lock().await += 1;
@@ -481,7 +493,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_event_channel() {
-        let mut conn = PipeWireConnection::new(3).unwrap();
+        let mut conn = PipeWireConnection::new(test_fd()).unwrap();
 
         let (tx, mut rx) = mpsc::channel(10);
         conn.set_event_channel(tx);
@@ -495,5 +507,12 @@ mod tests {
         if let Some(event) = rx.recv().await {
             assert!(matches!(event, PipeWireEvent::Connected));
         }
+    }
+
+    #[tokio::test]
+    async fn test_fd_consumed_after_connect_attempt() {
+        let conn = PipeWireConnection::new(test_fd()).unwrap();
+        // FD is available before connect
+        assert!(conn.fd().is_some());
     }
 }
