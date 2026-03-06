@@ -23,9 +23,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create a session (this will trigger the system permission dialog)
     println!("Creating session (permission dialog will appear)...");
-    let (session, restore_token) = manager
-        .create_session("basic-example".to_string(), None)
-        .await?;
+    let (session, restore_token) = manager.create_session("basic-example".to_string(), None).await?;
     println!("✓ Session created: {}\n", session.session_id());
 
     if let Some(token) = restore_token {
@@ -44,10 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  Stream {}: ", i);
         println!("    Node ID: {}", stream.node_id);
         println!("    Size: {}x{}", stream.size.0, stream.size.1);
-        println!(
-            "    Position: ({}, {})",
-            stream.position.0, stream.position.1
-        );
+        println!("    Position: ({}, {})", stream.position.0, stream.position.1);
         println!("    Type: {:?}", stream.source_type);
     }
 

@@ -1,18 +1,15 @@
-//! PipeWire Stream Management
+//! PipeWire Stream Types
 //!
-//! Handles individual PipeWire streams for screen capture.
+//! Configuration, state, and metrics types for PipeWire streams.
+//! The actual stream implementation lives in `pw_thread.rs`.
 
 use libspa::param::video::VideoFormat;
 use pipewire::spa::utils::Fraction;
-use pipewire::stream::{Stream, StreamState};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
-use tokio::sync::mpsc;
+use pipewire::stream::StreamState;
 
-use crate::buffer::SharedBufferManager;
-use crate::error::{PipeWireError, Result};
+use std::sync::Mutex;
+
 use crate::format::PixelFormat;
-use crate::frame::{FrameCallback, FrameStats, VideoFrame};
 
 /// Stream configuration
 #[derive(Debug, Clone)]
@@ -80,32 +77,46 @@ impl StreamConfig {
 }
 
 /// PipeWire stream state
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Faithfully mirrors [`pipewire::stream::StreamState`] so consumers get
+/// full state information for health monitoring and diagnostics.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PwStreamState {
-    /// Stream is initializing
-    Initializing,
-    /// Stream is ready to start
-    Ready,
-    /// Stream is actively streaming
-    Streaming,
-    /// Stream is paused
+    /// Stream is not connected to a PipeWire node
+    Unconnected,
+    /// Stream is connecting to a PipeWire node
+    Connecting,
+    /// Stream is connected but not actively streaming
     Paused,
-    /// Stream encountered an error
-    Error,
-    /// Stream is closing
-    Closing,
+    /// Stream is actively delivering frames
+    Streaming,
+    /// Stream encountered an error (carries the error message)
+    Error(String),
 }
 
 impl From<StreamState> for PwStreamState {
     fn from(state: StreamState) -> Self {
         match state {
-            StreamState::Error(_) => Self::Error,
-            StreamState::Unconnected => Self::Initializing,
-            StreamState::Connecting => Self::Initializing,
+            StreamState::Unconnected => Self::Unconnected,
+            StreamState::Connecting => Self::Connecting,
             StreamState::Paused => Self::Paused,
             StreamState::Streaming => Self::Streaming,
+            StreamState::Error(msg) => Self::Error(msg),
         }
     }
+}
+
+/// A stream state change event
+///
+/// Emitted by [`PipeWireThreadManager`](crate::pw_thread::PipeWireThreadManager)
+/// when a stream's state changes. Consumers can drain these events to
+/// update health monitoring, UI, or take corrective action.
+#[derive(Debug, Clone)]
+pub struct StreamStateEvent {
+    /// Stream ID that changed state
+    pub stream_id: u32,
+    /// New state of the stream
+    pub state: PwStreamState,
 }
 
 /// Format negotiation result
@@ -127,61 +138,21 @@ pub struct NegotiatedFormat {
     pub framerate: Fraction,
 }
 
-/// PipeWire stream handler
+/// Minimal stream handle used by connection and coordinator modules.
+/// The real PipeWire stream implementation is in `pw_thread.rs`.
 pub struct PipeWireStream {
-    /// Stream ID
     id: u32,
-
-    /// Stream configuration
-    config: StreamConfig,
-
-    /// PipeWire stream (using pipewire crate)
-    stream: Option<Stream>,
-
-    /// Buffer manager (used by process_frame path)
-    #[allow(dead_code)]
-    buffer_manager: SharedBufferManager,
-
-    /// Current state
-    state: Arc<Mutex<PwStreamState>>,
-
-    /// Negotiated format
-    negotiated_format: Arc<Mutex<Option<NegotiatedFormat>>>,
-
-    /// Frame callback
-    frame_callback: Arc<Mutex<Option<FrameCallback>>>,
-
-    /// Frame counter (used by process_frame path)
-    #[allow(dead_code)]
-    frame_counter: Arc<Mutex<u64>>,
-
-    /// Statistics
-    stats: Arc<Mutex<FrameStats>>,
-
-    /// Start time
-    start_time: Arc<Mutex<Option<SystemTime>>>,
-
-    /// Frame sender channel
-    frame_tx: Arc<Mutex<Option<mpsc::Sender<VideoFrame>>>>,
+    state: Mutex<PwStreamState>,
+    frame_callback: Mutex<Option<crate::frame::FrameCallback>>,
 }
 
 impl PipeWireStream {
-    /// Create new PipeWire stream
-    pub fn new(id: u32, config: StreamConfig) -> Self {
-        let buffer_manager = SharedBufferManager::new(config.buffer_count as usize);
-
+    /// Create a new stream handle
+    pub fn new(id: u32, _config: StreamConfig) -> Self {
         Self {
             id,
-            config,
-            stream: None,
-            buffer_manager,
-            state: Arc::new(Mutex::new(PwStreamState::Initializing)),
-            negotiated_format: Arc::new(Mutex::new(None)),
-            frame_callback: Arc::new(Mutex::new(None)),
-            frame_counter: Arc::new(Mutex::new(0)),
-            stats: Arc::new(Mutex::new(FrameStats::new())),
-            start_time: Arc::new(Mutex::new(None)),
-            frame_tx: Arc::new(Mutex::new(None)),
+            state: Mutex::new(PwStreamState::Unconnected),
+            frame_callback: Mutex::new(None),
         }
     }
 
@@ -190,232 +161,143 @@ impl PipeWireStream {
         self.id
     }
 
-    /// Get stream state
+    /// Get current state
     pub fn state(&self) -> PwStreamState {
-        *self.state.lock().unwrap()
+        self.state.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Set frame callback
-    pub fn set_frame_callback(&mut self, callback: FrameCallback) {
-        *self.frame_callback.lock().unwrap() = Some(callback);
+    pub fn set_frame_callback(&mut self, callback: crate::frame::FrameCallback) {
+        *self.frame_callback.lock().unwrap_or_else(|e| e.into_inner()) = Some(callback);
     }
 
-    /// Set frame channel
-    pub fn set_frame_channel(&mut self, tx: mpsc::Sender<VideoFrame>) {
-        *self.frame_tx.lock().unwrap() = Some(tx);
-    }
-
-    /// Get negotiated format
-    pub fn negotiated_format(&self) -> Option<NegotiatedFormat> {
-        self.negotiated_format.lock().unwrap().clone()
-    }
-
-    /// Get statistics
-    pub fn stats(&self) -> FrameStats {
-        self.stats.lock().unwrap().clone()
-    }
-
-    /// Connect to PipeWire node
-    ///
-    /// Establishes connection to the specified PipeWire node with full format negotiation,
-    /// buffer setup, and event callback registration.
-    ///
-    /// # Arguments
-    ///
-    /// * `core` - PipeWire core connection
-    /// * `node_id` - Portal-provided node ID to connect to
-    ///
-    /// # Returns
-    ///
-    /// Ok(()) on successful connection, Err if connection fails
-    ///
-    /// # Errors
-    ///
-    /// Returns error if:
-    /// - Stream creation fails
-    /// - Parameter construction fails
-    /// - Connection to node fails
-    /// - Format negotiation fails
-    pub async fn connect(&mut self, core: &pipewire::core::Core, node_id: u32) -> Result<()> {
-        use pipewire::spa::pod::Pod;
-        use pipewire::spa::utils::Direction;
-        use pipewire::stream::StreamFlags;
-
-        // Build list of acceptable formats (prepared for future format params)
-        let _formats = if let Some(pref) = self.config.preferred_format {
-            vec![pref.to_spa()]
-        } else {
-            // Prefer BGRA/BGRx for RDP compatibility
-            vec![
-                VideoFormat::BGRx,
-                VideoFormat::BGRA,
-                VideoFormat::RGBx,
-                VideoFormat::RGBA,
-            ]
-        };
-
-        // Framerate for format negotiation (prepared for future use)
-        let _framerate = Fraction {
-            num: self.config.framerate,
-            denom: 1,
-        };
-
-        // Create stream using pipewire-rs safe API
-        let stream_name = format!("lamco-pw-{}", self.id);
-
-        // Build properties
-        let mut props = pipewire::properties::Properties::new();
-        props.insert("media.type".to_string(), "Video".to_string());
-        props.insert("media.category".to_string(), "Capture".to_string());
-        props.insert("media.role".to_string(), "Screen".to_string());
-        props.insert("node.target".to_string(), node_id.to_string());
-
-        // Create the stream on the core
-        let pw_stream = pipewire::stream::Stream::new(core, &stream_name, props)
-            .map_err(|e| PipeWireError::StreamCreationFailed(format!("Failed to create stream: {}", e)))?;
-
-        // Connect stream with format parameters
-        // Note: In pipewire-rs, we connect first then params are negotiated via events
-        let mut params: Vec<&Pod> = vec![];
-        pw_stream
-            .connect(
-                Direction::Input,
-                Some(node_id),
-                StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS,
-                &mut params, // Params will be negotiated via events
-            )
-            .map_err(|e| PipeWireError::ConnectionFailed(format!("Stream connect failed: {}", e)))?;
-
-        // Store the stream reference
-        // Note: The actual Stream object needs to be managed carefully
-        // as it contains non-Send types
-        *self.state.lock().unwrap() = PwStreamState::Initializing;
-
-        // In production, we would:
-        // 1. Set up event listeners on the stream
-        // 2. Handle state changes asynchronously
-        // 3. Process format negotiation via param_changed events
-        // 4. Handle process callbacks for frame data
-        //
-        // This requires either:
-        // a) Running everything on the PipeWire thread, OR
-        // b) Using message passing between threads
-        //
-        // For our architecture, we use dedicated PipeWire thread approach
-        // implemented in connection.rs
-
+    /// Stop the stream
+    pub async fn stop(&mut self) -> crate::error::Result<()> {
+        *self.state.lock().unwrap_or_else(|e| e.into_inner()) = PwStreamState::Unconnected;
         Ok(())
     }
+}
 
-    /// Start streaming
-    pub async fn start(&mut self) -> Result<()> {
-        *self.state.lock().unwrap() = PwStreamState::Streaming;
-        *self.start_time.lock().unwrap() = Some(SystemTime::now());
-        Ok(())
-    }
+/// Stream timing snapshot from PipeWire's graph cycle.
+///
+/// Wraps the data from `pw_stream_get_time_n()`. All timing values are
+/// relative to the PipeWire graph clock and updated once per graph cycle
+/// (typically every quantum, e.g. every ~21ms at 48kHz/1024).
+///
+/// For video capture streams, `ticks` increases monotonically and `delay`
+/// reflects the total pipeline latency from the capture source through
+/// any intermediate filters.
+#[derive(Debug, Clone, Default)]
+pub struct StreamTime {
+    /// Graph clock timestamp (nanoseconds, CLOCK_MONOTONIC).
+    /// Compare with [`get_stream_nsec()`] to compute elapsed time since
+    /// this report was generated.
+    pub now_nsec: i64,
 
-    /// Pause streaming
-    pub async fn pause(&mut self) -> Result<()> {
-        *self.state.lock().unwrap() = PwStreamState::Paused;
-        Ok(())
-    }
+    /// Tick rate as a fraction (numerator / denominator).
+    /// For video streams this is typically 1/framerate (e.g. 1/60).
+    /// For audio streams it's 1/samplerate.
+    pub rate_num: u32,
+    pub rate_denom: u32,
 
-    /// Resume streaming
-    pub async fn resume(&mut self) -> Result<()> {
-        *self.state.lock().unwrap() = PwStreamState::Streaming;
-        Ok(())
-    }
+    /// Monotonically increasing stream position in ticks.
+    /// Gaps in this value between consecutive reads indicate dropped frames.
+    pub ticks: u64,
 
-    /// Stop streaming
-    pub async fn stop(&mut self) -> Result<()> {
-        *self.state.lock().unwrap() = PwStreamState::Closing;
-        self.stream = None;
-        Ok(())
-    }
+    /// Pipeline latency from capture source through all filters, in ticks.
+    /// Multiply by rate (rate_num / rate_denom) to get seconds.
+    /// Does not include queued buffer latency.
+    pub delay: i64,
 
-    /// Restart stream after error
-    pub async fn restart(&mut self) -> Result<()> {
-        self.stop().await?;
-        *self.state.lock().unwrap() = PwStreamState::Initializing;
-        Ok(())
-    }
+    /// Total bytes currently queued in the stream (sum of all queued buffer sizes).
+    pub queued_bytes: u64,
 
-    /// Process a frame from PipeWire
-    ///
-    /// This method is currently unused as frame processing is handled directly
-    /// in the PipeWire thread. Preserved for potential future direct processing path.
-    #[allow(dead_code)]
-    async fn process_frame(&self, buffer_id: u32, pts: u64) -> Result<()> {
-        // Get buffer
-        let buffer_opt = self
-            .buffer_manager
-            .with_buffer(buffer_id, |buf| {
-                // Extract data
-                // SAFETY: Buffer is locked via with_buffer() ensuring exclusive access.
-                // We immediately copy to Vec, so no dangling slice references.
-                let data = unsafe { buf.as_slice().map(|s| s.to_vec()) };
+    /// Extra frames buffered in the resampler (audio streams).
+    pub buffered: u64,
 
-                (buf.size, buf.buffer_type, data)
-            })
-            .await;
+    /// Number of buffers currently queued (handed to PipeWire, not yet returned).
+    pub queued_buffers: u32,
 
-        if let Some((_size, buffer_type, Some(data))) = buffer_opt {
-            // Get negotiated format
-            let format_info = self.negotiated_format.lock().unwrap().clone();
+    /// Number of buffers available for dequeue.
+    /// Low values indicate the producer is keeping up; zero means starvation.
+    pub avail_buffers: u32,
+}
 
-            if let Some(format) = format_info {
-                // Create video frame
-                let frame_id = {
-                    let mut counter = self.frame_counter.lock().unwrap();
-                    let id = *counter;
-                    *counter += 1;
-                    id
-                };
-
-                let pixel_format = PixelFormat::from_spa(format.format).unwrap_or(PixelFormat::BGRA);
-
-                let mut frame = VideoFrame::with_data(
-                    frame_id,
-                    format.width,
-                    format.height,
-                    format.stride,
-                    pixel_format,
-                    self.id,
-                    data,
-                );
-
-                frame.set_timing(pts, pts, 0);
-
-                if buffer_type.is_dmabuf() {
-                    frame.flags.set_dmabuf();
-                }
-
-                // Update stats
-                self.stats.lock().unwrap().update(&frame);
-
-                // Send to callback if set
-                if let Some(ref callback) = *self.frame_callback.lock().unwrap() {
-                    callback(frame.clone());
-                }
-
-                // Send to channel if set
-                if let Some(ref tx) = *self.frame_tx.lock().unwrap() {
-                    let _ = tx.try_send(frame);
-                }
-            }
+impl StreamTime {
+    /// Pipeline delay in nanoseconds.
+    /// Returns 0 if rate_denom is zero (uninitialized stream).
+    pub fn delay_nsec(&self) -> i64 {
+        if self.rate_denom == 0 {
+            return 0;
         }
-
-        Ok(())
+        // delay is in ticks; convert via rate fraction to seconds, then to ns
+        self.delay * self.rate_num as i64 * 1_000_000_000 / self.rate_denom as i64
     }
 
-    /// Get uptime
-    pub fn uptime(&self) -> Option<Duration> {
-        self.start_time
-            .lock()
-            .unwrap()
-            .as_ref()
-            .and_then(|start| start.elapsed().ok())
+    /// Buffer pressure ratio (0.0 = no pressure, 1.0 = all buffers queued, none available).
+    /// Returns 0.0 if no buffers exist.
+    pub fn buffer_pressure(&self) -> f32 {
+        let total = self.queued_buffers + self.avail_buffers;
+        if total == 0 {
+            return 0.0;
+        }
+        self.queued_buffers as f32 / total as f32
     }
+}
+
+/// Query the current stream time via `pw_stream_get_time_n()`.
+///
+/// RT-safe. Can be called from the process callback without blocking.
+/// Returns `None` if the call fails (stream not connected or invalid pointer).
+///
+/// # Safety
+///
+/// The raw stream pointer must be valid and the stream must not have been destroyed.
+/// This is guaranteed when called from within a stream callback or while the
+/// PipeWire main loop is locked.
+pub(crate) unsafe fn get_stream_time(raw_stream: *mut pipewire::sys::pw_stream) -> Option<StreamTime> {
+    let mut time = std::mem::MaybeUninit::<pipewire::sys::pw_time>::uninit();
+    // SAFETY: raw_stream is valid (caller guarantee), pw_time is POD with no
+    // invariants, and pw_stream_get_time_n is documented RT-safe.
+    let ret = unsafe {
+        pipewire::sys::pw_stream_get_time_n(
+            raw_stream,
+            time.as_mut_ptr(),
+            std::mem::size_of::<pipewire::sys::pw_time>(),
+        )
+    };
+    if ret < 0 {
+        return None;
+    }
+    // SAFETY: pw_stream_get_time_n returned success (>= 0), so time is initialized.
+    let t = unsafe { time.assume_init() };
+    Some(StreamTime {
+        now_nsec: t.now,
+        rate_num: t.rate.num,
+        rate_denom: t.rate.denom,
+        ticks: t.ticks,
+        delay: t.delay,
+        queued_bytes: t.queued,
+        buffered: t.buffered,
+        queued_buffers: t.queued_buffers,
+        avail_buffers: t.avail_buffers,
+    })
+}
+
+/// Query the current monotonic time for the stream in nanoseconds.
+///
+/// This can be compared with [`StreamTime::now_nsec`] to compute how much
+/// time has elapsed since the last timing report.
+///
+/// RT-safe.
+///
+/// # Safety
+///
+/// Same requirements as [`get_stream_time()`].
+#[allow(dead_code)]
+pub(crate) unsafe fn get_stream_nsec(raw_stream: *mut pipewire::sys::pw_stream) -> u64 {
+    // SAFETY: raw_stream is valid (caller guarantee), function is RT-safe.
+    unsafe { pipewire::sys::pw_stream_get_nsec(raw_stream) }
 }
 
 /// Stream metrics
@@ -438,6 +320,9 @@ pub struct StreamMetrics {
 
     /// Current FPS
     pub current_fps: f32,
+
+    /// Most recent stream timing snapshot (None until first frame)
+    pub last_stream_time: Option<StreamTime>,
 }
 
 #[cfg(test)]
@@ -461,47 +346,95 @@ mod tests {
     }
 
     #[test]
-    fn test_stream_creation() {
-        let config = StreamConfig::new("test");
-        let stream = PipeWireStream::new(0, config);
-
-        assert_eq!(stream.id(), 0);
-        assert_eq!(stream.state(), PwStreamState::Initializing);
-    }
-
-    #[tokio::test]
-    async fn test_stream_state_transitions() {
-        let config = StreamConfig::new("test");
-        let mut stream = PipeWireStream::new(0, config);
-
-        assert_eq!(stream.state(), PwStreamState::Initializing);
-
-        stream.start().await.unwrap();
-        assert_eq!(stream.state(), PwStreamState::Streaming);
-
-        stream.pause().await.unwrap();
-        assert_eq!(stream.state(), PwStreamState::Paused);
-
-        stream.resume().await.unwrap();
-        assert_eq!(stream.state(), PwStreamState::Streaming);
-
-        stream.stop().await.unwrap();
-        assert_eq!(stream.state(), PwStreamState::Closing);
+    fn test_stream_state_from_pw() {
+        assert_eq!(PwStreamState::from(StreamState::Streaming), PwStreamState::Streaming);
+        assert_eq!(PwStreamState::from(StreamState::Paused), PwStreamState::Paused);
+        assert_eq!(
+            PwStreamState::from(StreamState::Unconnected),
+            PwStreamState::Unconnected
+        );
+        assert_eq!(PwStreamState::from(StreamState::Connecting), PwStreamState::Connecting);
+        assert_eq!(
+            PwStreamState::from(StreamState::Error("test error".to_string())),
+            PwStreamState::Error("test error".to_string())
+        );
     }
 
     #[test]
-    fn test_frame_callback() {
-        let config = StreamConfig::new("test");
-        let mut stream = PipeWireStream::new(0, config);
+    fn test_stream_state_event() {
+        let event = StreamStateEvent {
+            stream_id: 42,
+            state: PwStreamState::Streaming,
+        };
+        assert_eq!(event.stream_id, 42);
+        assert_eq!(event.state, PwStreamState::Streaming);
+    }
 
-        let received = Arc::new(Mutex::new(false));
-        let received_clone = Arc::clone(&received);
+    #[test]
+    fn test_negotiated_format() {
+        let format = NegotiatedFormat {
+            format: VideoFormat::BGRA,
+            width: 1920,
+            height: 1080,
+            stride: 7680,
+            framerate: Fraction { num: 60, denom: 1 },
+        };
 
-        stream.set_frame_callback(Box::new(move |_frame| {
-            *received_clone.lock().unwrap() = true;
-        }));
+        assert_eq!(format.width, 1920);
+        assert_eq!(format.stride, 7680);
+    }
 
-        // Verify callback is set
-        assert!(stream.frame_callback.lock().unwrap().is_some());
+    #[test]
+    fn test_stream_time_delay_nsec() {
+        let t = StreamTime {
+            rate_num: 1,
+            rate_denom: 60,
+            delay: 120, // 120 ticks at 1/60 = 2 seconds = 2_000_000_000 ns
+            ..Default::default()
+        };
+        assert_eq!(t.delay_nsec(), 2_000_000_000);
+    }
+
+    #[test]
+    fn test_stream_time_delay_zero_denom() {
+        let t = StreamTime {
+            rate_num: 1,
+            rate_denom: 0,
+            delay: 100,
+            ..Default::default()
+        };
+        // Uninitialized stream: should return 0 rather than divide-by-zero
+        assert_eq!(t.delay_nsec(), 0);
+    }
+
+    #[test]
+    fn test_stream_time_buffer_pressure() {
+        // All buffers queued (maximum pressure)
+        let t = StreamTime {
+            queued_buffers: 4,
+            avail_buffers: 0,
+            ..Default::default()
+        };
+        assert!((t.buffer_pressure() - 1.0).abs() < f32::EPSILON);
+
+        // No buffers queued (no pressure)
+        let t2 = StreamTime {
+            queued_buffers: 0,
+            avail_buffers: 4,
+            ..Default::default()
+        };
+        assert!(t2.buffer_pressure().abs() < f32::EPSILON);
+
+        // Half and half
+        let t3 = StreamTime {
+            queued_buffers: 2,
+            avail_buffers: 2,
+            ..Default::default()
+        };
+        assert!((t3.buffer_pressure() - 0.5).abs() < f32::EPSILON);
+
+        // No buffers at all
+        let t4 = StreamTime::default();
+        assert!(t4.buffer_pressure().abs() < f32::EPSILON);
     }
 }

@@ -412,14 +412,13 @@ async fn monitor_stream_health(handle: StreamHandle) {
         let state = handle.stream.lock().await.state();
 
         match state {
-            PwStreamState::Error => {
-                tracing::warn!("Stream {} in error state", handle.id);
-                // Would trigger recovery here
+            PwStreamState::Error(ref msg) => {
+                tracing::warn!("Stream {} in error state: {}", handle.id, msg);
                 break;
             }
 
-            PwStreamState::Closing => {
-                tracing::info!("Stream {} closing", handle.id);
+            PwStreamState::Unconnected => {
+                tracing::info!("Stream {} disconnected", handle.id);
                 break;
             }
 

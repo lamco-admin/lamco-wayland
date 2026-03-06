@@ -22,27 +22,27 @@
 //! # Architecture
 //!
 //! ```text
-//! Async Runtime (Tokio)              PipeWire Thread (std::thread)
-//! ━━━━━━━━━━━━━━━━━━━━              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//! Async Runtime (Tokio)       PipeWire Thread (std::thread)
+//! ━━━━━━━━━━━━━━━━━━━━       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //!
 //! PipeWireThreadManager ──Commands──> run_pipewire_main_loop()
-//!   (Send + Sync)                         │
-//!       │                                 ├─ MainLoop::new()
-//!       │                                 ├─ Context::new()
-//!       │                                 ├─ Core::connect_fd()
-//!       │                                 │
-//!       │                                 ├─ Process Commands:
-//!       │                                 │   ├─ CreateStream
-//!       │                                 │   ├─ DestroyStream
-//!       │                                 │   └─ GetStreamState
-//!       │                                 │
-//!       │                                 ├─ MainLoop.iterate()
-//!       │                                 │   └─ Stream callbacks
-//!       │                                 │       └─ process() extracts frames
-//!       │                                 │
-//!       │ <──────Frames─────────────────────┘
-//!       │
-//!   recv_frame_timeout()
+//!  (Send + Sync)             │
+//!    │                 ├─ MainLoop::new()
+//!    │                 ├─ Context::new()
+//!    │                 ├─ Core::connect_fd()
+//!    │                 │
+//!    │                 ├─ Process Commands:
+//!    │                 │  ├─ CreateStream
+//!    │                 │  ├─ DestroyStream
+//!    │                 │  └─ GetStreamState
+//!    │                 │
+//!    │                 ├─ MainLoop.iterate()
+//!    │                 │  └─ Stream callbacks
+//!    │                 │    └─ process() extracts frames
+//!    │                 │
+//!    │ <──────Frames─────────────────────┘
+//!    │
+//!  recv_frame_timeout()
 //! ```
 //!
 //! # Safety Guarantees
@@ -67,21 +67,21 @@
 //! // Create a stream (command sent to PipeWire thread)
 //! let (response_tx, response_rx) = std::sync::mpsc::sync_channel(1);
 //! let config = StreamConfig::new("monitor-0".to_string())
-//!     .with_resolution(1920, 1080)
-//!     .with_framerate(60);
+//!   .with_resolution(1920, 1080)
+//!   .with_framerate(60);
 //!
 //! manager.send_command(PipeWireThreadCommand::CreateStream {
-//!     stream_id: 1,
-//!     node_id: 42,
-//!     config,
+//!   stream_id: 1,
+//!   node_id: 42,
+//!   config,
 //! })?;
 //!
 //! // Receive frames via the channel returned by manager
 //! loop {
-//!     if let Some(frame) = manager.try_recv_frame() {
-//!         println!("Got frame: {}x{}", frame.width, frame.height);
-//!         // Process frame...
-//!     }
+//!   if let Some(frame) = manager.try_recv_frame() {
+//!     println!("Got frame: {}x{}", frame.width, frame.height);
+//!     // Process frame...
+//!   }
 //! }
 //! ```
 //!
@@ -93,15 +93,16 @@
 //! - **Thread overhead:** ~0.5ms per iteration
 //! - **Supports:** Up to 144Hz refresh rates
 
-use pipewire::properties::Properties;
+use pipewire::properties::PropertiesBox;
 use pipewire::spa::param::ParamType;
 use pipewire::spa::pod::Pod;
 use pipewire::spa::utils::Direction;
-use pipewire::stream::{Stream, StreamFlags, StreamState};
-use pipewire::{context::Context, core::Core, main_loop::MainLoop};
+use pipewire::stream::{StreamBox, StreamFlags, StreamState};
+use pipewire::{context::ContextBox, main_loop::MainLoopBox};
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::os::fd::{FromRawFd, OwnedFd, RawFd};
+use std::ptr::NonNull;
 use std::sync::mpsc as std_mpsc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -110,9 +111,12 @@ use tracing::{debug, error, info, trace, warn};
 use crate::error::{PipeWireError, Result};
 use crate::format::PixelFormat;
 use crate::frame::{FrameFlags, VideoFrame};
-use crate::stream::StreamConfig;
+use crate::stream::{PwStreamState, StreamConfig, StreamStateEvent};
 use std::sync::Arc as StdArc;
 use std::time::SystemTime;
+
+/// DMA-BUF mmap cache: FD -> (mapped pointer, size)
+type DmaBufCache = std::rc::Rc<std::cell::RefCell<HashMap<RawFd, (NonNull<libc::c_void>, usize)>>>;
 
 /// Commands sent to the PipeWire thread
 pub enum PipeWireThreadCommand {
@@ -150,7 +154,9 @@ struct ManagedStream {
     id: u32,
 
     /// PipeWire stream (lives on PipeWire thread only)
-    stream: Stream,
+    /// SAFETY: 'static lifetime is safe because we manually enforce drop order:
+    /// streams are cleared before core is dropped in run_pipewire_main_loop().
+    stream: StreamBox<'static>,
 
     /// Stream event listener (must be kept alive)
     _listener: pipewire::stream::StreamListener<()>,
@@ -182,6 +188,9 @@ pub struct PipeWireThreadManager {
     /// Frame channel receiver
     frame_rx: std_mpsc::Receiver<VideoFrame>,
 
+    /// Stream state event receiver (state changes from PipeWire callbacks)
+    state_event_rx: std_mpsc::Receiver<StreamStateEvent>,
+
     /// Shutdown flag
     shutdown_tx: Option<std_mpsc::SyncSender<()>>,
 }
@@ -209,13 +218,15 @@ impl PipeWireThreadManager {
         // Frame channel: increased from 64 to 256 to handle burst traffic
         // At 60 FPS capture / 30 FPS target = 2:1 ratio needs buffer
         let (frame_tx, frame_rx) = std_mpsc::sync_channel::<VideoFrame>(256);
+        // State event channel for health monitoring (bounded to prevent unbounded growth)
+        let (state_event_tx, state_event_rx) = std_mpsc::sync_channel::<StreamStateEvent>(256);
         let (shutdown_tx, shutdown_rx) = std_mpsc::sync_channel::<()>(1);
 
         // Spawn dedicated PipeWire thread
         let thread_handle = thread::Builder::new()
             .name("pipewire-main".to_string())
             .spawn(move || {
-                run_pipewire_main_loop(fd, command_rx, frame_tx, shutdown_rx);
+                run_pipewire_main_loop(fd, command_rx, frame_tx, state_event_tx, shutdown_rx);
             })
             .map_err(|e| PipeWireError::InitializationFailed(format!("Thread spawn failed: {}", e)))?;
 
@@ -225,6 +236,7 @@ impl PipeWireThreadManager {
             thread_handle: Some(thread_handle),
             command_tx,
             frame_rx,
+            state_event_rx,
             shutdown_tx: Some(shutdown_tx),
         })
     }
@@ -251,6 +263,25 @@ impl PipeWireThreadManager {
     /// Some(VideoFrame) if a frame is available, None otherwise
     pub fn try_recv_frame(&self) -> Option<VideoFrame> {
         self.frame_rx.try_recv().ok()
+    }
+
+    /// Try to receive a stream state event (non-blocking)
+    ///
+    /// Returns the next state change event if one is available.
+    pub fn try_recv_state_event(&self) -> Option<StreamStateEvent> {
+        self.state_event_rx.try_recv().ok()
+    }
+
+    /// Drain all pending stream state events
+    ///
+    /// Returns all queued state change events, useful for batch processing
+    /// in a frame loop. Events are ordered chronologically.
+    pub fn drain_state_events(&self) -> Vec<StreamStateEvent> {
+        let mut events = Vec::new();
+        while let Ok(event) = self.state_event_rx.try_recv() {
+            events.push(event);
+        }
+        events
     }
 
     /// Receive a frame (blocking with timeout)
@@ -308,6 +339,7 @@ fn run_pipewire_main_loop(
     fd: RawFd,
     command_rx: std_mpsc::Receiver<PipeWireThreadCommand>,
     frame_tx: std_mpsc::SyncSender<VideoFrame>,
+    state_event_tx: std_mpsc::SyncSender<StreamStateEvent>,
     shutdown_rx: std_mpsc::Receiver<()>,
 ) {
     info!("PipeWire main loop thread started");
@@ -316,7 +348,7 @@ fn run_pipewire_main_loop(
     pipewire::init();
 
     // Create main loop
-    let main_loop = match MainLoop::new(None) {
+    let main_loop = match MainLoopBox::new(None) {
         Ok(ml) => ml,
         Err(e) => {
             error!("Failed to create MainLoop: {}", e);
@@ -324,8 +356,8 @@ fn run_pipewire_main_loop(
         }
     };
 
-    // Create context
-    let context = match Context::new(&main_loop) {
+    // Create context (0.9 API: takes &Loop reference + optional properties)
+    let context = match ContextBox::new(main_loop.loop_(), None) {
         Ok(ctx) => ctx,
         Err(e) => {
             error!("Failed to create Context: {}", e);
@@ -334,23 +366,23 @@ fn run_pipewire_main_loop(
     };
 
     // Connect core using portal FD
-    info!("🔌 Connecting PipeWire Core to Portal FD {}", fd);
+    info!("Connecting PipeWire Core to Portal FD {}", fd);
     // SAFETY: The FD was provided by XDG Desktop Portal via lamco-portal.
     // We take exclusive ownership - the FD is not used anywhere else.
     let owned_fd = unsafe { OwnedFd::from_raw_fd(fd) };
     let core = match context.connect_fd(owned_fd, None) {
         Ok(c) => {
-            info!("✅ Core.connect_fd() succeeded");
+            info!("Core.connect_fd() succeeded");
             c
         }
         Err(e) => {
-            error!("❌ Failed to connect Core with FD {}: {}", fd, e);
+            error!("Failed to connect Core with FD {}: {}", fd, e);
             return;
         }
     };
 
-    info!("✅ PipeWire Core connected successfully to Portal FD {}", fd);
-    info!("📍 This is a PRIVATE PipeWire connection - node IDs only valid on this FD");
+    info!("PipeWire Core connected successfully to Portal FD {}", fd);
+    info!("This is a PRIVATE PipeWire connection - node IDs only valid on this FD");
 
     // Stream storage (all streams live on this thread)
     let mut streams: HashMap<u32, ManagedStream> = HashMap::new();
@@ -360,8 +392,7 @@ fn run_pipewire_main_loop(
     // This cache is shared with all stream process() callbacks
     use std::cell::RefCell;
     use std::rc::Rc;
-    let dmabuf_mmap_cache: Rc<RefCell<HashMap<RawFd, (*mut libc::c_void, usize)>>> =
-        Rc::new(RefCell::new(HashMap::new()));
+    let dmabuf_mmap_cache: DmaBufCache = Rc::new(RefCell::new(HashMap::new()));
 
     // Main event loop
     let mut loop_iterations = 0u64;
@@ -387,11 +418,11 @@ fn run_pipewire_main_loop(
                     response_tx,
                 } => {
                     info!(
-                        "📥 CreateStream command received: stream_id={}, node_id={}",
+                        " CreateStream command received: stream_id={}, node_id={}",
                         stream_id, node_id
                     );
                     info!(
-                        "   Config: {}x{} @ {}fps, dmabuf={}, buffers={}",
+                        "  Config: {}x{} @ {}fps, dmabuf={}, buffers={}",
                         config.width, config.height, config.framerate, config.use_dmabuf, config.buffer_count
                     );
 
@@ -401,22 +432,23 @@ fn run_pipewire_main_loop(
                         &core,
                         config,
                         frame_tx.clone(),
+                        state_event_tx.clone(),
                         Rc::clone(&dmabuf_mmap_cache),
                     );
 
                     match result {
                         Ok(managed_stream) => {
-                            info!("📦 Storing stream {} in active streams map", stream_id);
+                            info!("Storing stream {} in active streams map", stream_id);
                             streams.insert(stream_id, managed_stream);
                             let _ = response_tx.send(Ok(()));
                             info!(
-                                "✅ Stream {} fully created - now in streams map (total: {} streams)",
+                                " Stream {} fully created - now in streams map (total: {} streams)",
                                 stream_id,
                                 streams.len()
                             );
                         }
                         Err(e) => {
-                            error!("❌ Failed to create stream {}: {}", stream_id, e);
+                            error!("Failed to create stream {}: {}", stream_id, e);
                             let _ = response_tx.send(Err(e));
                         }
                     }
@@ -560,20 +592,20 @@ fn mmap_fd_buffer(fd: std::os::fd::RawFd, size: usize, offset: usize) -> Result<
                 .ok_or_else(|| PipeWireError::FrameExtractionFailed("Invalid map size".to_string()))?,
             ProtFlags::PROT_READ,
             MapFlags::MAP_SHARED,
-            Some(borrowed_fd),
+            borrowed_fd,
             map_offset as i64,
         )
         .map_err(|e| PipeWireError::FrameExtractionFailed(format!("mmap failed: {}", e)))?
     };
 
     // Copy data from mapped region
-    // SAFETY: addr is valid from successful mmap above, and:
+    // SAFETY: addr is valid NonNull from successful mmap above, and:
     // - data_offset_in_map + size <= map_size (calculated correctly above)
     // - Vec has sufficient capacity allocated
     // - copy_nonoverlapping is safe with non-overlapping src/dst
     // - set_len is safe because we just wrote exactly size bytes
     let result = unsafe {
-        let src_ptr = (addr as *const u8).add(data_offset_in_map);
+        let src_ptr = (addr.as_ptr() as *const u8).add(data_offset_in_map);
         let mut vec = Vec::with_capacity(size);
         std::ptr::copy_nonoverlapping(src_ptr, vec.as_mut_ptr(), size);
         vec.set_len(size);
@@ -598,17 +630,18 @@ fn mmap_fd_buffer(fd: std::os::fd::RawFd, size: usize, offset: usize) -> Result<
 fn create_stream_on_thread(
     stream_id: u32,
     node_id: u32,
-    core: &Core,
+    core: &pipewire::core::Core,
     config: StreamConfig,
     frame_tx: std_mpsc::SyncSender<VideoFrame>,
-    dmabuf_cache: std::rc::Rc<std::cell::RefCell<HashMap<RawFd, (*mut libc::c_void, usize)>>>,
+    state_event_tx: std_mpsc::SyncSender<StreamStateEvent>,
+    dmabuf_cache: DmaBufCache,
 ) -> Result<ManagedStream> {
     let stream_name = format!("lamco-pw-{}", stream_id);
     let node_target = node_id.to_string();
 
     // Build stream properties per spec
-    info!("🏗️  Building stream properties for stream {}", stream_id);
-    let mut props = Properties::new();
+    info!("Building stream properties for stream {}", stream_id);
+    let mut props = PropertiesBox::new();
     props.insert("media.type", "Video");
     props.insert("media.category", "Capture");
     props.insert("media.role", "Screen");
@@ -616,20 +649,27 @@ fn create_stream_on_thread(
     props.insert("node.target", node_target.as_str());
     props.insert("stream.capture-sink", "true");
 
-    info!("📝 Stream properties:");
-    info!("   media.type = Video");
-    info!("   media.category = Capture");
-    info!("   media.role = Screen");
-    info!("   media.name = {}", stream_name);
-    info!("   node.target = {} (Portal provided node ID)", node_target);
-    info!("   stream.capture-sink = true");
+    info!("Stream properties:");
+    info!(" media.type = Video");
+    info!(" media.category = Capture");
+    info!(" media.role = Screen");
+    info!(" media.name = {}", stream_name);
+    info!(" node.target = {} (Portal provided node ID)", node_target);
+    info!(" stream.capture-sink = true");
 
     // Create the stream
-    info!("Calling Stream::new() with properties");
-    let stream = Stream::new(core, &stream_name, props)
-        .map_err(|e| PipeWireError::StreamCreationFailed(format!("Stream::new failed: {}", e)))?;
+    info!("Calling StreamBox::new() with properties");
+    // SAFETY: We use 'static lifetime because we manually enforce that the core
+    // outlives all streams (streams.clear() before drop(core) in the main loop).
+    let stream: StreamBox<'static> = unsafe {
+        let stream_box = StreamBox::new(core, &stream_name, props)
+            .map_err(|e| PipeWireError::StreamCreationFailed(format!("StreamBox::new failed: {}", e)))?;
+        // Transmute lifetime from '_ (tied to core borrow) to 'static.
+        // SAFETY: Drop ordering is manually enforced in run_pipewire_main_loop.
+        std::mem::transmute::<StreamBox<'_>, StreamBox<'static>>(stream_box)
+    };
 
-    info!("✅ Stream::new() succeeded - stream object created");
+    info!("Stream::new() succeeded - stream object created");
 
     // Set up comprehensive stream event listeners
     // Clone frame_tx and dmabuf_cache for use in closures
@@ -638,9 +678,11 @@ fn create_stream_on_thread(
     let dmabuf_cache_for_process = std::rc::Rc::clone(&dmabuf_cache);
 
     info!(
-        "🎧 Registering stream {} callbacks (state_changed, param_changed, process)",
+        " Registering stream {} callbacks (state_changed, param_changed, process)",
         stream_id
     );
+
+    let state_tx_for_callback = state_event_tx;
 
     let _listener = stream
         .add_local_listener::<()>()
@@ -662,11 +704,27 @@ fn create_stream_on_thread(
                 }
                 _ => {}
             }
+
+            // Emit state event for health monitoring
+            // StreamState doesn't implement Clone, so reconstruct PwStreamState manually
+            let pw_state = match new_state {
+                StreamState::Unconnected => PwStreamState::Unconnected,
+                StreamState::Connecting => PwStreamState::Connecting,
+                StreamState::Paused => PwStreamState::Paused,
+                StreamState::Streaming => PwStreamState::Streaming,
+                StreamState::Error(msg) => PwStreamState::Error(msg.to_string()),
+            };
+            let event = StreamStateEvent {
+                stream_id: stream_id_for_callbacks,
+                state: pw_state,
+            };
+            // Non-blocking: drop event if channel full rather than stalling PipeWire
+            let _ = state_tx_for_callback.try_send(event);
         })
         .param_changed(move |_stream, _user_data, param_id, _param| {
             if param_id == ParamType::Format.as_raw() {
                 info!(
-                    "📐 Stream {} format negotiated via param_changed",
+                    " Stream {} format negotiated via param_changed",
                     stream_id_for_callbacks
                 );
                 // Note: Extracting format from param Pod requires parsing SPA POD format
@@ -674,7 +732,7 @@ fn create_stream_on_thread(
                 // For now, we log that negotiation occurred and rely on config.preferred_format
                 // TODO: Add full SPA POD parsing to extract actual negotiated format
                 info!(
-                    "   Configured format: {:?}",
+                    "  Configured format: {:?}",
                     config.preferred_format.unwrap_or(PixelFormat::BGRx)
                 );
             }
@@ -682,6 +740,11 @@ fn create_stream_on_thread(
         .process(move |stream, _user_data| {
             // This callback is called when a new frame buffer is available
             info!("process() callback fired for stream {}", stream_id_for_callbacks);
+
+            // Capture stream timing before touching buffers (RT-safe)
+            // SAFETY: stream pointer is valid within this callback; pw_stream_get_time_n is RT-safe
+            let stream_time = unsafe { crate::stream::get_stream_time(stream.as_raw_ptr()) };
+
             if let Some(mut buffer) = stream.dequeue_buffer() {
                 info!("Got buffer from stream {}", stream_id_for_callbacks);
 
@@ -694,9 +757,7 @@ fn create_stream_on_thread(
                     let data_type = data.type_();
 
                     // Extract pixel data based on buffer type
-                    // Access raw spa_data structure to get FD
-                    let raw_data = data.as_raw();
-                    let fd = raw_data.fd as RawFd;
+                    let fd = data.fd();
 
                     info!(
                         "Buffer: type={}, size={}, offset={}, fd={}",
@@ -805,7 +866,7 @@ fn create_stream_on_thread(
                                                         nz_size,
                                                         ProtFlags::PROT_READ,
                                                         MapFlags::MAP_SHARED,
-                                                        Some(borrowed_fd),
+                                                        borrowed_fd,
                                                         map_offset as i64,
                                                     ) {
                                                         Ok(ptr) => {
@@ -833,7 +894,7 @@ fn create_stream_on_thread(
                                         // offset + size <= map_size was verified during mmap.
                                         // Vec capacity is allocated before writing.
                                         let result = unsafe {
-                                            let src_ptr = (mapped_ptr as *const u8).add(offset);
+                                            let src_ptr = (mapped_ptr.as_ptr() as *const u8).add(offset);
                                             let mut vec = Vec::with_capacity(size);
                                             std::ptr::copy_nonoverlapping(src_ptr, vec.as_mut_ptr(), size);
                                             vec.set_len(size);
@@ -884,7 +945,7 @@ fn create_stream_on_thread(
 
                         if pixel_data.len() < min_expected_size {
                             warn!(
-                                "⚠️  Rejecting undersized buffer: {} bytes < {} expected for {}×{}",
+                                " Rejecting undersized buffer: {} bytes < {} expected for {}×{}",
                                 pixel_data.len(),
                                 min_expected_size,
                                 config.width,
@@ -910,7 +971,7 @@ fn create_stream_on_thread(
 
                         // Reject frames with zero stride (indicates corrupt buffer metadata)
                         if actual_stride == 0 {
-                            warn!("⚠️  Rejecting buffer with zero stride - corrupt metadata");
+                            warn!("Rejecting buffer with zero stride - corrupt metadata");
                             return;
                         }
 
@@ -919,20 +980,17 @@ fn create_stream_on_thread(
                         let frame_count = LOGGED_FRAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
                         if frame_count < 5 {
-                            info!("📐 Buffer analysis frame {}:", frame_count);
+                            info!("Buffer analysis frame {}:", frame_count);
                             info!(
-                                "   Size: {} bytes, Width: {}, Height: {}",
+                                "  Size: {} bytes, Width: {}, Height: {}",
                                 size, config.width, config.height
                             );
+                            info!("  Calculated stride: {} bytes/row (16-byte aligned)", calculated_stride);
+                            info!(" Actual stride: {} bytes/row", actual_stride);
+                            info!(" Expected buffer size: {} bytes", expected_size);
+                            info!(" Buffer type: {} (1=MemPtr, 2=MemFd, 3=DmaBuf)", data_type.as_raw());
                             info!(
-                                "   Calculated stride: {} bytes/row (16-byte aligned)",
-                                calculated_stride
-                            );
-                            info!("   Actual stride: {} bytes/row", actual_stride);
-                            info!("   Expected buffer size: {} bytes", expected_size);
-                            info!("   Buffer type: {} (1=MemPtr, 2=MemFd, 3=DmaBuf)", data_type.as_raw());
-                            info!(
-                                "   Pixel format: {:?}",
+                                "  Pixel format: {:?}",
                                 config.preferred_format.unwrap_or(PixelFormat::BGRx)
                             );
 
@@ -940,21 +998,34 @@ fn create_stream_on_thread(
                             if pixel_data.len() >= 32 {
                                 let hex_preview: Vec<String> =
                                     pixel_data[0..32].iter().map(|b| format!("{:02x}", b)).collect();
-                                info!("   First 32 bytes (hex): {}", hex_preview.join(" "));
+                                info!(" First 32 bytes (hex): {}", hex_preview.join(" "));
+                            }
+
+                            // Log stream timing from pw_stream_get_time_n
+                            if let Some(ref t) = stream_time {
+                                info!(
+                                    "  PW timing: ticks={}, delay={}ns, queued={}/{} buffers, pressure={:.0}%",
+                                    t.ticks,
+                                    t.delay_nsec(),
+                                    t.queued_buffers,
+                                    t.queued_buffers + t.avail_buffers,
+                                    t.buffer_pressure() * 100.0
+                                );
                             }
                         }
 
                         if actual_stride != calculated_stride {
-                            warn!("⚠️  Stride mismatch detected:");
-                            warn!("   Calculated: {} bytes/row", calculated_stride);
-                            warn!("   Actual: {} bytes/row (from buffer size)", actual_stride);
-                            warn!("   This may cause horizontal line artifacts!");
+                            warn!("Stride mismatch detected:");
+                            warn!(" Calculated: {} bytes/row", calculated_stride);
+                            warn!(" Actual: {} bytes/row (from buffer size)", actual_stride);
+                            warn!(" This may cause horizontal line artifacts!");
                         }
 
                         // Create VideoFrame from extracted pixel data
+                        let pts = stream_time.as_ref().map_or(0, |t| t.now_nsec as u64);
                         let frame = VideoFrame {
                             frame_id: stream_id_for_callbacks as u64,
-                            pts: 0, // TODO: Extract from buffer metadata
+                            pts,
                             dts: 0,
                             duration: 16_666_667, // ~60fps default
                             width: config.width,
@@ -990,7 +1061,7 @@ fn create_stream_on_thread(
         .register()
         .map_err(|e| PipeWireError::StreamCreationFailed(format!("Listener registration failed: {}", e)))?;
 
-    info!("✅ Stream {} callbacks registered successfully", stream_id);
+    info!("Stream {} callbacks registered successfully", stream_id);
 
     // Connect stream to node with format parameters
     let param_bytes = build_stream_parameters(&config)?;
@@ -1000,7 +1071,7 @@ fn create_stream_on_thread(
         .ok_or_else(|| PipeWireError::FormatNegotiationFailed("Failed to parse format parameters".to_string()))?;
 
     info!(
-        "📋 Stream {} connecting with format parameters ({} bytes)",
+        " Stream {} connecting with format parameters ({} bytes)",
         stream_id,
         param_bytes.len()
     );
@@ -1008,15 +1079,15 @@ fn create_stream_on_thread(
     let mut params = [pod];
 
     info!(
-        "🔌 Calling stream.connect() for stream {} with flags: AUTOCONNECT | MAP_BUFFERS | RT_PROCESS",
+        " Calling stream.connect() for stream {} with flags: AUTOCONNECT | MAP_BUFFERS | RT_PROCESS",
         stream_id
     );
     info!(
-        "   TESTING: Using None (PW_ID_ANY) instead of Some({}) - let PipeWire auto-link via node.target property",
+        "  TESTING: Using None (PW_ID_ANY) instead of Some({}) - let PipeWire auto-link via node.target property",
         node_id
     );
     info!(
-        "   The node.target={} property should tell PipeWire which node to link to",
+        "  The node.target={} property should tell PipeWire which node to link to",
         node_id
     );
 
@@ -1030,7 +1101,7 @@ fn create_stream_on_thread(
         .map_err(|e| PipeWireError::ConnectionFailed(format!("Stream connect failed: {}", e)))?;
 
     info!(
-        "✅ Stream {} .connect() succeeded - connected to node {}",
+        " Stream {} .connect() succeeded - connected to node {}",
         stream_id, node_id
     );
 
@@ -1038,9 +1109,9 @@ fn create_stream_on_thread(
     // AUTOCONNECT flag should handle activation automatically
     // Calling set_active(true) here might interfere with auto-connection
     info!("⏳ NOT calling set_active() - AUTOCONNECT flag should activate stream automatically");
-    info!("📍 Waiting for PipeWire to transition stream to Streaming state via main loop events");
+    info!("Waiting for PipeWire to transition stream to Streaming state via main loop events");
     info!(
-        "📍 If you don't see 'Stream {} is now streaming' within 2 seconds, AUTOCONNECT failed",
+        " If you don't see 'Stream {} is now streaming' within 2 seconds, AUTOCONNECT failed",
         stream_id
     );
 
@@ -1149,9 +1220,9 @@ fn build_stream_parameters(config: &StreamConfig) -> Result<Vec<u8>> {
 
     let bytes = serialized.0.into_inner();
 
-    info!("✅ Format parameters built successfully ({} bytes)", bytes.len());
+    info!("Format parameters built successfully ({} bytes)", bytes.len());
     debug!(
-        "   Preferred format: BGRx, size: {}x{}, fps: {}",
+        "  Preferred format: BGRx, size: {}x{}, fps: {}",
         config.width, config.height, config.framerate
     );
 

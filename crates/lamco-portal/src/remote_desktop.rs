@@ -4,7 +4,7 @@
 
 use ashpd::desktop::remote_desktop::{DeviceType, KeyState, RemoteDesktop};
 use enumflags2::BitFlags;
-use std::os::fd::AsRawFd;
+use std::os::fd::IntoRawFd;
 use tracing::{debug, info};
 
 use super::session::StreamInfo;
@@ -12,35 +12,32 @@ use crate::config::PortalConfig;
 use crate::error::{PortalError, Result};
 
 /// RemoteDesktop portal manager
+///
+/// Caches the ashpd RemoteDesktop proxy to avoid creating a new D-Bus proxy
+/// on every input injection call.
 pub struct RemoteDesktopManager {
     config: PortalConfig,
+    proxy: RemoteDesktop<'static>,
 }
 
 impl RemoteDesktopManager {
     /// Create new RemoteDesktop manager
-    ///
-    /// Note: The unused _connection parameter will be removed in a future version.
-    /// ashpd creates its own connections internally.
     pub async fn new(_connection: zbus::Connection, config: &PortalConfig) -> Result<Self> {
         info!("Initializing RemoteDesktop portal manager");
+        let proxy = RemoteDesktop::new().await?;
         Ok(Self {
             config: config.clone(),
+            proxy,
         })
     }
 
     /// Create a remote desktop session
-    pub async fn create_session(
-        &self,
-    ) -> Result<ashpd::desktop::Session<'static, RemoteDesktop<'static>>> {
+    pub async fn create_session(&self) -> Result<ashpd::desktop::Session<'static, RemoteDesktop<'static>>> {
         info!("Creating RemoteDesktop session");
 
-        let proxy = RemoteDesktop::new().await?;
-        let session = proxy.create_session().await?;
+        let session = self.proxy.create_session().await?;
 
         debug!("RemoteDesktop session created");
-
-        // Note: Session can't be cloned in ashpd 0.12.0, so we return it
-        // The caller is responsible for managing the session lifetime
 
         Ok(session)
     }
@@ -53,9 +50,7 @@ impl RemoteDesktopManager {
     ) -> Result<()> {
         info!("Selecting devices: {:?}", devices);
 
-        let proxy = RemoteDesktop::new().await?;
-
-        proxy
+        self.proxy
             .select_devices(
                 session,
                 devices,
@@ -80,11 +75,9 @@ impl RemoteDesktopManager {
     ) -> Result<(std::os::fd::RawFd, Vec<StreamInfo>, Option<String>)> {
         info!("Starting RemoteDesktop session");
 
-        let proxy = RemoteDesktop::new().await?;
-
         // Start returns a Request that resolves to SelectedDevices
         // None for headless/no parent window
-        let response = proxy.start(session, None).await?;
+        let response = self.proxy.start(session, None).await?;
 
         // Get the selected devices from the request response
         let selected = response.response()?;
@@ -94,10 +87,7 @@ impl RemoteDesktopManager {
         let restore_token = selected.restore_token().map(|s| s.to_string());
 
         if let Some(ref token) = restore_token {
-            info!(
-                "Restore token received from portal (length: {} chars)",
-                token.len()
-            );
+            info!("Restore token received from portal (length: {} chars)", token.len());
             debug!("Restore token: {}", token);
         } else {
             debug!("No restore token in response (portal may not support persistence)");
@@ -131,7 +121,7 @@ impl RemoteDesktopManager {
                         let position = stream.position().unwrap_or((0, 0));
 
                         info!(
-                            "📺 Portal provided stream: node_id={}, size=({}, {}), position=({}, {})",
+                            "Portal provided stream: node_id={}, size=({}, {}), position=({}, {})",
                             node_id, size.0, size.1, position.0, position.1
                         );
 
@@ -151,12 +141,10 @@ impl RemoteDesktopManager {
 
         info!("Total streams from Portal: {}", stream_info.len());
 
-        // Prevent FD from being closed - PipeWire thread will take ownership.
-        // Returning OwnedFd would auto-close when PortalSessionHandle drops.
-        let raw_fd = fd.as_raw_fd();
-        std::mem::forget(fd); // Leak the OwnedFd to prevent auto-close
+        // Transfer FD ownership — PipeWire thread takes responsibility for closing it
+        let raw_fd = fd.into_raw_fd();
 
-        info!("FD {} ownership transferred (prevented auto-close)", raw_fd);
+        info!("FD {} ownership transferred to caller", raw_fd);
 
         Ok((raw_fd, stream_info, restore_token))
     }
@@ -168,8 +156,7 @@ impl RemoteDesktopManager {
         dx: f64,
         dy: f64,
     ) -> Result<()> {
-        let proxy = RemoteDesktop::new().await?;
-        proxy.notify_pointer_motion(session, dx, dy).await?;
+        self.proxy.notify_pointer_motion(session, dx, dy).await?;
         Ok(())
     }
 
@@ -181,12 +168,8 @@ impl RemoteDesktopManager {
         x: f64,
         y: f64,
     ) -> Result<()> {
-        debug!(
-            "Injecting pointer motion: stream={}, x={:.2}, y={:.2}",
-            stream, x, y
-        );
-        let proxy = RemoteDesktop::new().await?;
-        proxy
+        debug!("Injecting pointer motion: stream={}, x={:.2}, y={:.2}", stream, x, y);
+        self.proxy
             .notify_pointer_motion_absolute(session, stream, x, y)
             .await
             .map_err(|e| PortalError::input_injection(format!("Pointer motion: {}", e)))?;
@@ -201,17 +184,9 @@ impl RemoteDesktopManager {
         button: i32,
         pressed: bool,
     ) -> Result<()> {
-        debug!(
-            "Injecting pointer button: button={}, pressed={}",
-            button, pressed
-        );
-        let proxy = RemoteDesktop::new().await?;
-        let state = if pressed {
-            KeyState::Pressed
-        } else {
-            KeyState::Released
-        };
-        proxy
+        debug!("Injecting pointer button: button={}, pressed={}", button, pressed);
+        let state = if pressed { KeyState::Pressed } else { KeyState::Released };
+        self.proxy
             .notify_pointer_button(session, button, state)
             .await
             .map_err(|e| PortalError::input_injection(format!("Pointer button: {}", e)))?;
@@ -226,10 +201,7 @@ impl RemoteDesktopManager {
         dx: f64,
         dy: f64,
     ) -> Result<()> {
-        let proxy = RemoteDesktop::new().await?;
-        // In ashpd 0.12.0, notify_pointer_axis takes (session, dx, dy, finish)
-        // We send both axes together with finish=true
-        proxy.notify_pointer_axis(session, dx, dy, true).await?;
+        self.proxy.notify_pointer_axis(session, dx, dy, true).await?;
         Ok(())
     }
 
@@ -240,17 +212,9 @@ impl RemoteDesktopManager {
         keycode: i32,
         pressed: bool,
     ) -> Result<()> {
-        debug!(
-            "Injecting keyboard: keycode={}, pressed={}",
-            keycode, pressed
-        );
-        let proxy = RemoteDesktop::new().await?;
-        let state = if pressed {
-            KeyState::Pressed
-        } else {
-            KeyState::Released
-        };
-        proxy
+        debug!("Injecting keyboard: keycode={}, pressed={}", keycode, pressed);
+        let state = if pressed { KeyState::Pressed } else { KeyState::Released };
+        self.proxy
             .notify_keyboard_keycode(session, keycode, state)
             .await
             .map_err(|e| PortalError::input_injection(format!("Keyboard keycode: {}", e)))?;
@@ -269,9 +233,7 @@ mod tests {
         let connection = zbus::Connection::session().await.unwrap();
         let config = PortalConfig::default();
 
-        let _manager = RemoteDesktopManager::new(connection, &config)
-            .await
-            .unwrap();
+        let _manager = RemoteDesktopManager::new(connection, &config).await.unwrap();
 
         // This will trigger permission dialog
         // let session = manager.create_session().await;

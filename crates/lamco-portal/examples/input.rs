@@ -32,9 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create session (triggers permission dialog)
     println!("Creating session (permission dialog will appear)...");
     println!("Make sure to grant BOTH screen capture AND input control permissions!\n");
-    let (session, _restore_token) = manager
-        .create_session("input-example".to_string(), None)
-        .await?;
+    let (session, _restore_token) = manager.create_session("input-example".to_string(), None).await?;
     println!("✓ Session created\n");
 
     // Get the first stream for pointer positioning

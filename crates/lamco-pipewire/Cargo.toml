@@ -3,7 +3,7 @@
 # PACKAGE IDENTITY
 # ============================================================================
 name = "lamco-pipewire"
-version = "0.1.4"
+version = "0.3.0"
 
 # ============================================================================
 # PACKAGE CONFIGURATION (inherited from workspace)
@@ -77,10 +77,12 @@ yuv = []
 cursor = []
 # Region damage tracking for efficient encoding
 damage = []
+# Audio capture via PipeWire
+audio = ["dep:anyhow"]
 # Adaptive bitrate helpers for streaming scenarios
 adaptive = []
 # Enable all optional features
-full = ["dmabuf", "yuv", "cursor", "damage", "adaptive"]
+full = ["dmabuf", "yuv", "cursor", "damage", "adaptive", "audio"]
 
 # ============================================================================
 # LINTS (manual - requires numeric cast overrides for low-level code)
@@ -147,9 +149,9 @@ should_implement_trait = "allow"
 # ============================================================================
 [dependencies]
 # PipeWire bindings
-pipewire = "0.8"
-libspa = "0.8"
-libspa-sys = "0.8"
+pipewire = "0.9"
+libspa = "0.9"
+libspa-sys = "0.9"
 
 # Async runtime
 tokio = { version = "1", features = ["sync", "rt", "time"] }
@@ -162,13 +164,14 @@ tracing = "0.1"
 
 # Error handling
 thiserror = "1.0"
+anyhow = { version = "1.0", optional = true }
 
 # Concurrency
 parking_lot = "0.12"
 
 # Low-level operations
 libc = "0.2"
-nix = { version = "0.27", features = ["mman"] }
+nix = { version = "0.30", features = ["mman"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["sync", "rt", "time", "macros", "rt-multi-thread"] }

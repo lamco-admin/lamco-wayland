@@ -120,8 +120,8 @@ pub struct PipeWireManager {
     /// Active streams
     streams: Arc<Mutex<HashMap<u32, StreamHandle>>>,
 
-    /// Frame receivers per stream
-    frame_receivers: Arc<Mutex<HashMap<u32, mpsc::Sender<VideoFrame>>>>,
+    /// Frame receivers per stream (take-once: each receiver can only be retrieved once)
+    frame_receivers: Arc<Mutex<HashMap<u32, mpsc::Receiver<VideoFrame>>>>,
 
     /// Next stream ID
     next_stream_id: Arc<Mutex<u32>>,
@@ -295,9 +295,10 @@ impl PipeWireManager {
             .with_dmabuf(self.config.use_dmabuf)
             .with_buffer_count(self.config.buffer_count);
 
-        // Create frame channel
-        let (tx, _rx) = mpsc::channel(self.config.frame_buffer_size);
-        self.frame_receivers.lock().await.insert(stream_id, tx);
+        // Create frame channel — receiver stored for consumer via frame_receiver()
+        // TODO: wire sender to PW thread bridge for automatic frame routing
+        let (_tx, rx) = mpsc::channel(self.config.frame_buffer_size);
+        self.frame_receivers.lock().await.insert(stream_id, rx);
 
         // Send command to PipeWire thread
         if let Some(ref thread_manager) = self.thread_manager {
@@ -333,10 +334,10 @@ impl PipeWireManager {
         Ok(handle)
     }
 
-    /// Get frame receiver for a stream
+    /// Take frame receiver for a stream
     ///
-    /// Returns a channel receiver for frames from the specified stream.
-    /// Each call creates a new receiver (use for single consumer).
+    /// Returns the channel receiver for frames from the specified stream.
+    /// This can only be called once per stream — subsequent calls return None.
     ///
     /// # Arguments
     ///
@@ -344,14 +345,9 @@ impl PipeWireManager {
     ///
     /// # Returns
     ///
-    /// Channel receiver for frames, or None if stream not found
+    /// Channel receiver for frames, or None if already taken or stream not found
     pub async fn frame_receiver(&self, stream_id: u32) -> Option<mpsc::Receiver<VideoFrame>> {
-        let (tx, rx) = mpsc::channel(self.config.frame_buffer_size);
-
-        // Replace the sender (allows changing consumer)
-        self.frame_receivers.lock().await.insert(stream_id, tx);
-
-        Some(rx)
+        self.frame_receivers.lock().await.remove(&stream_id)
     }
 
     /// Remove a stream

@@ -4,7 +4,7 @@
 //! This module extends the pipewire-rs crate with additional functionality
 //! needed for DMA-BUF handling and advanced features.
 
-// Re-export from pipewire crate
+// Re-export ref types from pipewire crate (not owned Box/Rc types)
 pub use pipewire::{
     context::Context,
     core::Core,
@@ -13,6 +13,8 @@ pub use pipewire::{
     spa::{self, pod::Pod},
     stream::{Stream, StreamState},
 };
+// Owned types (use these when constructing PipeWire objects)
+pub use pipewire::{context::ContextBox, main_loop::MainLoopBox, properties::PropertiesBox, stream::StreamBox};
 
 pub use libspa::param::video::{VideoFormat, VideoInfoRaw};
 pub use libspa::param::{format::MediaSubtype, format::MediaType, ParamType};
