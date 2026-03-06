@@ -47,27 +47,24 @@
 //! ```
 
 use std::collections::HashMap;
-use std::os::fd::RawFd;
-use std::sync::mpsc as std_mpsc;
-use std::sync::Arc;
+use std::os::fd::{IntoRawFd, OwnedFd, RawFd};
+use std::sync::{mpsc as std_mpsc, Arc};
+
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tracing::{debug, info, warn};
 
+#[cfg(feature = "adaptive")]
+use crate::bitrate::BitrateController;
 use crate::config::PipeWireConfig;
 use crate::coordinator::{SourceType, StreamInfo};
+#[cfg(feature = "cursor")]
+use crate::cursor::CursorExtractor;
+#[cfg(feature = "damage")]
+use crate::damage::DamageTracker;
 use crate::error::{PipeWireError, Result};
 use crate::frame::VideoFrame;
 use crate::pw_thread::{PipeWireThreadCommand, PipeWireThreadManager};
 use crate::stream::StreamConfig;
-
-#[cfg(feature = "cursor")]
-use crate::cursor::CursorExtractor;
-
-#[cfg(feature = "damage")]
-use crate::damage::DamageTracker;
-
-#[cfg(feature = "adaptive")]
-use crate::bitrate::BitrateController;
 
 /// Handle to an active stream
 #[derive(Debug, Clone)]
@@ -126,9 +123,10 @@ pub struct PipeWireManager {
     /// Next stream ID
     next_stream_id: Arc<Mutex<u32>>,
 
-    /// Portal file descriptor
+    /// Portal file descriptor (raw copy for diagnostics; OwnedFd is consumed on connect)
     portal_fd: Option<RawFd>,
-
+    // NOTE: We store RawFd here only for error context / diagnostics.
+    // The actual OwnedFd is consumed by PipeWireThreadManager::new().
     /// Cursor extractor (if enabled)
     #[cfg(feature = "cursor")]
     cursor_extractor: Option<Arc<Mutex<CursorExtractor>>>,
@@ -208,19 +206,20 @@ impl PipeWireManager {
     /// - Already connected
     /// - PipeWire initialization fails
     /// - Connection timeout exceeded
-    pub async fn connect(&mut self, fd: RawFd) -> Result<()> {
+    pub async fn connect(&mut self, fd: OwnedFd) -> Result<()> {
         let current_state = *self.state.read().await;
         if current_state == ManagerState::Connected {
             return Err(PipeWireError::InvalidState("Already connected".to_string()));
         }
 
         *self.state.write().await = ManagerState::Connecting;
-        info!("Connecting to PipeWire with FD {}", fd);
+        let raw_fd = fd.into_raw_fd();
+        info!("Connecting to PipeWire with FD {}", raw_fd);
 
-        self.portal_fd = Some(fd);
+        self.portal_fd = Some(raw_fd);
 
         // Initialize PipeWire thread manager
-        let thread_manager = PipeWireThreadManager::new(fd)?;
+        let thread_manager = PipeWireThreadManager::new(raw_fd)?;
         self.thread_manager = Some(thread_manager);
 
         // Initialize optional features

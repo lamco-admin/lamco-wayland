@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-02-26
+
+### Changed
+- Updated dependency: lamco-pipewire 0.1.3 → 0.2.0
+
 ## [0.1.2] - 2025-12-23
 
 ### Changed
@@ -61,6 +66,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Linux only (requires lamco-pipewire)
 
-[Unreleased]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-video-v0.1.1...HEAD
+[Unreleased]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-video-v0.1.3...HEAD
+[0.1.3]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-video-v0.1.2...lamco-video-v0.1.3
+[0.1.2]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-video-v0.1.1...lamco-video-v0.1.2
 [0.1.1]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-video-v0.1.0...lamco-video-v0.1.1
 [0.1.0]: https://github.com/lamco-admin/lamco-wayland/releases/tag/lamco-video-v0.1.0
