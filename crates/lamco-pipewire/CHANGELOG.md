@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-02-26
+
+### Changed
+
+- **BREAKING**: Public API now takes `OwnedFd` instead of `RawFd`
+  - `PipeWireThreadManager::new(fd: OwnedFd)` (was `RawFd`)
+  - `PipeWireConnection::new(fd: OwnedFd)` (was `RawFd`)
+  - `PipeWireManager::connect(&mut self, fd: OwnedFd)` (was `RawFd`)
+  - `PipeWireConnection::fd()` now returns `Option<RawFd>` (None after connect consumes it)
+- Removed all internal `unsafe { OwnedFd::from_raw_fd() }` — callers own the FD from the start
+- Internal buffer FDs remain `RawFd` (borrowed from PipeWire, not owned by us)
+
+### Migration
+
+Callers that previously passed a raw integer now pass an `OwnedFd`:
+
+```rust
+// Before (0.1.x)
+manager.connect(portal_fd).await?;
+
+// After (0.2.0)
+use std::os::fd::OwnedFd;
+manager.connect(owned_fd).await?;
+```
+
+## [0.1.6] - 2026-02-26
+
+### Changed
+
+- **PipeWire 1.x MANDATORY flag for DmaBuf negotiation**
+  - Format negotiation now produces two `EnumFormat` params when `use_dmabuf=true`:
+    first with `MANDATORY | DONT_FIXATE` modifier property for DmaBuf, second without
+    modifier for SHM fallback
+  - PipeWire tries DmaBuf first and falls back to SHM if hardware can't satisfy it
+  - Existing behavior preserved when `use_dmabuf=false` (SHM-only param)
+- Enabled `pipewire/v0_3_33` and `libspa/v0_3_33` features for `PropertyFlags::DONT_FIXATE`
+
+## [0.1.5] - 2026-02-26
+
+### Changed
+
+- Downgraded per-frame logging from `info!` to `trace!` in the process() callback
+  - `mmap_fd_buffer()` entry/exit logging → `trace!`
+  - `process() callback fired` → `trace!`
+  - `Got buffer from stream` → `trace!`
+  - Per-buffer type/size/offset/fd logging → `trace!`
+  - MemPtr/MemFd copy logging → `trace!`
+  - MemFd manual mmap logging → `trace!`
+  - DMA-BUF first-time mmap and cache logging → `debug!`
+  - Main loop heartbeat (every 1000 iterations) → `debug!`
+  - One-time messages (stream created, format negotiated, state changes) remain at `info!`
+
+### Added
+
+- **Stream state push notifications** via `StreamStateEvent` channel
+  - `PipeWireThreadManager::try_recv_state_event()` — non-blocking state poll
+  - `PipeWireThreadManager::drain_state_events()` — drain all pending events
+  - `StreamStateSnapshot` — Send-safe enum mirroring PipeWire stream states
+  - Enables health monitoring without polling via `GetStreamState` commands
+  - Events pushed from PipeWire thread's `state_changed` callback
+
 ## [0.1.4] - 2026-01-15
 
 ### Fixed
@@ -93,7 +154,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Linux only (Wayland required, PipeWire required)
 - Tested on GNOME, KDE Plasma, Sway
 
-[Unreleased]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.4...HEAD
+[Unreleased]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.2.0...HEAD
+[0.2.0]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.6...lamco-pipewire-v0.2.0
+[0.1.6]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.5...lamco-pipewire-v0.1.6
+[0.1.5]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.4...lamco-pipewire-v0.1.5
 [0.1.4]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.3...lamco-pipewire-v0.1.4
 [0.1.3]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.2...lamco-pipewire-v0.1.3
 [0.1.2]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-pipewire-v0.1.1...lamco-pipewire-v0.1.2

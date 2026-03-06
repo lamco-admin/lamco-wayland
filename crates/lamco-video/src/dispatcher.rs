@@ -8,14 +8,14 @@
 //! - Load balancing across monitors
 //! - Frame drop decisions based on system load
 
-use parking_lot::RwLock;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::mpsc;
-use tracing::{debug, error, trace, warn};
 
 use lamco_pipewire::VideoFrame;
+use parking_lot::RwLock;
+use tokio::sync::mpsc;
+use tracing::{debug, error, trace, warn};
 
 /// Default channel buffer size
 const DEFAULT_CHANNEL_SIZE: usize = 30;
@@ -451,8 +451,9 @@ pub enum DispatchError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use lamco_pipewire::PixelFormat;
+
+    use super::*;
 
     #[test]
     fn test_dispatcher_config() {

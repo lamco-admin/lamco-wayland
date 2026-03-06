@@ -2,10 +2,11 @@
 //!
 //! Structures and utilities for handling video frames captured from PipeWire.
 
-use crate::ffi::DamageRegion;
-use crate::format::PixelFormat;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
+
+use crate::ffi::DamageRegion;
+use crate::format::PixelFormat;
 
 /// Video frame captured from PipeWire
 #[derive(Clone)]
