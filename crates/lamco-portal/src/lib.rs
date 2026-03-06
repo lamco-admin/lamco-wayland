@@ -255,8 +255,7 @@ impl PortalManager {
 
         let screencast = Arc::new(ScreenCastManager::new(connection.clone(), &config).await?);
 
-        let remote_desktop =
-            Arc::new(RemoteDesktopManager::new(connection.clone(), &config).await?);
+        let remote_desktop = Arc::new(RemoteDesktopManager::new(connection.clone(), &config).await?);
 
         // Clipboard manager requires a RemoteDesktop session
         // It will be created after session is established in create_session_with_clipboard()
@@ -331,10 +330,11 @@ impl PortalManager {
         info!("Creating combined portal session (ScreenCast + RemoteDesktop)");
 
         // RemoteDesktop session type supports both input injection and screen sharing
-        let remote_desktop_session =
-            self.remote_desktop.create_session().await.map_err(|e| {
-                PortalError::session_creation(format!("RemoteDesktop session: {}", e))
-            })?;
+        let remote_desktop_session = self
+            .remote_desktop
+            .create_session()
+            .await
+            .map_err(|e| PortalError::session_creation(format!("RemoteDesktop session: {}", e)))?;
 
         // Log session creation for clipboard debugging
         // Note: ashpd Session.path() is private, so we generate our own tracking ID
@@ -353,11 +353,7 @@ impl PortalManager {
         if let Some(clipboard_mgr) = clipboard {
             debug!(session_id = %session_tracking_id, "Requesting clipboard access");
 
-            match clipboard_mgr
-                .portal_clipboard()
-                .request(&remote_desktop_session)
-                .await
-            {
+            match clipboard_mgr.portal_clipboard().request(&remote_desktop_session).await {
                 Ok(()) => {
                     info!(session_id = %session_tracking_id, "Clipboard enabled for session");
                 }
@@ -384,10 +380,7 @@ impl PortalManager {
         {
             warn!("Device selection failed, closing session: {}", e);
             let _ = remote_desktop_session.close().await;
-            return Err(PortalError::session_creation(format!(
-                "Device selection: {}",
-                e
-            )));
+            return Err(PortalError::session_creation(format!("Device selection: {}", e)));
         }
 
         info!("Input devices selected from config");
@@ -410,31 +403,22 @@ impl PortalManager {
             // Without cleanup, retry attempts fail with "Invalid state" from portal daemon.
             warn!("Source selection failed, closing session: {}", e);
             let _ = remote_desktop_session.close().await;
-            return Err(PortalError::session_creation(format!(
-                "Source selection: {}",
-                e
-            )));
+            return Err(PortalError::session_creation(format!("Source selection: {}", e)));
         }
 
         info!("Screen sources selected - permission dialog will appear");
 
         // Start the combined session (triggers permission dialog, unless restore token valid)
         // Note: clipboard.request() was already called earlier, immediately after CreateSession
-        let (pipewire_fd, streams, restore_token) = match self
-            .remote_desktop
-            .start_session(&remote_desktop_session)
-            .await
-        {
-            Ok(result) => result,
-            Err(e) => {
-                warn!("Session start failed, closing session: {}", e);
-                let _ = remote_desktop_session.close().await;
-                return Err(PortalError::session_creation(format!(
-                    "Session start: {}",
-                    e
-                )));
-            }
-        };
+        let (pipewire_fd, streams, restore_token) =
+            match self.remote_desktop.start_session(&remote_desktop_session).await {
+                Ok(result) => result,
+                Err(e) => {
+                    warn!("Session start failed, closing session: {}", e);
+                    let _ = remote_desktop_session.close().await;
+                    return Err(PortalError::session_creation(format!("Session start: {}", e)));
+                }
+            };
 
         info!("Portal session started successfully");
         info!("  PipeWire FD: {:?}", pipewire_fd);
@@ -462,10 +446,7 @@ impl PortalManager {
             remote_desktop_session,   // Pass the actual ashpd session for input injection
         );
 
-        info!(
-            "Portal session handle created with {} streams",
-            stream_count
-        );
+        info!("Portal session handle created with {} streams", stream_count);
 
         Ok((handle, restore_token))
     }

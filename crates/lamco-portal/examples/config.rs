@@ -63,14 +63,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let manager4 = PortalManager::new(config4).await?;
     println!("   Creating session (permission dialog will appear)...");
-    let (session, _restore_token) = manager4
-        .create_session("config-example".to_string(), None)
-        .await?;
+    let (session, _restore_token) = manager4.create_session("config-example".to_string(), None).await?;
 
-    println!(
-        "   ✓ Session created with {} streams",
-        session.streams().len()
-    );
+    println!("   ✓ Session created with {} streams", session.streams().len());
     println!("\n   Configuration notes:");
     println!("   - Cursor is embedded in the video stream");
     println!("   - Only monitors are available for selection");

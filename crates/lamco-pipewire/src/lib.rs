@@ -230,6 +230,13 @@ pub mod cursor;
 #[cfg(feature = "damage")]
 pub mod damage;
 
+/// Audio capture via PipeWire
+///
+/// Requires the `audio` feature.
+#[cfg(feature = "audio")]
+#[cfg_attr(docsrs, doc(cfg(feature = "audio")))]
+pub mod audio;
+
 /// Adaptive bitrate control
 ///
 /// Requires the `adaptive` feature.
@@ -253,7 +260,7 @@ pub use error::{classify_error, ErrorContext, ErrorType, PipeWireError, Recovery
 
 // Stream types
 pub use coordinator::{MonitorEvent, MonitorInfo, MultiStreamConfig, SourceType, StreamInfo};
-pub use stream::{NegotiatedFormat, PwStreamState, StreamConfig, StreamMetrics};
+pub use stream::{NegotiatedFormat, PwStreamState, StreamConfig, StreamMetrics, StreamStateEvent, StreamTime};
 
 // Frame types
 pub use format::{convert_format, PixelFormat};
@@ -292,7 +299,12 @@ pub use yuv::{i420_to_bgra, nv12_to_bgra, yuy2_to_bgra, YuvConverter};
 pub use cursor::{CursorExtractor, CursorInfo, CursorStats};
 
 #[cfg(feature = "damage")]
-pub use damage::{DamageRegion, DamageStats, DamageTracker};
+pub use damage::{
+    DamageConfig, DamageDetector, DamageDetectorStats, DamageRegion, DamageStats, DamageTracker, DetectedRegion,
+};
+
+#[cfg(feature = "audio")]
+pub use audio::{spawn_audio_capture, AudioCapture, AudioCaptureHandle, AudioFormat, AudioSamples, CaptureConfig};
 
 #[cfg(feature = "adaptive")]
 pub use bitrate::{BitrateController, BitrateStats};

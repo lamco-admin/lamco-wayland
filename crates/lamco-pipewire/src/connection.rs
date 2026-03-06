@@ -3,7 +3,7 @@
 //! Handles connection to PipeWire daemon via portal file descriptor with
 //! complete MainLoop integration, proper threading, and robust error handling.
 
-use pipewire::{context::Context, main_loop::MainLoop};
+use pipewire::{context::ContextBox, main_loop::MainLoopBox};
 use std::collections::HashMap;
 use std::os::fd::{FromRawFd, OwnedFd, RawFd};
 use std::sync::Arc;
@@ -152,7 +152,7 @@ impl PipeWireConnection {
             pipewire::init();
 
             // Create main loop
-            let main_loop = match MainLoop::new(None) {
+            let main_loop = match MainLoopBox::new(None) {
                 Ok(ml) => ml,
                 Err(e) => {
                     error!("Failed to create PipeWire MainLoop: {}", e);
@@ -160,8 +160,8 @@ impl PipeWireConnection {
                 }
             };
 
-            // Create context
-            let context = match Context::new(&main_loop) {
+            // Create context (0.9 API: takes &Loop + optional properties)
+            let context = match ContextBox::new(main_loop.loop_(), None) {
                 Ok(ctx) => ctx,
                 Err(e) => {
                     error!("Failed to create PipeWire context: {}", e);

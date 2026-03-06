@@ -3,7 +3,7 @@
 //! Provides access to screen content via xdg-desktop-portal ScreenCast interface.
 
 use ashpd::desktop::screencast::Screencast;
-use std::os::fd::{AsRawFd, RawFd};
+use std::os::fd::{IntoRawFd, RawFd};
 use tracing::{debug, info};
 
 use super::session::StreamInfo;
@@ -11,31 +11,31 @@ use crate::config::PortalConfig;
 use crate::error::Result;
 
 /// ScreenCast portal manager
+///
+/// Caches the ashpd Screencast proxy to avoid creating a new D-Bus proxy
+/// on every operation.
 pub struct ScreenCastManager {
     #[allow(dead_code)]
     config: PortalConfig,
+    proxy: Screencast<'static>,
 }
 
 impl ScreenCastManager {
     /// Create new ScreenCast manager
-    ///
-    /// Note: The unused _connection parameter will be removed in a future version.
-    /// ashpd creates its own connections internally.
     pub async fn new(_connection: zbus::Connection, config: &PortalConfig) -> Result<Self> {
         info!("Initializing ScreenCast portal manager");
+        let proxy = Screencast::new().await?;
         Ok(Self {
             config: config.clone(),
+            proxy,
         })
     }
 
     /// Create a screencast session
-    pub async fn create_session(
-        &self,
-    ) -> Result<ashpd::desktop::Session<'static, Screencast<'static>>> {
+    pub async fn create_session(&self) -> Result<ashpd::desktop::Session<'static, Screencast<'static>>> {
         info!("Creating ScreenCast session");
 
-        let proxy = Screencast::new().await?;
-        let session = proxy.create_session().await?;
+        let session = self.proxy.create_session().await?;
 
         debug!("ScreenCast session created");
         Ok(session)
@@ -48,27 +48,20 @@ impl ScreenCastManager {
     ) -> Result<(RawFd, Vec<StreamInfo>)> {
         info!("Starting screencast session");
 
-        let proxy = Screencast::new().await?;
-
-        // Start returns a Request that resolves to Streams
-        // None for headless/no parent window
-        let streams_request = proxy.start(session, None).await?;
+        let streams_request = self.proxy.start(session, None).await?;
 
         // Get the streams from the request response
         let streams = streams_request.response()?;
 
-        info!(
-            "Screencast started with {} streams",
-            streams.streams().len()
-        );
+        info!("Screencast started with {} streams", streams.streams().len());
 
         // Get PipeWire FD
-        let fd = proxy.open_pipe_wire_remote(session).await?;
+        let fd = self.proxy.open_pipe_wire_remote(session).await?;
 
-        let raw_fd = fd.as_raw_fd();
+        // Transfer FD ownership — caller takes responsibility for closing it
+        let raw_fd = fd.into_raw_fd();
         info!("PipeWire FD obtained: {}", raw_fd);
 
-        // Convert stream info using new API
         let stream_info: Vec<StreamInfo> = streams
             .streams()
             .iter()
@@ -81,13 +74,10 @@ impl ScreenCastManager {
                         size.0.max(0).try_into().unwrap_or(0),
                         size.1.max(0).try_into().unwrap_or(0),
                     ),
-                    source_type: super::session::SourceType::Monitor, // Simplified for now
+                    source_type: super::session::SourceType::Monitor,
                 }
             })
             .collect();
-
-        // Don't close fd - we need to keep it
-        std::mem::forget(fd);
 
         Ok((raw_fd, stream_info))
     }
