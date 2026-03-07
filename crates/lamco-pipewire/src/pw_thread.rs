@@ -94,6 +94,8 @@
 //! - **Supports:** Up to 144Hz refresh rates
 
 use pipewire::properties::PropertiesBox;
+use pipewire::spa::param::format_utils;
+use pipewire::spa::param::video::VideoInfoRaw;
 use pipewire::spa::param::ParamType;
 use pipewire::spa::pod::Pod;
 use pipewire::spa::utils::Direction;
@@ -103,6 +105,7 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::os::fd::{FromRawFd, OwnedFd, RawFd};
 use std::ptr::NonNull;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc as std_mpsc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -745,6 +748,14 @@ fn create_stream_on_thread(
         stream_id
     );
 
+    // Shared negotiated resolution — updated by param_changed, read by process
+    let negotiated_width = StdArc::new(AtomicU32::new(config.width));
+    let negotiated_height = StdArc::new(AtomicU32::new(config.height));
+    let neg_w_for_param = StdArc::clone(&negotiated_width);
+    let neg_h_for_param = StdArc::clone(&negotiated_height);
+    let neg_w_for_process = StdArc::clone(&negotiated_width);
+    let neg_h_for_process = StdArc::clone(&negotiated_height);
+
     let state_tx_for_callback = state_event_tx;
 
     let _listener = stream
@@ -784,21 +795,42 @@ fn create_stream_on_thread(
             // Non-blocking: drop event if channel full rather than stalling PipeWire
             let _ = state_tx_for_callback.try_send(event);
         })
-        .param_changed(move |_stream, _user_data, param_id, _param| {
-            if param_id == ParamType::Format.as_raw() {
-                info!(
-                    " Stream {} format negotiated via param_changed",
-                    stream_id_for_callbacks
-                );
-                // Note: Extracting format from param Pod requires parsing SPA POD format
-                // This is complex and requires spa::pod::deserialize
-                // For now, we log that negotiation occurred and rely on config.preferred_format
-                // TODO: Add full SPA POD parsing to extract actual negotiated format
-                info!(
-                    "  Configured format: {:?}",
-                    config.preferred_format.unwrap_or(PixelFormat::BGRx)
-                );
+        .param_changed(move |_stream, _user_data, param_id, param| {
+            let Some(param) = param else { return; };
+            if param_id != ParamType::Format.as_raw() { return; }
+
+            // Validate media type before parsing video specifics
+            match format_utils::parse_format(param) {
+                Ok((media_type, media_subtype)) => {
+                    info!(
+                        "Stream {} format negotiated: type={:?} subtype={:?}",
+                        stream_id_for_callbacks, media_type, media_subtype
+                    );
+                }
+                Err(e) => {
+                    warn!("Stream {} param_changed: failed to parse media type: {e}", stream_id_for_callbacks);
+                    return;
+                }
             }
+
+            // Parse the actual negotiated video format from the Pod
+            let mut video_info = VideoInfoRaw::new();
+            if let Err(e) = video_info.parse(param) {
+                warn!("Stream {} param_changed: failed to parse VideoInfoRaw: {e}", stream_id_for_callbacks);
+                return;
+            }
+
+            let size = video_info.size();
+            let format = video_info.format();
+            info!(
+                "Stream {} negotiated: {}x{} {:?}",
+                stream_id_for_callbacks, size.width, size.height, format
+            );
+
+            // Update shared atomics so the process callback validates against
+            // the actual compositor resolution, not the requested resolution
+            neg_w_for_param.store(size.width, Ordering::Release);
+            neg_h_for_param.store(size.height, Ordering::Release);
         })
         .process(move |stream, _user_data| {
             // This callback is called when a new frame buffer is available
@@ -1042,7 +1074,11 @@ fn create_stream_on_thread(
                         // See: wrd-server-specs/docs/QUALITY-ISSUE-ANALYSIS-2025-12-27.md
 
                         let bytes_per_pixel = 4; // BGRA/BGRx = 4 bytes
-                        let min_expected_size = (config.width * config.height * bytes_per_pixel) as usize;
+                        // Use the actual negotiated resolution from param_changed,
+                        // not the requested config — compositor controls output size
+                        let neg_w = neg_w_for_process.load(Ordering::Acquire);
+                        let neg_h = neg_h_for_process.load(Ordering::Acquire);
+                        let min_expected_size = (neg_w * neg_h * bytes_per_pixel) as usize;
 
                         if pixel_data.is_empty() {
                             // Empty buffers are normal - GNOME portal sends them as "no change" signals
@@ -1052,28 +1088,27 @@ fn create_stream_on_thread(
 
                         if pixel_data.len() < min_expected_size {
                             warn!(
-                                " Rejecting undersized buffer: {} bytes < {} expected for {}×{}",
+                                "Rejecting undersized buffer: {} bytes < {} expected for {}×{}",
                                 pixel_data.len(),
                                 min_expected_size,
-                                config.width,
-                                config.height
+                                neg_w,
+                                neg_h
                             );
                             return;
                         }
 
                         // Calculate proper stride with alignment
-                        // CRITICAL: Don't use (size/height) - that's wrong if buffer has padding
                         // Proper stride = width * bytes_per_pixel, aligned to 16 bytes
-                        let calculated_stride = ((config.width * bytes_per_pixel + 15) / 16) * 16;
+                        let calculated_stride = ((neg_w * bytes_per_pixel + 15) / 16) * 16;
 
                         // Verify our calculated stride matches buffer
-                        let expected_size = calculated_stride * config.height;
+                        let expected_size = calculated_stride * neg_h;
                         let actual_stride = if expected_size as usize == size {
                             calculated_stride
                         } else {
                             // Buffer size doesn't match our calculation - compute actual stride
                             // This handles cases where compositor uses different alignment
-                            (size / config.height as usize) as u32
+                            (size / neg_h as usize) as u32
                         };
 
                         // Reject frames with zero stride (indicates corrupt buffer metadata)
@@ -1089,8 +1124,8 @@ fn create_stream_on_thread(
                         if frame_count < 5 {
                             info!("Buffer analysis frame {}:", frame_count);
                             info!(
-                                "  Size: {} bytes, Width: {}, Height: {}",
-                                size, config.width, config.height
+                                "  Size: {} bytes, Width: {}, Height: {} (negotiated)",
+                                size, neg_w, neg_h
                             );
                             info!("  Calculated stride: {} bytes/row (16-byte aligned)", calculated_stride);
                             info!(" Actual stride: {} bytes/row", actual_stride);
@@ -1135,8 +1170,8 @@ fn create_stream_on_thread(
                             pts,
                             dts: 0,
                             duration: 16_666_667, // ~60fps default
-                            width: config.width,
-                            height: config.height,
+                            width: neg_w,
+                            height: neg_h,
                             stride: actual_stride,
                             format: config.preferred_format.unwrap_or(PixelFormat::BGRx),
                             monitor_index: 0,
