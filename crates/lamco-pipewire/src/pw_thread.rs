@@ -241,6 +241,69 @@ impl PipeWireThreadManager {
         })
     }
 
+    /// Create a direct-channel frame source (no PipeWire thread).
+    ///
+    /// Used when the capture backend provides frames through a direct channel
+    /// instead of PipeWire (e.g., portal-generic with in-process screencopy).
+    /// The frame receiver is adapted to produce `VideoFrame` objects.
+    pub fn new_direct(
+        raw_rx: std_mpsc::Receiver<crate::frame::RawFrameData>,
+        width: u32,
+        height: u32,
+    ) -> Self {
+        use std::sync::Arc;
+        use std::time::SystemTime;
+
+        let (frame_tx, frame_rx) = std_mpsc::sync_channel::<VideoFrame>(256);
+        let (state_event_tx, state_event_rx) = std_mpsc::sync_channel::<StreamStateEvent>(256);
+        let (command_tx, _command_rx) = std_mpsc::sync_channel::<PipeWireThreadCommand>(1);
+
+        // Send initial Streaming state event
+        let _ = state_event_tx.try_send(StreamStateEvent {
+            stream_id: 0,
+            state: PwStreamState::Streaming,
+        });
+
+        // Spawn converter thread that reads RawFrameData → VideoFrame
+        let thread_handle = thread::Builder::new()
+            .name("direct-frame-adapter".to_string())
+            .spawn(move || {
+                let mut frame_count: u64 = 0;
+                info!("Direct frame adapter thread started");
+                while let Ok(raw) = raw_rx.recv() {
+                    frame_count += 1;
+                    let frame = VideoFrame {
+                        frame_id: frame_count,
+                        pts: frame_count * 33_333_333, // ~30fps
+                        dts: frame_count * 33_333_333,
+                        duration: 33_333_333,
+                        width: raw.width.unwrap_or(width),
+                        height: raw.height.unwrap_or(height),
+                        stride: raw.stride.unwrap_or(width * 4),
+                        format: raw.format.unwrap_or(PixelFormat::BGRx),
+                        monitor_index: 0,
+                        data: Arc::new(raw.data),
+                        capture_time: SystemTime::now(),
+                        damage_regions: vec![],
+                        flags: crate::frame::FrameFlags::new(),
+                    };
+                    if frame_tx.try_send(frame).is_err() {
+                        // Channel full, drop frame
+                    }
+                }
+                info!("Direct frame adapter thread exited after {} frames", frame_count);
+            })
+            .expect("Failed to spawn direct frame adapter thread");
+
+        Self {
+            thread_handle: Some(thread_handle),
+            command_tx,
+            frame_rx,
+            state_event_rx,
+            shutdown_tx: None,
+        }
+    }
+
     /// Send a command to the PipeWire thread
     ///
     /// # Arguments
@@ -746,7 +809,28 @@ fn create_stream_on_thread(
             let stream_time = unsafe { crate::stream::get_stream_time(stream.as_raw_ptr()) };
 
             if let Some(mut buffer) = stream.dequeue_buffer() {
-                info!("Got buffer from stream {}", stream_id_for_callbacks);
+                // Debug: dump buffer data block details
+                {
+                    let datas = buffer.datas_mut();
+                    let n = datas.len();
+                    info!(
+                        "Got buffer from stream {}: {} data blocks",
+                        stream_id_for_callbacks, n
+                    );
+                    for (i, d) in datas.iter_mut().enumerate() {
+                        let has_data = d.data().is_some();
+                        let data_len = d.data().map_or(0, |s| s.len());
+                        info!(
+                            "  data[{}]: type={}, fd={}, has_data={}, data_len={}, chunk_size={}",
+                            i,
+                            d.type_().as_raw(),
+                            d.fd(),
+                            has_data,
+                            data_len,
+                            d.chunk().size()
+                        );
+                    }
+                }
 
                 // Extract frame data from buffer
                 if let Some(data) = buffer.datas_mut().first_mut() {
@@ -913,18 +997,41 @@ fn create_stream_on_thread(
                             }
                         }
 
-                        // Unknown/Invalid type
+                        // Unknown/Invalid type — portal source streams with
+                        // ALLOC_BUFFERS may not set the buffer type field.
+                        // Try data.data() as a fallback since the pixels may
+                        // still be mapped and valid.
                         _ => {
-                            warn!(
-                                "Unknown buffer type: {} (raw={})",
-                                if data_type == libspa::buffer::DataType::Invalid {
-                                    "Invalid"
+                            if let Some(mapped_data) = data.data() {
+                                if offset + size <= mapped_data.len() {
+                                    info!(
+                                        "Buffer type unknown (raw={}), but mapped data available: {} bytes",
+                                        data_type.as_raw(),
+                                        size
+                                    );
+                                    Some(mapped_data[offset..offset + size].to_vec())
                                 } else {
-                                    "Unknown"
-                                },
-                                data_type.as_raw()
-                            );
-                            None
+                                    warn!(
+                                        "Buffer type unknown (raw={}), mapped data bounds invalid: offset={}, size={}, len={}",
+                                        data_type.as_raw(),
+                                        offset,
+                                        size,
+                                        mapped_data.len()
+                                    );
+                                    None
+                                }
+                            } else {
+                                warn!(
+                                    "Unknown buffer type: {} (raw={}), no mapped data",
+                                    if data_type == libspa::buffer::DataType::Invalid {
+                                        "Invalid"
+                                    } else {
+                                        "Unknown"
+                                    },
+                                    data_type.as_raw()
+                                );
+                                None
+                            }
                         }
                     };
 
