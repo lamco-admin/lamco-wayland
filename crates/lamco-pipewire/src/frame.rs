@@ -8,6 +8,23 @@ use std::time::{Duration, SystemTime};
 use crate::ffi::DamageRegion;
 use crate::format::PixelFormat;
 
+/// Raw frame data from a direct capture channel (no PipeWire).
+///
+/// Carries pixel data with optional metadata. Fields that are `None`
+/// will be filled with defaults by the adapter.
+pub struct RawFrameData {
+    /// Pixel data.
+    pub data: Vec<u8>,
+    /// Width in pixels (None = use stream default).
+    pub width: Option<u32>,
+    /// Height in pixels (None = use stream default).
+    pub height: Option<u32>,
+    /// Row stride in bytes (None = width * 4).
+    pub stride: Option<u32>,
+    /// Pixel format (None = BGRx).
+    pub format: Option<PixelFormat>,
+}
+
 /// Video frame captured from PipeWire
 #[derive(Clone)]
 pub struct VideoFrame {
