@@ -249,11 +249,7 @@ impl PipeWireThreadManager {
     /// Used when the capture backend provides frames through a direct channel
     /// instead of PipeWire (e.g., portal-generic with in-process screencopy).
     /// The frame receiver is adapted to produce `VideoFrame` objects.
-    pub fn new_direct(
-        raw_rx: std_mpsc::Receiver<crate::frame::RawFrameData>,
-        width: u32,
-        height: u32,
-    ) -> Self {
+    pub fn new_direct(raw_rx: std_mpsc::Receiver<crate::frame::RawFrameData>, width: u32, height: u32) -> Self {
         use std::sync::Arc;
         use std::time::SystemTime;
 
@@ -1221,23 +1217,19 @@ fn create_stream_on_thread(
     let mut params = [pod];
 
     info!(
-        " Calling stream.connect() for stream {} with flags: AUTOCONNECT | MAP_BUFFERS | RT_PROCESS",
-        stream_id
-    );
-    info!(
-        "  TESTING: Using None (PW_ID_ANY) instead of Some({}) - let PipeWire auto-link via node.target property",
-        node_id
-    );
-    info!(
-        "  The node.target={} property should tell PipeWire which node to link to",
-        node_id
+        stream_id,
+        node_id, "Connecting stream with flags: AUTOCONNECT | MAP_BUFFERS | DRIVER | RT_PROCESS"
     );
 
+    // DRIVER flag makes this stream drive the graph clock, ensuring frames
+    // are delivered at the negotiated framerate even on a static desktop.
+    // Without DRIVER, ScreenCast portal streams are damage-driven: no screen
+    // change = no frame, causing stalls in the RDP frame delivery pipeline.
     stream
         .connect(
             Direction::Input,
             None, // PW_ID_ANY - let PipeWire use node.target property
-            StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS | StreamFlags::RT_PROCESS,
+            StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS | StreamFlags::DRIVER | StreamFlags::RT_PROCESS,
             &mut params,
         )
         .map_err(|e| PipeWireError::ConnectionFailed(format!("Stream connect failed: {}", e)))?;
