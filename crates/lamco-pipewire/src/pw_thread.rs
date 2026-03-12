@@ -747,10 +747,10 @@ fn create_stream_on_thread(
     // Shared negotiated resolution — updated by param_changed, read by process
     let negotiated_width = StdArc::new(AtomicU32::new(config.width));
     let negotiated_height = StdArc::new(AtomicU32::new(config.height));
-    let neg_w_for_param = StdArc::clone(&negotiated_width);
-    let neg_h_for_param = StdArc::clone(&negotiated_height);
-    let neg_w_for_process = StdArc::clone(&negotiated_width);
-    let neg_h_for_process = StdArc::clone(&negotiated_height);
+    let param_neg_width = StdArc::clone(&negotiated_width);
+    let param_neg_height = StdArc::clone(&negotiated_height);
+    let proc_neg_width = StdArc::clone(&negotiated_width);
+    let proc_neg_height = StdArc::clone(&negotiated_height);
 
     let state_tx_for_callback = state_event_tx;
 
@@ -825,8 +825,8 @@ fn create_stream_on_thread(
 
             // Update shared atomics so the process callback validates against
             // the actual compositor resolution, not the requested resolution
-            neg_w_for_param.store(size.width, Ordering::Release);
-            neg_h_for_param.store(size.height, Ordering::Release);
+            param_neg_width.store(size.width, Ordering::Release);
+            param_neg_height.store(size.height, Ordering::Release);
         })
         .process(move |stream, _user_data| {
             // This callback is called when a new frame buffer is available
@@ -902,28 +902,16 @@ fn create_stream_on_thread(
                         }
 
                         // MemFd: File descriptor with memory mapping
+                        // Always use manual mmap — PipeWire's MAP_BUFFERS auto-mapping
+                        // can produce stale pointers for MemFd buffers received via
+                        // portal FD connections (observed with XDPH on PipeWire 1.6.1).
                         libspa::buffer::DataType::MemFd => {
-                            if let Some(mapped_data) = data.data() {
-                                if offset + size <= mapped_data.len() {
-                                    info!("MemFd buffer: copying {} bytes (offset={})", size, offset);
-                                    Some(mapped_data[offset..offset + size].to_vec())
-                                } else {
-                                    warn!(
-                                        "MemFd buffer bounds invalid: offset={}, size={}, len={}",
-                                        offset,
-                                        size,
-                                        mapped_data.len()
-                                    );
-                                    None
-                                }
-                            } else if fd >= 0 {
-                                // Fallback: manual mmap of MemFd
-                                // Check for empty/skip frames (size=0 is normal PipeWire behavior)
+                            if fd >= 0 {
                                 if size == 0 {
                                     debug!("MemFd buffer: size=0 (empty/skip frame), ignoring");
                                     None
                                 } else {
-                                    info!("MemFd buffer: using manual mmap (FD={})", fd);
+                                    info!("MemFd buffer: manual mmap (FD={}, size={}, offset={})", fd, size, offset);
                                     match mmap_fd_buffer(fd, size, offset) {
                                         Ok(data) => Some(data),
                                         Err(e) => {
@@ -1072,8 +1060,8 @@ fn create_stream_on_thread(
                         let bytes_per_pixel = 4; // BGRA/BGRx = 4 bytes
                         // Use the actual negotiated resolution from param_changed,
                         // not the requested config — compositor controls output size
-                        let neg_w = neg_w_for_process.load(Ordering::Acquire);
-                        let neg_h = neg_h_for_process.load(Ordering::Acquire);
+                        let neg_w = proc_neg_width.load(Ordering::Acquire);
+                        let neg_h = proc_neg_height.load(Ordering::Acquire);
                         let min_expected_size = (neg_w * neg_h * bytes_per_pixel) as usize;
 
                         if pixel_data.is_empty() {

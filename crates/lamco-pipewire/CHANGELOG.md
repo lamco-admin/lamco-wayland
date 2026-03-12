@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-03-12
+
+### Fixed
+
+- **SIGSEGV on MemFd buffer copy**: PipeWire's MAP_BUFFERS auto-mapping can produce
+  stale pointers for MemFd buffers received via portal FD connections (observed with
+  XDPH on PipeWire 1.6.1). MemFd handler now always uses manual `mmap_fd_buffer()`
+  instead of relying on `data.data()`. Affects any portal backend that provides MemFd
+  buffers (not compositor-specific).
+- Fixed clippy `similar_names` warning in process callback variable naming
+
 ## [0.2.0] - 2026-02-26
 
 ### Changed
