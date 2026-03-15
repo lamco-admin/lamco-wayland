@@ -149,8 +149,9 @@ should_implement_trait = "allow"
 # ============================================================================
 [dependencies]
 # PipeWire bindings
-pipewire = "0.9"
-libspa = "0.9"
+# v0_3_33 enables PropertyFlags::DONT_FIXATE for DmaBuf modifier negotiation
+pipewire = { version = "0.9", features = ["v0_3_33"] }
+libspa = { version = "0.9", features = ["v0_3_33"] }
 libspa-sys = "0.9"
 
 # Async runtime

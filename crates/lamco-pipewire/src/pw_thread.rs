@@ -284,6 +284,7 @@ impl PipeWireThreadManager {
                         data: Arc::new(raw.data),
                         capture_time: SystemTime::now(),
                         damage_regions: vec![],
+                        meta: crate::meta::BufferMeta::default(),
                         flags: crate::frame::FrameFlags::new(),
                     };
                     if frame_tx.try_send(frame).is_err() {
@@ -791,7 +792,7 @@ fn create_stream_on_thread(
             // Non-blocking: drop event if channel full rather than stalling PipeWire
             let _ = state_tx_for_callback.try_send(event);
         })
-        .param_changed(move |_stream, _user_data, param_id, param| {
+        .param_changed(move |stream, _user_data, param_id, param| {
             let Some(param) = param else { return; };
             if param_id != ParamType::Format.as_raw() { return; }
 
@@ -827,6 +828,12 @@ fn create_stream_on_thread(
             // the actual compositor resolution, not the requested resolution
             param_neg_width.store(size.width, Ordering::Release);
             param_neg_height.store(size.height, Ordering::Release);
+
+            // Request buffer metadata types from PipeWire.
+            // Without this, compositors won't attach metadata to buffers.
+            if let Err(e) = request_buffer_metadata(stream, stream_id_for_callbacks) {
+                warn!("Stream {} failed to request buffer metadata: {}", stream_id_for_callbacks, e);
+            }
         })
         .process(move |stream, _user_data| {
             // This callback is called when a new frame buffer is available
@@ -836,47 +843,95 @@ fn create_stream_on_thread(
             // SAFETY: stream pointer is valid within this callback; pw_stream_get_time_n is RT-safe
             let stream_time = unsafe { crate::stream::get_stream_time(stream.as_raw_ptr()) };
 
-            if let Some(mut buffer) = stream.dequeue_buffer() {
-                // Debug: dump buffer data block details
-                {
-                    let datas = buffer.datas_mut();
-                    let n = datas.len();
+            // Use dequeue_raw_buffer to access both SPA metadata and pixel data.
+            // Buffer must be queued back when we're done — handled at scope exit.
+            let raw_buf = unsafe { stream.dequeue_raw_buffer() };
+            if raw_buf.is_null() {
+                debug!(
+                    "No buffer available (dequeue returned None) for stream {}",
+                    stream_id_for_callbacks
+                );
+                return;
+            }
+
+            // Scope guard: always queue the buffer back when we exit this block
+            struct BufferGuard<'a> {
+                stream: &'a pipewire::stream::Stream,
+                raw_buf: *mut pipewire::sys::pw_buffer,
+            }
+            impl Drop for BufferGuard<'_> {
+                fn drop(&mut self) {
+                    unsafe { self.stream.queue_raw_buffer(self.raw_buf); }
+                }
+            }
+            let _guard = BufferGuard { stream, raw_buf };
+
+            // SAFETY: raw_buf is non-null (checked above) and valid for this callback
+            let spa_buf: *mut libspa_sys::spa_buffer = unsafe { (*raw_buf).buffer };
+            if spa_buf.is_null() {
+                warn!("pw_buffer has null spa_buffer for stream {}", stream_id_for_callbacks);
+                return;
+            }
+
+            // Extract SPA metadata from the buffer (transform, header, damage, etc.)
+            let mut buffer_meta = unsafe { crate::meta::extract_buffer_meta(spa_buf) };
+
+            // Access data blocks through the spa_buffer (same as Buffer::datas_mut())
+            let n_datas = unsafe { (*spa_buf).n_datas } as usize;
+            let datas_ptr = unsafe { (*spa_buf).datas };
+
+            // Debug: dump buffer data block details
+            if !datas_ptr.is_null() && n_datas > 0 {
+                let datas_slice = unsafe {
+                    std::slice::from_raw_parts_mut(
+                        datas_ptr as *mut libspa::buffer::Data,
+                        n_datas,
+                    )
+                };
+
+                info!(
+                    "Got buffer from stream {}: {} data blocks",
+                    stream_id_for_callbacks, n_datas
+                );
+                for (i, d) in datas_slice.iter_mut().enumerate() {
+                    let has_data = d.data().is_some();
+                    let data_len = d.data().map_or(0, |s| s.len());
                     info!(
-                        "Got buffer from stream {}: {} data blocks",
-                        stream_id_for_callbacks, n
+                        "  data[{}]: type={}, fd={}, has_data={}, data_len={}, chunk_size={}",
+                        i,
+                        d.type_().as_raw(),
+                        d.fd(),
+                        has_data,
+                        data_len,
+                        d.chunk().size()
                     );
-                    for (i, d) in datas.iter_mut().enumerate() {
-                        let has_data = d.data().is_some();
-                        let data_len = d.data().map_or(0, |s| s.len());
-                        info!(
-                            "  data[{}]: type={}, fd={}, has_data={}, data_len={}, chunk_size={}",
-                            i,
-                            d.type_().as_raw(),
-                            d.fd(),
-                            has_data,
-                            data_len,
-                            d.chunk().size()
-                        );
-                    }
                 }
 
                 // Extract frame data from buffer
-                if let Some(data) = buffer.datas_mut().first_mut() {
+                if let Some(data) = datas_slice.first_mut() {
                     // Get buffer chunk info
                     let chunk = data.chunk();
                     let size = chunk.size() as usize;
                     let offset = chunk.offset() as usize;
+                    let chunk_stride = chunk.stride();
                     let data_type = data.type_();
+
+                    // Record chunk-level signals in metadata for downstream consumers.
+                    // Negative stride signals bottom-up buffer (GL coordinate convention).
+                    // Buffer type affects which compositor code path produced the data.
+                    buffer_meta.chunk_stride = chunk_stride;
+                    buffer_meta.buffer_type = data_type.as_raw();
 
                     // Extract pixel data based on buffer type
                     let fd = data.fd();
 
                     info!(
-                        "Buffer: type={}, size={}, offset={}, fd={}",
+                        "Buffer: type={}, size={}, offset={}, fd={}, chunk_stride={}",
                         data_type.as_raw(),
                         size,
                         offset,
-                        fd
+                        fd,
+                        chunk_stride
                     );
 
                     let pixel_data: Option<Vec<u8>> = match data_type {
@@ -1138,6 +1193,22 @@ fn create_stream_on_thread(
                                     t.buffer_pressure() * 100.0
                                 );
                             }
+
+                            // Log SPA metadata
+                            info!(
+                                "  SPA Meta: transform={:?}, header={}, crop={}, damage={} regions, cursor={}",
+                                buffer_meta.transform,
+                                if buffer_meta.header.is_some() { "present" } else { "absent" },
+                                if buffer_meta.crop.is_some() { "present" } else { "absent" },
+                                buffer_meta.damage.len(),
+                                if buffer_meta.cursor.is_some() { "present" } else { "absent" },
+                            );
+                            if let Some(ref hdr) = buffer_meta.header {
+                                info!(
+                                    "  SPA Header: pts={}, seq={}, flags={:#x}",
+                                    hdr.pts, hdr.seq, hdr.flags
+                                );
+                            }
                         }
 
                         if actual_stride != calculated_stride {
@@ -1149,6 +1220,16 @@ fn create_stream_on_thread(
 
                         // Create VideoFrame from extracted pixel data
                         let pts = stream_time.as_ref().map_or(0, |t| t.now_nsec as u64);
+
+                        // Convert SPA damage rects to the crate's DamageRegion type
+                        let damage_regions: Vec<crate::ffi::DamageRegion> = buffer_meta
+                            .damage
+                            .iter()
+                            .map(|d| crate::ffi::DamageRegion::new(
+                                d.x, d.y, d.width, d.height,
+                            ))
+                            .collect();
+
                         let frame = VideoFrame {
                             frame_id: stream_id_for_callbacks as u64,
                             pts,
@@ -1161,7 +1242,8 @@ fn create_stream_on_thread(
                             monitor_index: 0,
                             data: StdArc::new(pixel_data),
                             capture_time: SystemTime::now(),
-                            damage_regions: Vec::new(),
+                            damage_regions,
+                            meta: buffer_meta.clone(),
                             flags: FrameFlags::new(),
                         };
 
@@ -1178,10 +1260,7 @@ fn create_stream_on_thread(
                     warn!("No data in buffer for stream {}", stream_id_for_callbacks);
                 }
             } else {
-                debug!(
-                    "No buffer available (dequeue returned None) for stream {}",
-                    stream_id_for_callbacks
-                );
+                warn!("No data blocks in buffer for stream {}", stream_id_for_callbacks);
             }
         })
         .register()
@@ -1189,20 +1268,23 @@ fn create_stream_on_thread(
 
     info!("Stream {} callbacks registered successfully", stream_id);
 
-    // Connect stream to node with format parameters
-    let param_bytes = build_stream_parameters(&config)?;
-
-    // Convert bytes to Pod reference (Pod is a borrowed type referencing the bytes)
-    let pod = Pod::from_bytes(&param_bytes)
-        .ok_or_else(|| PipeWireError::FormatNegotiationFailed("Failed to parse format parameters".to_string()))?;
+    // Build format negotiation parameters
+    // When DmaBuf is enabled, produces two EnumFormat pods: DmaBuf (MANDATORY) + SHM fallback
+    // PipeWire tries params in order and skips MANDATORY params it can't satisfy
+    let param_pod_bytes = build_stream_parameters(&config)?;
+    let pods: Vec<&Pod> = param_pod_bytes
+        .iter()
+        .filter_map(|bytes| Pod::from_bytes(bytes))
+        .collect();
 
     info!(
-        " Stream {} connecting with format parameters ({} bytes)",
+        "Stream {} connecting with {} format param(s), dmabuf={}",
         stream_id,
-        param_bytes.len()
+        pods.len(),
+        config.use_dmabuf
     );
 
-    let mut params = [pod];
+    let mut params: Vec<&Pod> = pods;
 
     info!(
         stream_id,
@@ -1248,62 +1330,245 @@ fn create_stream_on_thread(
     })
 }
 
-/// Build stream parameters for format negotiation
+/// Request buffer metadata types from PipeWire via stream.update_params().
 ///
-/// Constructs SPA Pod parameters for video format, size, and framerate negotiation.
-/// Returns raw bytes that can be converted to a Pod reference at the call site.
+/// Called from param_changed after format negotiation succeeds. Without this,
+/// PipeWire won't allocate space for metadata in buffer headers, and compositors
+/// won't attach metadata even if they support it.
 ///
-/// # Format Negotiation Strategy
-///
-/// We accept whatever buffer type PipeWire provides since we now support:
-/// - MemPtr (type 1): Direct memory access via data.data()
-/// - MemFd (type 2): Memory-mapped FD via mmap()
-/// - DmaBuf (type 3): GPU buffer via mmap() with FD
-///
-/// We provide explicit format parameters so PipeWire can complete negotiation.
-/// This enables hardware acceleration when available (DMA-BUF) while maintaining compatibility.
-fn build_stream_parameters(config: &StreamConfig) -> Result<Vec<u8>> {
+/// This follows the same pattern as OBS and xdg-desktop-portal-wlr.
+fn request_buffer_metadata(
+    stream: &pipewire::stream::Stream,
+    stream_id: u32,
+) -> Result<()> {
     use pipewire::spa;
     use pipewire::spa::pod::serialize::PodSerializer;
     use pipewire::spa::pod::Value;
     use std::io::Cursor;
 
+    // Each metadata type we want must be requested as a separate SPA_PARAM_Meta object.
+    // The object specifies the meta type ID and the minimum allocation size.
+    let meta_requests: &[(u32, usize, &str)] = &[
+        (
+            libspa_sys::SPA_META_Header,
+            std::mem::size_of::<libspa_sys::spa_meta_header>(),
+            "Header",
+        ),
+        (
+            libspa_sys::SPA_META_VideoTransform,
+            std::mem::size_of::<libspa_sys::spa_meta_videotransform>(),
+            "VideoTransform",
+        ),
+        (
+            libspa_sys::SPA_META_VideoCrop,
+            std::mem::size_of::<libspa_sys::spa_meta_region>(),
+            "VideoCrop",
+        ),
+        (
+            libspa_sys::SPA_META_VideoDamage,
+            std::mem::size_of::<libspa_sys::spa_meta_region>() * crate::meta::MAX_DAMAGE_REGIONS,
+            "VideoDamage",
+        ),
+        (
+            libspa_sys::SPA_META_Cursor,
+            std::mem::size_of::<libspa_sys::spa_meta_cursor>(),
+            "Cursor",
+        ),
+    ];
+
+    let mut param_bytes_list: Vec<Vec<u8>> = Vec::new();
+
+    for &(meta_type, meta_size, name) in meta_requests {
+        // Build the Object struct directly since the property!() macro expects
+        // enum types with .as_raw(), but SPA_PARAM_META_* are raw u32 constants.
+        let meta_obj = spa::pod::Object {
+            type_: spa::utils::SpaTypes::ObjectParamMeta.as_raw(),
+            id: spa::param::ParamType::Meta.as_raw(),
+            properties: vec![
+                spa::pod::Property::new(
+                    libspa_sys::SPA_PARAM_META_type,
+                    Value::Id(spa::utils::Id(meta_type)),
+                ),
+                spa::pod::Property::new(
+                    libspa_sys::SPA_PARAM_META_size,
+                    Value::Int(meta_size as i32),
+                ),
+            ],
+        };
+
+        match PodSerializer::serialize(Cursor::new(Vec::new()), &Value::Object(meta_obj)) {
+            Ok(serialized) => {
+                param_bytes_list.push(serialized.0.into_inner());
+                debug!("Stream {}: requested SPA_META_{} ({} bytes)", stream_id, name, meta_size);
+            }
+            Err(e) => {
+                warn!("Stream {}: failed to serialize SPA_META_{} request: {:?}", stream_id, name, e);
+            }
+        }
+    }
+
+    if param_bytes_list.is_empty() {
+        warn!("Stream {}: no metadata params serialized", stream_id);
+        return Ok(());
+    }
+
+    // Convert bytes to Pod references
+    let pods: Vec<&Pod> = param_bytes_list
+        .iter()
+        .filter_map(|bytes| Pod::from_bytes(bytes))
+        .collect();
+
+    if pods.is_empty() {
+        warn!("Stream {}: no valid Pod objects from metadata params", stream_id);
+        return Ok(());
+    }
+
+    let mut pod_refs: Vec<&Pod> = pods;
+
+    stream.update_params(&mut pod_refs).map_err(|e| {
+        PipeWireError::StreamCreationFailed(format!(
+            "Stream {} failed to update params with metadata requests: {}",
+            stream_id, e
+        ))
+    })?;
+
     info!(
-        "Building format parameters: {}x{} @ {}fps",
-        config.width, config.height, config.framerate
+        "Stream {}: requested {} metadata types from PipeWire",
+        stream_id,
+        pod_refs.len()
     );
 
-    // Build a video format object using pipewire-rs macros
-    // This specifies our preferred formats, size range, and framerate range
-    let format_obj = spa::pod::object!(
+    Ok(())
+}
+
+/// Build stream parameters for format negotiation.
+///
+/// When `config.use_dmabuf` is true, produces two EnumFormat pods following the
+/// PipeWire 1.x MANDATORY flag pattern:
+///   1. DmaBuf format with `SPA_FORMAT_VIDEO_modifier` carrying MANDATORY|DONT_FIXATE
+///   2. SHM fallback without modifier property
+///
+/// PipeWire tries params in order and skips MANDATORY params it can't satisfy,
+/// so DmaBuf is preferred but SHM works as automatic fallback.
+///
+/// When `config.use_dmabuf` is false, produces a single SHM-only param.
+fn build_stream_parameters(config: &StreamConfig) -> Result<Vec<Vec<u8>>> {
+    use pipewire::spa;
+    use pipewire::spa::pod::serialize::PodSerializer;
+    use pipewire::spa::pod::{Property, PropertyFlags, Value};
+    use std::io::Cursor;
+
+    info!(
+        "Building format parameters: {}x{} @ {}fps, dmabuf={}",
+        config.width, config.height, config.framerate, config.use_dmabuf
+    );
+
+    let mut param_pods = Vec::new();
+
+    // --- DmaBuf param (first = highest priority) ---
+    if config.use_dmabuf {
+        let mut dmabuf_obj = spa::pod::object!(
+            spa::utils::SpaTypes::ObjectParamFormat,
+            spa::param::ParamType::EnumFormat,
+            spa::pod::property!(
+                spa::param::format::FormatProperties::MediaType,
+                Id,
+                spa::param::format::MediaType::Video
+            ),
+            spa::pod::property!(
+                spa::param::format::FormatProperties::MediaSubtype,
+                Id,
+                spa::param::format::MediaSubtype::Raw
+            ),
+            spa::pod::property!(
+                spa::param::format::FormatProperties::VideoFormat,
+                Choice,
+                Enum,
+                Id,
+                spa::param::video::VideoFormat::BGRx,
+                spa::param::video::VideoFormat::BGRx,
+                spa::param::video::VideoFormat::BGRA,
+                spa::param::video::VideoFormat::RGBx,
+                spa::param::video::VideoFormat::RGBA
+            ),
+            spa::pod::property!(
+                spa::param::format::FormatProperties::VideoSize,
+                Choice,
+                Range,
+                Rectangle,
+                spa::utils::Rectangle {
+                    width: config.width,
+                    height: config.height
+                },
+                spa::utils::Rectangle { width: 1, height: 1 },
+                spa::utils::Rectangle {
+                    width: 8192,
+                    height: 8192
+                }
+            ),
+            spa::pod::property!(
+                spa::param::format::FormatProperties::VideoFramerate,
+                Choice,
+                Range,
+                Fraction,
+                spa::utils::Fraction {
+                    num: config.framerate,
+                    denom: 1
+                },
+                spa::utils::Fraction { num: 0, denom: 1 },
+                spa::utils::Fraction { num: 1000, denom: 1 }
+            ),
+        );
+
+        // DRM_FORMAT_MOD_INVALID = "any modifier is acceptable"
+        // SPA Long is i64, DRM modifiers are u64 — reinterpret bits
+        let mod_invalid = crate::ffi::drm_fourcc::DRM_FORMAT_MOD_INVALID as i64;
+        dmabuf_obj.properties.push(Property {
+            key: spa::param::format::FormatProperties::VideoModifier.as_raw(),
+            flags: PropertyFlags::MANDATORY | PropertyFlags::DONT_FIXATE,
+            value: Value::Choice(spa::pod::ChoiceValue::Long(spa::utils::Choice(
+                spa::utils::ChoiceFlags::empty(),
+                spa::utils::ChoiceEnum::Enum {
+                    default: mod_invalid,
+                    alternatives: vec![mod_invalid],
+                },
+            ))),
+        });
+
+        let serialized =
+            PodSerializer::serialize(Cursor::new(Vec::new()), &Value::Object(dmabuf_obj)).map_err(|e| {
+                PipeWireError::FormatNegotiationFailed(format!("DmaBuf format serialization failed: {e:?}"))
+            })?;
+        let bytes = serialized.0.into_inner();
+        info!("DmaBuf format param: {} bytes (MANDATORY|DONT_FIXATE)", bytes.len());
+        param_pods.push(bytes);
+    }
+
+    // --- SHM fallback param (no modifier property) ---
+    let shm_obj = spa::pod::object!(
         spa::utils::SpaTypes::ObjectParamFormat,
         spa::param::ParamType::EnumFormat,
-        // Media type: Video
         spa::pod::property!(
             spa::param::format::FormatProperties::MediaType,
             Id,
             spa::param::format::MediaType::Video
         ),
-        // Media subtype: Raw (uncompressed)
         spa::pod::property!(
             spa::param::format::FormatProperties::MediaSubtype,
             Id,
             spa::param::format::MediaSubtype::Raw
         ),
-        // Video formats we accept (in order of preference)
-        // BGRx/BGRA are preferred as they're common on Linux desktops
         spa::pod::property!(
             spa::param::format::FormatProperties::VideoFormat,
             Choice,
             Enum,
             Id,
-            spa::param::video::VideoFormat::BGRx, // Default/preferred
+            spa::param::video::VideoFormat::BGRx,
             spa::param::video::VideoFormat::BGRx,
             spa::param::video::VideoFormat::BGRA,
             spa::param::video::VideoFormat::RGBx,
             spa::param::video::VideoFormat::RGBA
         ),
-        // Video size range (min to max, with our preferred size as default)
         spa::pod::property!(
             spa::param::format::FormatProperties::VideoSize,
             Choice,
@@ -1319,7 +1584,6 @@ fn build_stream_parameters(config: &StreamConfig) -> Result<Vec<u8>> {
                 height: 8192
             }
         ),
-        // Framerate range (0/1 to 1000/1, with our target as default)
         spa::pod::property!(
             spa::param::format::FormatProperties::VideoFramerate,
             Choice,
@@ -1334,21 +1598,20 @@ fn build_stream_parameters(config: &StreamConfig) -> Result<Vec<u8>> {
         ),
     );
 
-    // Serialize the object to bytes
-    let serialized = PodSerializer::serialize(Cursor::new(Vec::new()), &Value::Object(format_obj)).map_err(|e| {
-        warn!("Failed to serialize format parameters: {:?}", e);
-        PipeWireError::FormatNegotiationFailed(format!("Format serialization failed: {:?}", e))
+    let serialized = PodSerializer::serialize(Cursor::new(Vec::new()), &Value::Object(shm_obj)).map_err(|e| {
+        PipeWireError::FormatNegotiationFailed(format!("SHM format serialization failed: {e:?}"))
     })?;
-
     let bytes = serialized.0.into_inner();
+    info!("SHM fallback format param: {} bytes", bytes.len());
+    param_pods.push(bytes);
 
-    info!("Format parameters built successfully ({} bytes)", bytes.len());
-    debug!(
-        "  Preferred format: BGRx, size: {}x{}, fps: {}",
-        config.width, config.height, config.framerate
+    info!(
+        "Format negotiation: {} param(s) built (dmabuf={})",
+        param_pods.len(),
+        config.use_dmabuf
     );
 
-    Ok(bytes)
+    Ok(param_pods)
 }
 
 #[cfg(test)]
