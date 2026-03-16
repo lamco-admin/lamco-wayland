@@ -2,7 +2,11 @@
 //!
 //! Provides input injection and screen capture via RemoteDesktop portal.
 
-use ashpd::desktop::remote_desktop::{DeviceType, KeyState, RemoteDesktop};
+use ashpd::desktop::remote_desktop::{
+    DeviceType, KeyState, NotifyKeyboardKeycodeOptions, NotifyPointerAxisOptions,
+    NotifyPointerButtonOptions, NotifyPointerMotionAbsoluteOptions, NotifyPointerMotionOptions,
+    RemoteDesktop, SelectDevicesOptions, StartOptions,
+};
 use enumflags2::BitFlags;
 use std::os::fd::IntoRawFd;
 use tracing::{debug, info};
@@ -17,7 +21,7 @@ use crate::error::{PortalError, Result};
 /// on every input injection call.
 pub struct RemoteDesktopManager {
     config: PortalConfig,
-    proxy: RemoteDesktop<'static>,
+    proxy: RemoteDesktop,
 }
 
 impl RemoteDesktopManager {
@@ -25,17 +29,26 @@ impl RemoteDesktopManager {
     pub async fn new(_connection: zbus::Connection, config: &PortalConfig) -> Result<Self> {
         info!("Initializing RemoteDesktop portal manager");
         let proxy = RemoteDesktop::new().await?;
+
+        let version = proxy.version();
+        info!("RemoteDesktop portal version: {}", version);
+
         Ok(Self {
             config: config.clone(),
             proxy,
         })
     }
 
+    /// Get the portal interface version
+    pub fn version(&self) -> u32 {
+        self.proxy.version()
+    }
+
     /// Create a remote desktop session
-    pub async fn create_session(&self) -> Result<ashpd::desktop::Session<'static, RemoteDesktop<'static>>> {
+    pub async fn create_session(&self) -> Result<ashpd::desktop::Session<RemoteDesktop>> {
         info!("Creating RemoteDesktop session");
 
-        let session = self.proxy.create_session().await?;
+        let session = self.proxy.create_session(Default::default()).await?;
 
         debug!("RemoteDesktop session created");
 
@@ -45,19 +58,17 @@ impl RemoteDesktopManager {
     /// Select devices for remote control
     pub async fn select_devices(
         &self,
-        session: &ashpd::desktop::Session<'_, RemoteDesktop<'_>>,
+        session: &ashpd::desktop::Session<RemoteDesktop>,
         devices: BitFlags<DeviceType>,
     ) -> Result<()> {
         info!("Selecting devices: {:?}", devices);
 
-        self.proxy
-            .select_devices(
-                session,
-                devices,
-                self.config.restore_token.as_deref(),
-                self.config.persist_mode,
-            )
-            .await?;
+        let options = SelectDevicesOptions::default()
+            .set_devices(devices)
+            .set_persist_mode(self.config.persist_mode)
+            .set_restore_token(self.config.restore_token.as_deref());
+
+        self.proxy.select_devices(session, options).await?;
 
         info!("Devices selected successfully");
         Ok(())
@@ -71,73 +82,72 @@ impl RemoteDesktopManager {
     /// sessions via PortalConfig to avoid permission dialogs.
     pub async fn start_session(
         &self,
-        session: &ashpd::desktop::Session<'_, RemoteDesktop<'_>>,
+        session: &ashpd::desktop::Session<RemoteDesktop>,
     ) -> Result<(std::os::fd::RawFd, Vec<StreamInfo>, Option<String>)> {
         info!("Starting RemoteDesktop session");
 
-        // Start returns a Request that resolves to SelectedDevices
-        // None for headless/no parent window
-        let response = self.proxy.start(session, None).await?;
+        let response = self
+            .proxy
+            .start(session, None, StartOptions::default())
+            .await?;
 
-        // Get the selected devices from the request response
         let selected = response.response()?;
 
-        // Extract restore token from SelectedDevices (portal v4+)
-        // The token allows restoring this session without user interaction
         let restore_token = selected.restore_token().map(|s| s.to_string());
 
         if let Some(ref token) = restore_token {
-            info!("Restore token received from portal (length: {} chars)", token.len());
+            info!(
+                "Restore token received from portal (length: {} chars)",
+                token.len()
+            );
             debug!("Restore token: {}", token);
         } else {
             debug!("No restore token in response (portal may not support persistence)");
         }
 
-        let stream_count = selected.streams().map(|s| s.len()).unwrap_or(0);
+        // ashpd 0.13: streams() returns &[Stream] directly, no Option wrapper
+        let streams = selected.streams();
         info!(
             "RemoteDesktop started with {} devices and {} streams",
             selected.devices().bits(),
-            stream_count
+            streams.len()
         );
 
-        // Get PipeWire FD - note: open_pipe_wire_remote is on the Screencast trait/methods
-        // For RemoteDesktop, we need to access streams differently
-        // Actually, RemoteDesktop in 0.12.0 uses the screencast portal internally
+        // Check if clipboard was actually granted (new in 0.13)
+        if selected.is_clipboard_enabled() {
+            info!("Clipboard access was granted by the portal");
+        }
+
+        // Get PipeWire FD
         use ashpd::desktop::screencast::Screencast;
         let screencast_proxy = Screencast::new().await?;
-        let fd = screencast_proxy.open_pipe_wire_remote(session).await?;
+        let fd = screencast_proxy.open_pipe_wire_remote(session, Default::default()).await?;
 
         info!("PipeWire FD obtained: {:?}", fd);
 
-        // Convert stream info using new API
-        let stream_info: Vec<StreamInfo> = selected
-            .streams()
-            .map(|streams| {
-                streams
-                    .iter()
-                    .map(|stream| {
-                        let node_id = stream.pipe_wire_node_id();
-                        let size = stream.size().unwrap_or((0, 0));
-                        let position = stream.position().unwrap_or((0, 0));
+        let stream_info: Vec<StreamInfo> = streams
+            .iter()
+            .map(|stream| {
+                let node_id = stream.pipe_wire_node_id();
+                let size = stream.size().unwrap_or((0, 0));
+                let position = stream.position().unwrap_or((0, 0));
 
-                        info!(
-                            "Portal provided stream: node_id={}, size=({}, {}), position=({}, {})",
-                            node_id, size.0, size.1, position.0, position.1
-                        );
+                info!(
+                    "Portal provided stream: node_id={}, size=({}, {}), position=({}, {})",
+                    node_id, size.0, size.1, position.0, position.1
+                );
 
-                        StreamInfo {
-                            node_id,
-                            position,
-                            size: (
-                                size.0.max(0).try_into().unwrap_or(0),
-                                size.1.max(0).try_into().unwrap_or(0),
-                            ),
-                            source_type: super::session::SourceType::Monitor,
-                        }
-                    })
-                    .collect()
+                StreamInfo {
+                    node_id,
+                    position,
+                    size: (
+                        size.0.max(0).try_into().unwrap_or(0),
+                        size.1.max(0).try_into().unwrap_or(0),
+                    ),
+                    source_type: super::session::SourceType::Monitor,
+                }
             })
-            .unwrap_or_default();
+            .collect();
 
         info!("Total streams from Portal: {}", stream_info.len());
 
@@ -152,25 +162,36 @@ impl RemoteDesktopManager {
     /// Inject pointer motion (relative)
     pub async fn notify_pointer_motion(
         &self,
-        session: &ashpd::desktop::Session<'_, RemoteDesktop<'_>>,
+        session: &ashpd::desktop::Session<RemoteDesktop>,
         dx: f64,
         dy: f64,
     ) -> Result<()> {
-        self.proxy.notify_pointer_motion(session, dx, dy).await?;
+        self.proxy
+            .notify_pointer_motion(session, dx, dy, NotifyPointerMotionOptions::default())
+            .await?;
         Ok(())
     }
 
     /// Inject pointer motion (absolute in stream coordinates)
     pub async fn notify_pointer_motion_absolute(
         &self,
-        session: &ashpd::desktop::Session<'_, RemoteDesktop<'_>>,
+        session: &ashpd::desktop::Session<RemoteDesktop>,
         stream: u32,
         x: f64,
         y: f64,
     ) -> Result<()> {
-        debug!("Injecting pointer motion: stream={}, x={:.2}, y={:.2}", stream, x, y);
+        debug!(
+            "Injecting pointer motion: stream={}, x={:.2}, y={:.2}",
+            stream, x, y
+        );
         self.proxy
-            .notify_pointer_motion_absolute(session, stream, x, y)
+            .notify_pointer_motion_absolute(
+                session,
+                stream,
+                x,
+                y,
+                NotifyPointerMotionAbsoluteOptions::default(),
+            )
             .await
             .map_err(|e| PortalError::input_injection(format!("Pointer motion: {}", e)))?;
         debug!("Pointer motion injected successfully");
@@ -180,14 +201,21 @@ impl RemoteDesktopManager {
     /// Inject pointer button
     pub async fn notify_pointer_button(
         &self,
-        session: &ashpd::desktop::Session<'_, RemoteDesktop<'_>>,
+        session: &ashpd::desktop::Session<RemoteDesktop>,
         button: i32,
         pressed: bool,
     ) -> Result<()> {
-        debug!("Injecting pointer button: button={}, pressed={}", button, pressed);
-        let state = if pressed { KeyState::Pressed } else { KeyState::Released };
+        debug!(
+            "Injecting pointer button: button={}, pressed={}",
+            button, pressed
+        );
+        let state = if pressed {
+            KeyState::Pressed
+        } else {
+            KeyState::Released
+        };
         self.proxy
-            .notify_pointer_button(session, button, state)
+            .notify_pointer_button(session, button, state, NotifyPointerButtonOptions::default())
             .await
             .map_err(|e| PortalError::input_injection(format!("Pointer button: {}", e)))?;
         debug!("Pointer button injected successfully");
@@ -197,25 +225,44 @@ impl RemoteDesktopManager {
     /// Inject pointer axis (scroll)
     pub async fn notify_pointer_axis(
         &self,
-        session: &ashpd::desktop::Session<'_, RemoteDesktop<'_>>,
+        session: &ashpd::desktop::Session<RemoteDesktop>,
         dx: f64,
         dy: f64,
     ) -> Result<()> {
-        self.proxy.notify_pointer_axis(session, dx, dy, true).await?;
+        self.proxy
+            .notify_pointer_axis(
+                session,
+                dx,
+                dy,
+                NotifyPointerAxisOptions::default().set_finish(true),
+            )
+            .await?;
         Ok(())
     }
 
     /// Inject keyboard key
     pub async fn notify_keyboard_keycode(
         &self,
-        session: &ashpd::desktop::Session<'_, RemoteDesktop<'_>>,
+        session: &ashpd::desktop::Session<RemoteDesktop>,
         keycode: i32,
         pressed: bool,
     ) -> Result<()> {
-        debug!("Injecting keyboard: keycode={}, pressed={}", keycode, pressed);
-        let state = if pressed { KeyState::Pressed } else { KeyState::Released };
+        debug!(
+            "Injecting keyboard: keycode={}, pressed={}",
+            keycode, pressed
+        );
+        let state = if pressed {
+            KeyState::Pressed
+        } else {
+            KeyState::Released
+        };
         self.proxy
-            .notify_keyboard_keycode(session, keycode, state)
+            .notify_keyboard_keycode(
+                session,
+                keycode,
+                state,
+                NotifyKeyboardKeycodeOptions::default(),
+            )
             .await
             .map_err(|e| PortalError::input_injection(format!("Keyboard keycode: {}", e)))?;
         debug!("Keyboard event injected successfully");
@@ -234,9 +281,5 @@ mod tests {
         let config = PortalConfig::default();
 
         let _manager = RemoteDesktopManager::new(connection, &config).await.unwrap();
-
-        // This will trigger permission dialog
-        // let session = manager.create_session().await;
-        // assert!(session.is_ok());
     }
 }

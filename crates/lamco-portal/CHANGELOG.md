@@ -5,6 +5,26 @@ All notable changes to lamco-portal will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4] - 2026-03-15
+
+### Changed
+- **BREAKING**: Upgrade ashpd from 0.12.3 to 0.13.7
+  - All proxy types drop lifetime parameter (e.g., `RemoteDesktop<'a>` -> `RemoteDesktop`)
+  - Session types simplified: `Session<'static, RemoteDesktop<'static>>` -> `Session<RemoteDesktop>`
+  - `select_devices()` and `select_sources()` now use builder-style options
+  - All `notify_*()` methods take typed options structs
+  - Clipboard methods generic over `IsClipboardSession` trait
+  - `set_selection()` uses `SetSelectionOptions` builder
+  - `request()` takes `RequestClipboardOptions`
+
+### Added
+- Portal version detection: `RemoteDesktopManager::version()`, `ClipboardManager::version()`
+- Clipboard grant verification via `is_clipboard_enabled()` on start response
+- Session::Closed signal now properly delivered (ashpd PR #359 fix)
+
+### Fixed
+- Session::Closed signal was silently discarded in ashpd 0.12 (upstream bug)
+
 ## [0.3.3] - 2026-03-15
 
 ### Changed

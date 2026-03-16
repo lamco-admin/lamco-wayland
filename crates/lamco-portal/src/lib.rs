@@ -203,7 +203,7 @@ pub use session::{PortalSessionHandle, SourceType, StreamInfo};
 /// ```
 pub struct PortalManager {
     config: PortalConfig,
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "connection kept alive for session lifetime")]
     connection: zbus::Connection,
     screencast: Arc<ScreenCastManager>,
     remote_desktop: Arc<RemoteDesktopManager>,
@@ -353,7 +353,7 @@ impl PortalManager {
         if let Some(clipboard_mgr) = clipboard {
             debug!(session_id = %session_tracking_id, "Requesting clipboard access");
 
-            match clipboard_mgr.portal_clipboard().request(&remote_desktop_session).await {
+            match clipboard_mgr.enable_for_session(&remote_desktop_session).await {
                 Ok(()) => {
                     info!(session_id = %session_tracking_id, "Clipboard enabled for session");
                 }
@@ -388,15 +388,15 @@ impl PortalManager {
         // ScreenCast is required to make screen sources available for sharing
         let screencast_proxy = ashpd::desktop::screencast::Screencast::new().await?;
 
+        let source_options = ashpd::desktop::screencast::SelectSourcesOptions::default()
+            .set_cursor_mode(self.config.cursor_mode)
+            .set_sources(self.config.source_type)
+            .set_multiple(self.config.allow_multiple)
+            .set_persist_mode(self.config.persist_mode)
+            .set_restore_token(self.config.restore_token.as_deref());
+
         if let Err(e) = screencast_proxy
-            .select_sources(
-                &remote_desktop_session,
-                self.config.cursor_mode,
-                self.config.source_type,
-                self.config.allow_multiple,
-                self.config.restore_token.as_deref(),
-                self.config.persist_mode,
-            )
+            .select_sources(&remote_desktop_session, source_options)
             .await
         {
             // Close session before returning to prevent GNOME Shell from tracking stale state.
