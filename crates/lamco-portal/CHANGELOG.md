@@ -5,7 +5,16 @@ All notable changes to lamco-portal will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.3] - 2026-03-15
+
+### Changed
+- Bump to Rust edition 2024, minimum supported Rust version 1.85
+
+## [0.3.2] - 2026-03-04
+
+### Changed
+- Upgrade to zbus 5 and ashpd 0.12.3
+- Code cleanup and reduced boilerplate
 
 ## [0.3.1] - 2026-01-29
 

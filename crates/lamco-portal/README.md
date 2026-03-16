@@ -221,6 +221,10 @@ sudo dnf install xdg-desktop-portal xdg-desktop-portal-gnome
 
 **Solution**: Check that your portal backend is running and try again.
 
+## About
+
+Developed by [Lamco Development](https://lamco.ai). Part of the lamco-wayland ecosystem for building Wayland-native applications in Rust.
+
 ## License
 
 Licensed under either of:
