@@ -204,6 +204,7 @@ pub mod ffi;
 pub mod format;
 pub mod frame;
 pub mod manager;
+pub mod meta;
 pub mod pw_thread;
 pub mod stream;
 pub mod thread_comm;
@@ -265,6 +266,9 @@ pub use stream::{NegotiatedFormat, PwStreamState, StreamConfig, StreamMetrics, S
 // Frame types
 pub use format::{convert_format, PixelFormat};
 pub use frame::{FrameCallback, FrameFlags, FrameStats, VideoFrame};
+
+// Buffer metadata
+pub use meta::{BufferMeta, CropRegion, CursorMeta, DamageRect, HeaderMeta};
 
 // =============================================================================
 // RE-EXPORTS - ADVANCED API
