@@ -102,7 +102,7 @@ pub struct PortalClipboardSink {
     clipboard: Arc<ClipboardManager>,
 
     /// Portal session (needed for all clipboard operations)
-    session: Arc<Mutex<Session<'static, RemoteDesktop<'static>>>>,
+    session: Arc<Mutex<Session<RemoteDesktop>>>,
 
     /// Channel for clipboard change notifications
     change_tx: mpsc::UnboundedSender<ClipboardChange>,
@@ -130,7 +130,7 @@ impl PortalClipboardSink {
     ///
     /// * `clipboard` - Portal clipboard manager instance
     /// * `session` - Active Portal session (wrapped in Arc<Mutex> for sharing)
-    pub fn new(clipboard: ClipboardManager, session: Arc<Mutex<Session<'static, RemoteDesktop<'static>>>>) -> Self {
+    pub fn new(clipboard: ClipboardManager, session: Arc<Mutex<Session<RemoteDesktop>>>) -> Self {
         let (change_tx, change_rx) = mpsc::unbounded_channel();
         let (transfer_tx, transfer_rx) = mpsc::unbounded_channel();
 

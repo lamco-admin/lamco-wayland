@@ -3,7 +3,7 @@
 # PACKAGE IDENTITY
 # ============================================================================
 name = "lamco-portal"
-version = "0.3.3"
+version = "0.3.4"
 
 # ============================================================================
 # PACKAGE CONFIGURATION (inherited from workspace)
@@ -84,7 +84,7 @@ dbus-clipboard = []
 # ============================================================================
 [dependencies]
 # Portal and D-Bus integration
-ashpd = "0.12.3"
+ashpd = { version = "0.13.7", features = ["remote_desktop", "screencast", "clipboard"] }
 zbus = "5"
 
 # Async runtime

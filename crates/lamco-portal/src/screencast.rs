@@ -15,9 +15,9 @@ use crate::error::Result;
 /// Caches the ashpd Screencast proxy to avoid creating a new D-Bus proxy
 /// on every operation.
 pub struct ScreenCastManager {
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "config reserved for future use")]
     config: PortalConfig,
-    proxy: Screencast<'static>,
+    proxy: Screencast,
 }
 
 impl ScreenCastManager {
@@ -32,10 +32,12 @@ impl ScreenCastManager {
     }
 
     /// Create a screencast session
-    pub async fn create_session(&self) -> Result<ashpd::desktop::Session<'static, Screencast<'static>>> {
+    pub async fn create_session(
+        &self,
+    ) -> Result<ashpd::desktop::Session<Screencast>> {
         info!("Creating ScreenCast session");
 
-        let session = self.proxy.create_session().await?;
+        let session = self.proxy.create_session(Default::default()).await?;
 
         debug!("ScreenCast session created");
         Ok(session)
@@ -44,19 +46,27 @@ impl ScreenCastManager {
     /// Start the screencast and get PipeWire details
     pub async fn start(
         &self,
-        session: &ashpd::desktop::Session<'_, Screencast<'_>>,
+        session: &ashpd::desktop::Session<Screencast>,
     ) -> Result<(RawFd, Vec<StreamInfo>)> {
         info!("Starting screencast session");
 
-        let streams_request = self.proxy.start(session, None).await?;
+        let streams_request = self
+            .proxy
+            .start(session, None, Default::default())
+            .await?;
 
-        // Get the streams from the request response
         let streams = streams_request.response()?;
 
-        info!("Screencast started with {} streams", streams.streams().len());
+        info!(
+            "Screencast started with {} streams",
+            streams.streams().len()
+        );
 
         // Get PipeWire FD
-        let fd = self.proxy.open_pipe_wire_remote(session).await?;
+        let fd = self
+            .proxy
+            .open_pipe_wire_remote(session, Default::default())
+            .await?;
 
         // Transfer FD ownership — caller takes responsibility for closing it
         let raw_fd = fd.into_raw_fd();
@@ -86,9 +96,6 @@ impl ScreenCastManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // Note: Portal tests require a running Wayland session with portal
-    // These are integration tests that may not work in CI
 
     #[tokio::test]
     #[ignore] // Ignore in CI, run manually
