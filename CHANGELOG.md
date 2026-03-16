@@ -5,7 +5,30 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-03-15
+
+### Changed
+- Bump to Rust edition 2024, minimum supported Rust version 1.85
+- Updated all sub-crate dependencies:
+  - lamco-pipewire 0.3.3 (DmaBuf negotiation fix, BufferMeta, edition 2024)
+  - lamco-portal 0.3.3 (zbus 5, edition 2024)
+  - lamco-video 0.1.5 (edition 2024)
+
+## [0.2.9] - 2026-03-12
+
+### Changed
+- Updated lamco-pipewire to 0.3.2 (MemFd SIGSEGV fix)
+
+## [0.2.8] - 2026-03-08
+
+### Changed
+- Updated lamco-pipewire to 0.3.1 (DRIVER stream flag, format parsing)
+
+## [0.2.7] - 2026-03-04
+
+### Changed
+- Updated all dependencies for PipeWire 0.9, zbus 5, edition upgrades
+- lamco-pipewire 0.3.0, lamco-portal 0.3.2, lamco-video 0.1.4
 
 ## [0.2.6] - 2026-02-26
 

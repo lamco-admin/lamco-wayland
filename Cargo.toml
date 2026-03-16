@@ -3,7 +3,7 @@
 # PACKAGE IDENTITY
 # ============================================================================
 name = "lamco-wayland"
-version = "0.2.9"
+version = "0.3.0"
 
 # ============================================================================
 # PACKAGE CONFIGURATION (inherited from workspace)
@@ -18,7 +18,7 @@ authors.workspace = true
 # ============================================================================
 # CRATE-SPECIFIC METADATA
 # ============================================================================
-description = "Wayland screen capture, XDG Portal integration, and video processing for Rust"
+description = "Wayland screen capture, XDG Portal integration, and video processing for Rust, by Lamco Development"
 documentation = "https://docs.rs/lamco-wayland"
 readme = "README.md"
 
@@ -93,9 +93,9 @@ workspace = true
 # ============================================================================
 # NOTE: For local development, use path dependencies. For publishing, switch to version only.
 [dependencies]
-lamco-portal = { version = "0.3.2", path = "crates/lamco-portal", optional = true }
-lamco-pipewire = { version = "0.3.2", path = "crates/lamco-pipewire", optional = true }
-lamco-video = { version = "0.1.4", path = "crates/lamco-video", optional = true }
+lamco-portal = { version = "0.3.3", path = "crates/lamco-portal", optional = true }
+lamco-pipewire = { version = "0.3.3", path = "crates/lamco-pipewire", optional = true }
+lamco-video = { version = "0.1.5", path = "crates/lamco-video", optional = true }
 
 # ============================================================================
 # WORKSPACE CONFIGURATION
