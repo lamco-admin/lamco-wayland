@@ -3,7 +3,7 @@
 # PACKAGE IDENTITY
 # ============================================================================
 name = "lamco-video"
-version = "0.1.4"
+version = "0.1.5"
 
 # ============================================================================
 # PACKAGE CONFIGURATION (inherited from workspace)
@@ -18,7 +18,7 @@ authors.workspace = true
 # ============================================================================
 # CRATE-SPECIFIC METADATA
 # ============================================================================
-description = "Video frame processing and RDP bitmap conversion for Wayland screen capture"
+description = "Video frame processing and RDP bitmap conversion for Wayland screen capture, by Lamco Development"
 documentation = "https://docs.rs/lamco-video"
 readme = "README.md"
 
