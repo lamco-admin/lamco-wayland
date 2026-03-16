@@ -7,6 +7,7 @@ use std::time::{Duration, SystemTime};
 
 use crate::ffi::DamageRegion;
 use crate::format::PixelFormat;
+use crate::meta::BufferMeta;
 
 /// Raw frame data from a direct capture channel (no PipeWire).
 ///
@@ -63,6 +64,9 @@ pub struct VideoFrame {
 
     /// Damage regions (optional optimization)
     pub damage_regions: Vec<DamageRegion>,
+
+    /// SPA buffer metadata (transform, header, crop, damage, cursor)
+    pub meta: BufferMeta,
 
     /// Frame flags
     pub flags: FrameFlags,
@@ -149,6 +153,7 @@ impl VideoFrame {
             data: Arc::new(Vec::new()),
             capture_time: SystemTime::now(),
             damage_regions: Vec::new(),
+            meta: BufferMeta::default(),
             flags: FrameFlags::new(),
         }
     }
@@ -176,8 +181,20 @@ impl VideoFrame {
             data: Arc::new(data),
             capture_time: SystemTime::now(),
             damage_regions: Vec::new(),
+            meta: BufferMeta::default(),
             flags: FrameFlags::new(),
         }
+    }
+
+    /// Get the buffer transform value (0 = None, 1 = 90 CCW, 2 = 180, etc.)
+    pub fn transform(&self) -> u32 {
+        self.meta.transform.unwrap_or(0)
+    }
+
+    /// Check if the buffer has a negative chunk stride (bottom-up GL buffer).
+    /// When true, the pixel data is stored bottom-to-top and needs vertical flip.
+    pub fn is_bottom_up(&self) -> bool {
+        self.meta.chunk_stride < 0
     }
 
     /// Set timing information
@@ -247,6 +264,7 @@ impl std::fmt::Debug for VideoFrame {
             .field("monitor_index", &self.monitor_index)
             .field("data_size", &self.data.len())
             .field("damage_regions", &self.damage_regions.len())
+            .field("transform", &self.meta.transform)
             .field("flags", &self.flags.bits())
             .finish()
     }
