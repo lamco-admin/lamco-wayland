@@ -144,10 +144,14 @@ Typical performance on modern hardware:
 - **Throughput**: > 200 MB/s (with SIMD)
 - **Frame rates**: Tested up to 144Hz
 
+## About
+
+Developed by [Lamco Development](https://lamco.ai). Part of the lamco-wayland ecosystem for building Wayland-native applications in Rust.
+
 ## Requirements
 
 - **Linux** with a Wayland compositor
-- **Rust 1.77+**
+- **Rust 1.85+**
 
 ## Related Crates
 
