@@ -111,12 +111,11 @@ resolver = "2"
 # ============================================================================
 
 [workspace.package]
-# Rust edition - 2021 is current stable
-edition = "2021"
+# Rust edition 2024 (stabilized in Rust 1.85)
+edition = "2024"
 
 # Minimum Supported Rust Version
-# Determined by dependency chain: zbus requires 1.77, ashpd requires 1.75
-rust-version = "1.77"
+rust-version = "1.85"
 
 # Dual license (permissive, industry standard)
 license = "MIT OR Apache-2.0"

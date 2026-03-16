@@ -139,6 +139,10 @@ PipeWire's Rust bindings use `Rc<>` and `NonNull<>` internally, making them **no
 
 - [`lamco-portal`](https://crates.io/crates/lamco-portal) - XDG Desktop Portal integration for obtaining PipeWire file descriptors
 
+## About
+
+Developed by [Lamco Development](https://lamco.ai). Part of the lamco-wayland ecosystem for building Wayland-native applications in Rust.
+
 ## License
 
 Licensed under either of:

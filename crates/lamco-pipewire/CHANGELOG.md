@@ -5,7 +5,18 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.3] - 2026-03-15
+
+### Changed
+- Bump to Rust edition 2024, minimum supported Rust version 1.85
+
+### Fixed
+- **DmaBuf format negotiation restored**: The dual-pod MANDATORY|DONT_FIXATE
+  pattern (introduced in 0.1.6) was lost during the 0.3.x rewrite when
+  `build_stream_parameters()` was simplified from `Vec<Vec<u8>>` to `Vec<u8>`.
+  Restored proper negotiation: first pod with VideoModifier and MANDATORY|DONT_FIXATE
+  for DmaBuf, second pod as SHM fallback without modifier.
+- Enabled `v0_3_33` feature on pipewire/libspa deps for `PropertyFlags::DONT_FIXATE`
 
 ## [0.3.2] - 2026-03-12
 
@@ -17,6 +28,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of relying on `data.data()`. Affects any portal backend that provides MemFd
   buffers (not compositor-specific).
 - Fixed clippy `similar_names` warning in process callback variable naming
+
+## [0.3.1] - 2026-03-08
+
+### Fixed
+- Add DRIVER stream flag for proper PipeWire scheduling
+- Parse negotiated format from `param_changed` callback for accurate buffer handling
+
+## [0.3.0] - 2026-03-04
+
+### Changed
+- **BREAKING**: Upgrade to PipeWire 0.9 / libspa 0.9 bindings
+- **BREAKING**: Upgrade to zbus 5 for D-Bus integration
+- StreamTime FFI improvements
+- Audio capture support (behind `audio` feature)
+- Direct frame channel adapter for non-PipeWire capture paths
 
 ## [0.2.0] - 2026-02-26
 
