@@ -240,6 +240,42 @@ impl RemoteDesktopManager {
         Ok(())
     }
 
+    /// Inject keyboard keysym (for Unicode input)
+    ///
+    /// Sends a keyboard event by XKB keysym rather than evdev keycode.
+    /// Used for characters that don't map to a single keycode, such as
+    /// CJK characters or accented letters. XKB Unicode keysyms use
+    /// the range 0x01000000 + Unicode code point.
+    pub async fn notify_keyboard_keysym(
+        &self,
+        session: &ashpd::desktop::Session<RemoteDesktop>,
+        keysym: i32,
+        pressed: bool,
+    ) -> Result<()> {
+        use ashpd::desktop::remote_desktop::NotifyKeyboardKeysymOptions;
+
+        debug!(
+            "Injecting keyboard keysym: keysym=0x{:08X}, pressed={}",
+            keysym, pressed
+        );
+        let state = if pressed {
+            KeyState::Pressed
+        } else {
+            KeyState::Released
+        };
+        self.proxy
+            .notify_keyboard_keysym(
+                session,
+                keysym,
+                state,
+                NotifyKeyboardKeysymOptions::default(),
+            )
+            .await
+            .map_err(|e| PortalError::input_injection(format!("Keyboard keysym: {}", e)))?;
+        debug!("Keyboard keysym event injected successfully");
+        Ok(())
+    }
+
     /// Inject keyboard key
     pub async fn notify_keyboard_keycode(
         &self,
