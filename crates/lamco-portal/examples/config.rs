@@ -7,9 +7,9 @@
 //!
 //! Run with: cargo run --example config
 
+use ashpd::desktop::PersistMode;
 use ashpd::desktop::remote_desktop::DeviceType;
 use ashpd::desktop::screencast::{CursorMode, SourceType};
-use ashpd::desktop::PersistMode;
 use lamco_portal::PortalManager;
 
 #[tokio::main]

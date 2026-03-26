@@ -314,8 +314,7 @@ impl FrameDispatcher {
                 if state.backpressure_active {
                     trace!(
                         "Dropping frame {} from stream {} due to backpressure",
-                        frame.frame_id,
-                        stream_id
+                        frame.frame_id, stream_id
                     );
                     self.stats.write().frames_dropped_backpressure += 1;
                     return;
@@ -382,8 +381,7 @@ impl FrameDispatcher {
                 Ok(_) => {
                     trace!(
                         "Dispatched frame {} with priority {:?}",
-                        dispatch_frame.frame.frame_id,
-                        dispatch_frame.priority
+                        dispatch_frame.frame.frame_id, dispatch_frame.priority
                     );
                     self.stats.write().frames_dispatched += 1;
                 }

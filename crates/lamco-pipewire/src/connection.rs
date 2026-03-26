@@ -3,12 +3,14 @@
 //! Handles connection to PipeWire daemon via portal file descriptor with
 //! complete MainLoop integration, proper threading, and robust error handling.
 
-use pipewire::{context::ContextBox, main_loop::MainLoopBox};
 use std::collections::HashMap;
 use std::os::fd::{FromRawFd, OwnedFd, RawFd};
 use std::sync::Arc;
 use std::thread;
-use tokio::sync::{mpsc, Mutex, RwLock};
+
+use pipewire::context::ContextBox;
+use pipewire::main_loop::MainLoopBox;
+use tokio::sync::{Mutex, RwLock, mpsc};
 use tracing::{debug, error, info, warn};
 
 use crate::error::{PipeWireError, Result};

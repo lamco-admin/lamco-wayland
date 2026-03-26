@@ -429,9 +429,7 @@ impl DamageDetector {
             height
         );
 
-        let dimensions_changed = self
-            .previous_dimensions
-            .map_or(true, |(w, h)| w != width || h != height);
+        let dimensions_changed = self.previous_dimensions.is_none_or(|(w, h)| w != width || h != height);
 
         if self.previous_frame.is_none() || self.invalidated || dimensions_changed {
             self.update_tile_grid(width, height);

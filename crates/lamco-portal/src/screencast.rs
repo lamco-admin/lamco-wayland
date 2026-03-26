@@ -2,8 +2,9 @@
 //!
 //! Provides access to screen content via xdg-desktop-portal ScreenCast interface.
 
-use ashpd::desktop::screencast::Screencast;
 use std::os::fd::{IntoRawFd, RawFd};
+
+use ashpd::desktop::screencast::Screencast;
 use tracing::{debug, info};
 
 use super::session::StreamInfo;
@@ -32,9 +33,7 @@ impl ScreenCastManager {
     }
 
     /// Create a screencast session
-    pub async fn create_session(
-        &self,
-    ) -> Result<ashpd::desktop::Session<Screencast>> {
+    pub async fn create_session(&self) -> Result<ashpd::desktop::Session<Screencast>> {
         info!("Creating ScreenCast session");
 
         let session = self.proxy.create_session(Default::default()).await?;
@@ -44,29 +43,17 @@ impl ScreenCastManager {
     }
 
     /// Start the screencast and get PipeWire details
-    pub async fn start(
-        &self,
-        session: &ashpd::desktop::Session<Screencast>,
-    ) -> Result<(RawFd, Vec<StreamInfo>)> {
+    pub async fn start(&self, session: &ashpd::desktop::Session<Screencast>) -> Result<(RawFd, Vec<StreamInfo>)> {
         info!("Starting screencast session");
 
-        let streams_request = self
-            .proxy
-            .start(session, None, Default::default())
-            .await?;
+        let streams_request = self.proxy.start(session, None, Default::default()).await?;
 
         let streams = streams_request.response()?;
 
-        info!(
-            "Screencast started with {} streams",
-            streams.streams().len()
-        );
+        info!("Screencast started with {} streams", streams.streams().len());
 
         // Get PipeWire FD
-        let fd = self
-            .proxy
-            .open_pipe_wire_remote(session, Default::default())
-            .await?;
+        let fd = self.proxy.open_pipe_wire_remote(session, Default::default()).await?;
 
         // Transfer FD ownership — caller takes responsibility for closing it
         let raw_fd = fd.into_raw_fd();

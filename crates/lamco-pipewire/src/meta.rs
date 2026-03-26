@@ -212,12 +212,7 @@ unsafe fn read_damage_meta(spa_buf: *const libspa_sys::spa_buffer) -> Vec<Damage
     let mut rects = Vec::new();
 
     // SAFETY: spa_buf validity guaranteed by caller
-    let meta_ptr = unsafe {
-        libspa_sys::spa_buffer_find_meta(
-            spa_buf,
-            libspa_sys::SPA_META_VideoDamage,
-        )
-    };
+    let meta_ptr = unsafe { libspa_sys::spa_buffer_find_meta(spa_buf, libspa_sys::SPA_META_VideoDamage) };
     if meta_ptr.is_null() {
         return rects;
     }
@@ -278,8 +273,7 @@ unsafe fn read_cursor_meta(spa_buf: *const libspa_sys::spa_buffer) -> Option<Cur
     }
     trace!(
         "SPA_META_Cursor: id={}, pos=({},{}), hotspot=({},{}), bitmap_offset={}",
-        cursor.id, cursor.position.x, cursor.position.y,
-        cursor.hotspot.x, cursor.hotspot.y, cursor.bitmap_offset
+        cursor.id, cursor.position.x, cursor.position.y, cursor.hotspot.x, cursor.hotspot.y, cursor.bitmap_offset
     );
     Some(CursorMeta {
         id: cursor.id,

@@ -3,9 +3,9 @@
 //! Provides flexible configuration for Portal sessions through both struct literals
 //! and builder patterns.
 
+use ashpd::desktop::PersistMode;
 use ashpd::desktop::remote_desktop::DeviceType;
 use ashpd::desktop::screencast::{CursorMode, SourceType};
-use ashpd::desktop::PersistMode;
 use enumflags2::BitFlags;
 
 /// Configuration for Portal session behavior

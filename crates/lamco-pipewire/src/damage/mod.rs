@@ -36,7 +36,6 @@ mod detector;
 mod tracker;
 
 // Tracker (region aggregation from PipeWire metadata)
-pub use tracker::{DamageRegion, DamageStats, DamageTracker};
-
 // Detector (SIMD frame comparison)
 pub use detector::{DamageConfig, DamageDetector, DamageDetectorStats, DetectedRegion};
+pub use tracker::{DamageRegion, DamageStats, DamageTracker};

@@ -93,30 +93,29 @@
 //! - **Thread overhead:** ~0.5ms per iteration
 //! - **Supports:** Up to 144Hz refresh rates
 
-use pipewire::properties::PropertiesBox;
-use pipewire::spa::param::format_utils;
-use pipewire::spa::param::video::VideoInfoRaw;
-use pipewire::spa::param::ParamType;
-use pipewire::spa::pod::Pod;
-use pipewire::spa::utils::Direction;
-use pipewire::stream::{StreamBox, StreamFlags, StreamState};
-use pipewire::{context::ContextBox, main_loop::MainLoopBox};
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::os::fd::{FromRawFd, OwnedFd, RawFd};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::mpsc as std_mpsc;
+use std::sync::{Arc as StdArc, mpsc as std_mpsc};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
+
+use pipewire::context::ContextBox;
+use pipewire::main_loop::MainLoopBox;
+use pipewire::properties::PropertiesBox;
+use pipewire::spa::param::video::VideoInfoRaw;
+use pipewire::spa::param::{ParamType, format_utils};
+use pipewire::spa::pod::Pod;
+use pipewire::spa::utils::Direction;
+use pipewire::stream::{StreamBox, StreamFlags, StreamState};
 use tracing::{debug, error, info, trace, warn};
 
 use crate::error::{PipeWireError, Result};
 use crate::format::PixelFormat;
 use crate::frame::{FrameFlags, VideoFrame};
 use crate::stream::{PwStreamState, StreamConfig, StreamStateEvent};
-use std::sync::Arc as StdArc;
-use std::time::SystemTime;
 
 /// DMA-BUF mmap cache: FD -> (mapped pointer, size)
 type DmaBufCache = std::rc::Rc<std::cell::RefCell<HashMap<RawFd, (NonNull<libc::c_void>, usize)>>>;
@@ -627,8 +626,9 @@ fn run_pipewire_main_loop(
 /// - FD is owned by PipeWire buffer (valid during callback)
 /// - No pointer aliasing (we copy, not reference)
 fn mmap_fd_buffer(fd: std::os::fd::RawFd, size: usize, offset: usize) -> Result<Vec<u8>> {
-    use nix::sys::mman::{mmap, munmap, MapFlags, ProtFlags};
     use std::os::fd::BorrowedFd;
+
+    use nix::sys::mman::{MapFlags, ProtFlags, mmap, munmap};
 
     // Calculate page-aligned mapping
     // SAFETY: sysconf(_SC_PAGESIZE) is safe and always returns a valid value
@@ -845,6 +845,7 @@ fn create_stream_on_thread(
 
             // Use dequeue_raw_buffer to access both SPA metadata and pixel data.
             // Buffer must be queued back when we're done — handled at scope exit.
+            // SAFETY: stream is valid within this callback; dequeue returns null on empty queue
             let raw_buf = unsafe { stream.dequeue_raw_buffer() };
             if raw_buf.is_null() {
                 debug!(
@@ -861,6 +862,7 @@ fn create_stream_on_thread(
             }
             impl Drop for BufferGuard<'_> {
                 fn drop(&mut self) {
+                    // SAFETY: raw_buf was obtained from dequeue and stream is still valid
                     unsafe { self.stream.queue_raw_buffer(self.raw_buf); }
                 }
             }
@@ -873,15 +875,17 @@ fn create_stream_on_thread(
                 return;
             }
 
-            // Extract SPA metadata from the buffer (transform, header, damage, etc.)
+            // SAFETY: spa_buf is non-null (checked above), valid for callback lifetime
             let mut buffer_meta = unsafe { crate::meta::extract_buffer_meta(spa_buf) };
 
-            // Access data blocks through the spa_buffer (same as Buffer::datas_mut())
-            let n_datas = unsafe { (*spa_buf).n_datas } as usize;
-            let datas_ptr = unsafe { (*spa_buf).datas };
+            // SAFETY: spa_buf is non-null (checked above), n_datas and datas are valid struct fields
+            let (n_datas, datas_ptr) = unsafe {
+                ((*spa_buf).n_datas as usize, (*spa_buf).datas)
+            };
 
             // Debug: dump buffer data block details
             if !datas_ptr.is_null() && n_datas > 0 {
+                // SAFETY: datas_ptr is non-null, n_datas matches the allocated array length
                 let datas_slice = unsafe {
                     std::slice::from_raw_parts_mut(
                         datas_ptr as *mut libspa::buffer::Data,
@@ -1337,14 +1341,12 @@ fn create_stream_on_thread(
 /// won't attach metadata even if they support it.
 ///
 /// This follows the same pattern as OBS and xdg-desktop-portal-wlr.
-fn request_buffer_metadata(
-    stream: &pipewire::stream::Stream,
-    stream_id: u32,
-) -> Result<()> {
-    use pipewire::spa;
-    use pipewire::spa::pod::serialize::PodSerializer;
-    use pipewire::spa::pod::Value;
+fn request_buffer_metadata(stream: &pipewire::stream::Stream, stream_id: u32) -> Result<()> {
     use std::io::Cursor;
+
+    use pipewire::spa;
+    use pipewire::spa::pod::Value;
+    use pipewire::spa::pod::serialize::PodSerializer;
 
     // Each metadata type we want must be requested as a separate SPA_PARAM_Meta object.
     // The object specifies the meta type ID and the minimum allocation size.
@@ -1385,24 +1387,24 @@ fn request_buffer_metadata(
             type_: spa::utils::SpaTypes::ObjectParamMeta.as_raw(),
             id: spa::param::ParamType::Meta.as_raw(),
             properties: vec![
-                spa::pod::Property::new(
-                    libspa_sys::SPA_PARAM_META_type,
-                    Value::Id(spa::utils::Id(meta_type)),
-                ),
-                spa::pod::Property::new(
-                    libspa_sys::SPA_PARAM_META_size,
-                    Value::Int(meta_size as i32),
-                ),
+                spa::pod::Property::new(libspa_sys::SPA_PARAM_META_type, Value::Id(spa::utils::Id(meta_type))),
+                spa::pod::Property::new(libspa_sys::SPA_PARAM_META_size, Value::Int(meta_size as i32)),
             ],
         };
 
         match PodSerializer::serialize(Cursor::new(Vec::new()), &Value::Object(meta_obj)) {
             Ok(serialized) => {
                 param_bytes_list.push(serialized.0.into_inner());
-                debug!("Stream {}: requested SPA_META_{} ({} bytes)", stream_id, name, meta_size);
+                debug!(
+                    "Stream {}: requested SPA_META_{} ({} bytes)",
+                    stream_id, name, meta_size
+                );
             }
             Err(e) => {
-                warn!("Stream {}: failed to serialize SPA_META_{} request: {:?}", stream_id, name, e);
+                warn!(
+                    "Stream {}: failed to serialize SPA_META_{} request: {:?}",
+                    stream_id, name, e
+                );
             }
         }
     }
@@ -1453,10 +1455,11 @@ fn request_buffer_metadata(
 ///
 /// When `config.use_dmabuf` is false, produces a single SHM-only param.
 fn build_stream_parameters(config: &StreamConfig) -> Result<Vec<Vec<u8>>> {
+    use std::io::Cursor;
+
     use pipewire::spa;
     use pipewire::spa::pod::serialize::PodSerializer;
     use pipewire::spa::pod::{Property, PropertyFlags, Value};
-    use std::io::Cursor;
 
     info!(
         "Building format parameters: {}x{} @ {}fps, dmabuf={}",
@@ -1598,9 +1601,8 @@ fn build_stream_parameters(config: &StreamConfig) -> Result<Vec<Vec<u8>>> {
         ),
     );
 
-    let serialized = PodSerializer::serialize(Cursor::new(Vec::new()), &Value::Object(shm_obj)).map_err(|e| {
-        PipeWireError::FormatNegotiationFailed(format!("SHM format serialization failed: {e:?}"))
-    })?;
+    let serialized = PodSerializer::serialize(Cursor::new(Vec::new()), &Value::Object(shm_obj))
+        .map_err(|e| PipeWireError::FormatNegotiationFailed(format!("SHM format serialization failed: {e:?}")))?;
     let bytes = serialized.0.into_inner();
     info!("SHM fallback format param: {} bytes", bytes.len());
     param_pods.push(bytes);

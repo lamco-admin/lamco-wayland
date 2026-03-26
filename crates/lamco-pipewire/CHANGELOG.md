@@ -5,6 +5,24 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-03-26
+
+### Added
+- **DMA-BUF zero-copy types**: `FrameBuffer` enum with `Memory` and `DmaBuf` variants
+- `DmaBufDescriptor` and `DmaBufPlane` types with `OwnedFd` for GPU buffer passthrough
+- `dmabuf_passthrough` config flag for opting into zero-copy frame delivery
+- `VideoFrame::data()` accessor method for backward-compatible CPU pixel access
+- `VideoFrame::is_dmabuf()` convenience check
+
+### Changed
+- **Breaking**: `VideoFrame.data: Arc<Vec<u8>>` replaced with `VideoFrame.buffer: FrameBuffer`
+- Consumers accessing pixel data should use `frame.data()` (returns `Option<&Arc<Vec<u8>>>`)
+  or match on `frame.buffer` directly for DMA-BUF handling
+
+### Fixed
+- Pre-existing clippy warnings: added safety comments to unsafe blocks in process callback
+- Replaced deprecated `map_or` with `is_none_or` in damage detector
+
 ## [0.3.3] - 2026-03-15
 
 ### Changed

@@ -53,18 +53,20 @@
 //! # }
 //! ```
 
-use crate::clipboard::{ClipboardManager, SelectionTransferEvent};
-use ashpd::desktop::remote_desktop::RemoteDesktop;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+
 use ashpd::desktop::Session;
+use ashpd::desktop::remote_desktop::RemoteDesktop;
 use lamco_clipboard_core::{
     ClipboardChange, ClipboardChangeReceiver, ClipboardChangeReceiverInner, ClipboardError, ClipboardResult,
     ClipboardSink, FileInfo,
 };
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, mpsc};
 use tracing::{debug, error, info, warn};
+
+use crate::clipboard::{ClipboardManager, SelectionTransferEvent};
 
 /// Pending data for a MIME type, waiting for SelectionTransfer
 #[derive(Debug)]

@@ -2,13 +2,13 @@
 //!
 //! Provides input injection and screen capture via RemoteDesktop portal.
 
+use std::os::fd::IntoRawFd;
+
 use ashpd::desktop::remote_desktop::{
-    DeviceType, KeyState, NotifyKeyboardKeycodeOptions, NotifyPointerAxisOptions,
-    NotifyPointerButtonOptions, NotifyPointerMotionAbsoluteOptions, NotifyPointerMotionOptions,
-    RemoteDesktop, SelectDevicesOptions, StartOptions,
+    DeviceType, KeyState, NotifyKeyboardKeycodeOptions, NotifyPointerAxisOptions, NotifyPointerButtonOptions,
+    NotifyPointerMotionAbsoluteOptions, NotifyPointerMotionOptions, RemoteDesktop, SelectDevicesOptions, StartOptions,
 };
 use enumflags2::BitFlags;
-use std::os::fd::IntoRawFd;
 use tracing::{debug, info};
 
 use super::session::StreamInfo;
@@ -86,20 +86,14 @@ impl RemoteDesktopManager {
     ) -> Result<(std::os::fd::RawFd, Vec<StreamInfo>, Option<String>)> {
         info!("Starting RemoteDesktop session");
 
-        let response = self
-            .proxy
-            .start(session, None, StartOptions::default())
-            .await?;
+        let response = self.proxy.start(session, None, StartOptions::default()).await?;
 
         let selected = response.response()?;
 
         let restore_token = selected.restore_token().map(|s| s.to_string());
 
         if let Some(ref token) = restore_token {
-            info!(
-                "Restore token received from portal (length: {} chars)",
-                token.len()
-            );
+            info!("Restore token received from portal (length: {} chars)", token.len());
             debug!("Restore token: {}", token);
         } else {
             debug!("No restore token in response (portal may not support persistence)");
@@ -121,7 +115,9 @@ impl RemoteDesktopManager {
         // Get PipeWire FD
         use ashpd::desktop::screencast::Screencast;
         let screencast_proxy = Screencast::new().await?;
-        let fd = screencast_proxy.open_pipe_wire_remote(session, Default::default()).await?;
+        let fd = screencast_proxy
+            .open_pipe_wire_remote(session, Default::default())
+            .await?;
 
         info!("PipeWire FD obtained: {:?}", fd);
 
@@ -180,18 +176,9 @@ impl RemoteDesktopManager {
         x: f64,
         y: f64,
     ) -> Result<()> {
-        debug!(
-            "Injecting pointer motion: stream={}, x={:.2}, y={:.2}",
-            stream, x, y
-        );
+        debug!("Injecting pointer motion: stream={}, x={:.2}, y={:.2}", stream, x, y);
         self.proxy
-            .notify_pointer_motion_absolute(
-                session,
-                stream,
-                x,
-                y,
-                NotifyPointerMotionAbsoluteOptions::default(),
-            )
+            .notify_pointer_motion_absolute(session, stream, x, y, NotifyPointerMotionAbsoluteOptions::default())
             .await
             .map_err(|e| PortalError::input_injection(format!("Pointer motion: {}", e)))?;
         debug!("Pointer motion injected successfully");
@@ -205,15 +192,8 @@ impl RemoteDesktopManager {
         button: i32,
         pressed: bool,
     ) -> Result<()> {
-        debug!(
-            "Injecting pointer button: button={}, pressed={}",
-            button, pressed
-        );
-        let state = if pressed {
-            KeyState::Pressed
-        } else {
-            KeyState::Released
-        };
+        debug!("Injecting pointer button: button={}, pressed={}", button, pressed);
+        let state = if pressed { KeyState::Pressed } else { KeyState::Released };
         self.proxy
             .notify_pointer_button(session, button, state, NotifyPointerButtonOptions::default())
             .await
@@ -230,12 +210,7 @@ impl RemoteDesktopManager {
         dy: f64,
     ) -> Result<()> {
         self.proxy
-            .notify_pointer_axis(
-                session,
-                dx,
-                dy,
-                NotifyPointerAxisOptions::default().set_finish(true),
-            )
+            .notify_pointer_axis(session, dx, dy, NotifyPointerAxisOptions::default().set_finish(true))
             .await?;
         Ok(())
     }
@@ -258,18 +233,9 @@ impl RemoteDesktopManager {
             "Injecting keyboard keysym: keysym=0x{:08X}, pressed={}",
             keysym, pressed
         );
-        let state = if pressed {
-            KeyState::Pressed
-        } else {
-            KeyState::Released
-        };
+        let state = if pressed { KeyState::Pressed } else { KeyState::Released };
         self.proxy
-            .notify_keyboard_keysym(
-                session,
-                keysym,
-                state,
-                NotifyKeyboardKeysymOptions::default(),
-            )
+            .notify_keyboard_keysym(session, keysym, state, NotifyKeyboardKeysymOptions::default())
             .await
             .map_err(|e| PortalError::input_injection(format!("Keyboard keysym: {}", e)))?;
         debug!("Keyboard keysym event injected successfully");
@@ -283,22 +249,10 @@ impl RemoteDesktopManager {
         keycode: i32,
         pressed: bool,
     ) -> Result<()> {
-        debug!(
-            "Injecting keyboard: keycode={}, pressed={}",
-            keycode, pressed
-        );
-        let state = if pressed {
-            KeyState::Pressed
-        } else {
-            KeyState::Released
-        };
+        debug!("Injecting keyboard: keycode={}, pressed={}", keycode, pressed);
+        let state = if pressed { KeyState::Pressed } else { KeyState::Released };
         self.proxy
-            .notify_keyboard_keycode(
-                session,
-                keycode,
-                state,
-                NotifyKeyboardKeycodeOptions::default(),
-            )
+            .notify_keyboard_keycode(session, keycode, state, NotifyKeyboardKeycodeOptions::default())
             .await
             .map_err(|e| PortalError::input_injection(format!("Keyboard keycode: {}", e)))?;
         debug!("Keyboard event injected successfully");

@@ -10,8 +10,9 @@
 //! SAFETY: This example will move your mouse and simulate clicks!
 //! Make sure you're ready before running it.
 
-use lamco_portal::PortalManager;
 use std::time::Duration;
+
+use lamco_portal::PortalManager;
 use tokio::time::sleep;
 
 #[tokio::main]
