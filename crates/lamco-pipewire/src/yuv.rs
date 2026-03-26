@@ -318,7 +318,7 @@ mod tests {
         let bgra = nv12_to_bgra(&nv12, 2, 2);
 
         assert_eq!(bgra.len(), 16); // 2x2x4
-                                    // All pixels should be near-black
+        // All pixels should be near-black
         assert!(bgra[0] < 5 && bgra[1] < 5 && bgra[2] < 5);
         assert_eq!(bgra[3], 255); // Alpha
     }

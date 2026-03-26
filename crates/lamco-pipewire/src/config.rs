@@ -174,11 +174,7 @@ impl PipeWireConfig {
             issues.push("stream_name_prefix cannot be empty".to_string());
         }
 
-        if issues.is_empty() {
-            Ok(())
-        } else {
-            Err(issues)
-        }
+        if issues.is_empty() { Ok(()) } else { Err(issues) }
     }
 }
 

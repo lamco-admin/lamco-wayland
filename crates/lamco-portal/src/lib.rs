@@ -139,6 +139,7 @@
 //! Permissions can be remembered per-application using [`ashpd::desktop::PersistMode::Application`].
 
 use std::sync::Arc;
+
 use tracing::{debug, info, trace, warn};
 
 pub mod clipboard;
@@ -157,19 +158,16 @@ pub mod clipboard_sink;
 pub mod dbus_clipboard;
 
 pub use clipboard::ClipboardManager;
-pub use config::{PortalConfig, PortalConfigBuilder};
-pub use error::{PortalError, Result};
-pub use remote_desktop::RemoteDesktopManager;
-pub use screencast::ScreenCastManager;
-
 // Re-export ClipboardSink implementation when feature is enabled
 #[cfg(feature = "clipboard-sink")]
 pub use clipboard_sink::PortalClipboardSink;
-
+pub use config::{PortalConfig, PortalConfigBuilder};
 // Re-export D-Bus clipboard bridge types when feature is enabled
 #[cfg(feature = "dbus-clipboard")]
 pub use dbus_clipboard::{DbusClipboardBridge, DbusClipboardEvent};
-
+pub use error::{PortalError, Result};
+pub use remote_desktop::RemoteDesktopManager;
+pub use screencast::ScreenCastManager;
 pub use session::{PortalSessionHandle, SourceType, StreamInfo};
 
 /// Portal manager coordinates all portal interactions

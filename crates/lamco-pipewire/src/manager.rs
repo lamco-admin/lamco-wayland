@@ -48,9 +48,9 @@
 
 use std::collections::HashMap;
 use std::os::fd::{IntoRawFd, OwnedFd, RawFd};
-use std::sync::{mpsc as std_mpsc, Arc};
+use std::sync::{Arc, mpsc as std_mpsc};
 
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, mpsc};
 use tracing::{debug, info, warn};
 
 #[cfg(feature = "adaptive")]

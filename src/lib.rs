@@ -127,18 +127,6 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 // RE-EXPORTS
 // =============================================================================
 
-/// XDG Desktop Portal integration for Wayland screen capture and input control.
-///
-/// This module provides access to the XDG Desktop Portal APIs for:
-/// - Screen casting (capturing screen content)
-/// - Remote desktop (keyboard/mouse input)
-/// - Clipboard access
-///
-/// See [`lamco_portal`] documentation for details.
-#[cfg(feature = "portal")]
-#[cfg_attr(docsrs, doc(cfg(feature = "portal")))]
-pub use lamco_portal as portal;
-
 /// High-performance PipeWire screen capture with DMA-BUF support.
 ///
 /// This module provides access to PipeWire for video capture:
@@ -151,7 +139,17 @@ pub use lamco_portal as portal;
 #[cfg(feature = "pipewire")]
 #[cfg_attr(docsrs, doc(cfg(feature = "pipewire")))]
 pub use lamco_pipewire as pipewire;
-
+/// XDG Desktop Portal integration for Wayland screen capture and input control.
+///
+/// This module provides access to the XDG Desktop Portal APIs for:
+/// - Screen casting (capturing screen content)
+/// - Remote desktop (keyboard/mouse input)
+/// - Clipboard access
+///
+/// See [`lamco_portal`] documentation for details.
+#[cfg(feature = "portal")]
+#[cfg_attr(docsrs, doc(cfg(feature = "portal")))]
+pub use lamco_portal as portal;
 /// Video frame processing and RDP bitmap conversion.
 ///
 /// This module provides video processing utilities:
@@ -175,12 +173,10 @@ pub use lamco_video as video;
 /// use lamco_wayland::prelude::*;
 /// ```
 pub mod prelude {
-    #[cfg(feature = "portal")]
-    pub use lamco_portal::{PortalConfig, PortalError, PortalManager, PortalSessionHandle};
-
     #[cfg(feature = "pipewire")]
     pub use lamco_pipewire::{PipeWireConfig, PipeWireError, PipeWireManager, VideoFrame};
-
+    #[cfg(feature = "portal")]
+    pub use lamco_portal::{PortalConfig, PortalError, PortalManager, PortalSessionHandle};
     #[cfg(feature = "video")]
     pub use lamco_video::{BitmapConverter, BitmapUpdate, FrameDispatcher, FrameProcessor, ProcessorConfig};
 }

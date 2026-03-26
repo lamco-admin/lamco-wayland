@@ -40,7 +40,7 @@ use std::sync::Arc;
 
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, warn};
-use zbus::{proxy, Connection};
+use zbus::{Connection, proxy};
 
 use crate::error::PortalError;
 

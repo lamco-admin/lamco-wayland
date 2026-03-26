@@ -22,8 +22,8 @@
 
 use std::convert::TryInto;
 use std::mem;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result};
 use pipewire as pw;

@@ -307,10 +307,7 @@ impl FrameProcessor {
 
         trace!(
             "Processing frame {} ({}x{}, format: {:?})",
-            frame.frame_id,
-            frame.width,
-            frame.height,
-            frame.format
+            frame.frame_id, frame.width, frame.height, frame.format
         );
 
         // Check if frame has significant damage
@@ -411,7 +408,7 @@ mod tests {
         stats.total_processing_time_ns = 500_000_000; // 500ms
 
         assert_eq!(stats.drop_rate(), 0.1); // 10% drop rate
-                                            // Use approximate comparison for floating-point
+        // Use approximate comparison for floating-point
         let avg_time = stats.avg_processing_time_ms();
         let expected = 500.0 / 90.0; // ~5.556ms per frame
         assert!((avg_time - expected).abs() < 1e-10);

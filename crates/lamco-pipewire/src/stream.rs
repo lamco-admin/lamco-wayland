@@ -3,11 +3,11 @@
 //! Configuration, state, and metrics types for PipeWire streams.
 //! The actual stream implementation lives in `pw_thread.rs`.
 
+use std::sync::Mutex;
+
 use libspa::param::video::VideoFormat;
 use pipewire::spa::utils::Fraction;
 use pipewire::stream::StreamState;
-
-use std::sync::Mutex;
 
 use crate::format::PixelFormat;
 

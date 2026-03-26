@@ -3,6 +3,7 @@
 //! Manages the lifecycle of portal sessions and associated resources.
 
 use std::os::fd::RawFd;
+
 use tracing::info;
 
 /// Information about a PipeWire stream from the portal
@@ -157,9 +158,7 @@ impl PortalSessionHandle {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn ashpd_session(
-        &self,
-    ) -> &ashpd::desktop::Session<ashpd::desktop::remote_desktop::RemoteDesktop> {
+    pub fn ashpd_session(&self) -> &ashpd::desktop::Session<ashpd::desktop::remote_desktop::RemoteDesktop> {
         &self.session
     }
 

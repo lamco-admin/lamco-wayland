@@ -15,7 +15,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use lamco_pipewire::{convert_format, FfiDamageRegion, PixelFormat, VideoFrame};
+use lamco_pipewire::{FfiDamageRegion, PixelFormat, VideoFrame, convert_format};
 use parking_lot::RwLock;
 
 /// Alignment boundary for RDP bitmaps (64 bytes for SIMD optimization)

@@ -249,77 +249,57 @@ pub mod bitrate;
 // =============================================================================
 
 // Manager (primary entry point)
-pub use manager::{ManagerState, ManagerStats, PipeWireManager, StreamHandle};
-
+#[cfg(feature = "audio")]
+pub use audio::{AudioCapture, AudioCaptureHandle, AudioFormat, AudioSamples, CaptureConfig, spawn_audio_capture};
+#[cfg(feature = "adaptive")]
+pub use bitrate::{BitrateController, BitrateStats};
+// Buffer management
+pub use buffer::{BufferManager, BufferType, ManagedBuffer, SharedBufferManager};
 // Configuration
 pub use config::{
     AdaptiveBitrateConfig, AdaptiveBitrateConfigBuilder, PipeWireConfig, PipeWireConfigBuilder, QualityPreset,
 };
-
-// Errors
-pub use error::{classify_error, ErrorContext, ErrorType, PipeWireError, RecoveryAction, Result, RetryConfig};
-
-// Stream types
-pub use coordinator::{MonitorEvent, MonitorInfo, MultiStreamConfig, SourceType, StreamInfo};
-pub use stream::{NegotiatedFormat, PwStreamState, StreamConfig, StreamMetrics, StreamStateEvent, StreamTime};
-
-// Frame types
-pub use format::{convert_format, PixelFormat};
-pub use frame::{
-    DmaBufDescriptor, DmaBufPlane, FrameBuffer, FrameCallback, FrameFlags, FrameStats, VideoFrame,
-};
-
-// Buffer metadata
-pub use meta::{BufferMeta, CropRegion, CursorMeta, DamageRect, HeaderMeta};
-
 // =============================================================================
 // RE-EXPORTS - ADVANCED API
 // =============================================================================
 
 // Low-level connection (for advanced use cases)
 pub use connection::{ConnectionState, PipeWireConnection, PipeWireEvent};
-
-// Buffer management
-pub use buffer::{BufferManager, BufferType, ManagedBuffer, SharedBufferManager};
-
-// Thread management
-pub use pw_thread::{PipeWireThreadCommand, PipeWireThreadManager};
-
 // Coordinator
 pub use coordinator::{CoordinatorStats, DispatcherConfig, FrameDispatcher, MultiStreamCoordinator};
-
-// FFI utilities
-pub use ffi::{
-    calculate_buffer_size, calculate_stride, drm_fourcc, get_bytes_per_pixel, spa_video_format_to_drm_fourcc,
-    DamageRegion as FfiDamageRegion, SpaDataType,
-};
-
-// =============================================================================
-// FEATURE RE-EXPORTS
-// =============================================================================
-
-#[cfg(feature = "yuv")]
-pub use yuv::{i420_to_bgra, nv12_to_bgra, yuy2_to_bgra, YuvConverter};
-
+// Stream types
+pub use coordinator::{MonitorEvent, MonitorInfo, MultiStreamConfig, SourceType, StreamInfo};
 #[cfg(feature = "cursor")]
 pub use cursor::{CursorExtractor, CursorInfo, CursorStats};
-
 #[cfg(feature = "damage")]
 pub use damage::{
     DamageConfig, DamageDetector, DamageDetectorStats, DamageRegion, DamageStats, DamageTracker, DetectedRegion,
 };
-
-#[cfg(feature = "audio")]
-pub use audio::{spawn_audio_capture, AudioCapture, AudioCaptureHandle, AudioFormat, AudioSamples, CaptureConfig};
-
-#[cfg(feature = "adaptive")]
-pub use bitrate::{BitrateController, BitrateStats};
-
+// Errors
+pub use error::{ErrorContext, ErrorType, PipeWireError, RecoveryAction, Result, RetryConfig, classify_error};
+// FFI utilities
+pub use ffi::{
+    DamageRegion as FfiDamageRegion, SpaDataType, calculate_buffer_size, calculate_stride, drm_fourcc,
+    get_bytes_per_pixel, spa_video_format_to_drm_fourcc,
+};
+// Frame types
+pub use format::{PixelFormat, convert_format};
+pub use frame::{DmaBufDescriptor, DmaBufPlane, FrameBuffer, FrameCallback, FrameFlags, FrameStats, VideoFrame};
 // =============================================================================
 // CRATE-LEVEL ITEMS
 // =============================================================================
-
 use libspa::param::video::VideoFormat;
+pub use manager::{ManagerState, ManagerStats, PipeWireManager, StreamHandle};
+// Buffer metadata
+pub use meta::{BufferMeta, CropRegion, CursorMeta, DamageRect, HeaderMeta};
+// Thread management
+pub use pw_thread::{PipeWireThreadCommand, PipeWireThreadManager};
+pub use stream::{NegotiatedFormat, PwStreamState, StreamConfig, StreamMetrics, StreamStateEvent, StreamTime};
+// =============================================================================
+// FEATURE RE-EXPORTS
+// =============================================================================
+#[cfg(feature = "yuv")]
+pub use yuv::{YuvConverter, i420_to_bgra, nv12_to_bgra, yuy2_to_bgra};
 
 /// Crate version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
