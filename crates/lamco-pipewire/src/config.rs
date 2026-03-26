@@ -50,6 +50,16 @@ pub struct PipeWireConfig {
     /// supported by the GPU and compositor. Falls back to memory copy if unavailable.
     pub use_dmabuf: bool,
 
+    /// When true AND the buffer is DMA-BUF, pass the FD directly to the
+    /// consumer instead of mmap+copying pixels to CPU memory.
+    ///
+    /// Requires the downstream encoder to support DMA-BUF import (e.g.,
+    /// Vulkan Video via VK_EXT_external_memory_dma_buf). Falls back to
+    /// mmap+copy when the encoder doesn't support it.
+    ///
+    /// Default: false (conservative — existing mmap path is well-tested)
+    pub dmabuf_passthrough: bool,
+
     /// Maximum number of concurrent streams (default: 8)
     ///
     /// Limits resource usage in multi-monitor scenarios.
@@ -102,6 +112,7 @@ impl Default for PipeWireConfig {
             buffer_count: 3,
             preferred_format: Some(PixelFormat::BGRA),
             use_dmabuf: true,
+            dmabuf_passthrough: false,
             max_streams: 8,
             frame_buffer_size: 30,
             enable_cursor: false,
@@ -286,6 +297,7 @@ impl PipeWireConfigBuilder {
             buffer_count: self.buffer_count.unwrap_or(defaults.buffer_count),
             preferred_format: self.preferred_format.or(defaults.preferred_format),
             use_dmabuf: self.use_dmabuf.unwrap_or(defaults.use_dmabuf),
+            dmabuf_passthrough: defaults.dmabuf_passthrough,
             max_streams: self.max_streams.unwrap_or(defaults.max_streams),
             frame_buffer_size: self.frame_buffer_size.unwrap_or(defaults.frame_buffer_size),
             enable_cursor: self.enable_cursor.unwrap_or(defaults.enable_cursor),

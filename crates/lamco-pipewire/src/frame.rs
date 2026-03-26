@@ -2,12 +2,83 @@
 //!
 //! Structures and utilities for handling video frames captured from PipeWire.
 
+use std::os::fd::OwnedFd;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use crate::ffi::DamageRegion;
 use crate::format::PixelFormat;
 use crate::meta::BufferMeta;
+
+// =============================================================================
+// Frame Buffer Types (zero-copy DMA-BUF support)
+// =============================================================================
+
+/// Frame pixel data: either CPU-resident memory or a GPU DMA-BUF descriptor.
+///
+/// When a hardware encoder supports DMA-BUF import, passing the `DmaBuf`
+/// variant avoids copying pixels through the CPU entirely.
+#[derive(Debug)]
+pub enum FrameBuffer {
+    /// CPU-resident pixel data (shared via Arc for cheap cloning)
+    Memory(Arc<Vec<u8>>),
+
+    /// GPU DMA-BUF descriptor — file descriptors referencing GPU memory.
+    /// The FDs are dup'd from PipeWire in the process callback and owned
+    /// by this struct. Dropping closes the FDs.
+    DmaBuf(DmaBufDescriptor),
+}
+
+impl Clone for FrameBuffer {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Memory(data) => Self::Memory(Arc::clone(data)),
+            // DMA-BUF descriptors can't be cheaply cloned (need dup).
+            // Fall back to empty descriptor — callers should not clone DmaBuf frames.
+            Self::DmaBuf(_) => {
+                tracing::warn!("Cloning FrameBuffer::DmaBuf — this loses the FD!");
+                Self::Memory(Arc::new(Vec::new()))
+            }
+        }
+    }
+}
+
+/// Describes a DMA-BUF GPU memory buffer with one or more planes.
+///
+/// Each plane has its own file descriptor, stride, and offset. Multi-planar
+/// formats like NV12 use multiple planes; single-plane formats like BGRA
+/// use one plane.
+#[derive(Debug)]
+pub struct DmaBufDescriptor {
+    /// Buffer planes (up to 4 for multi-planar formats)
+    pub planes: Vec<DmaBufPlane>,
+
+    /// DRM fourcc format code (e.g., DRM_FORMAT_ARGB8888)
+    pub drm_format: u32,
+
+    /// DRM format modifier (DRM_FORMAT_MOD_LINEAR = 0, or vendor-specific)
+    pub modifier: u64,
+
+    /// Buffer width in pixels
+    pub width: u32,
+
+    /// Buffer height in pixels
+    pub height: u32,
+}
+
+/// A single plane of a DMA-BUF buffer.
+#[derive(Debug)]
+pub struct DmaBufPlane {
+    /// Owned file descriptor for this plane's GPU memory.
+    /// Dropping this closes the FD.
+    pub fd: OwnedFd,
+
+    /// Byte offset into the buffer for this plane
+    pub offset: u32,
+
+    /// Row stride in bytes for this plane
+    pub stride: u32,
+}
 
 /// Raw frame data from a direct capture channel (no PipeWire).
 ///
@@ -56,8 +127,8 @@ pub struct VideoFrame {
     /// Monitor/stream index
     pub monitor_index: u32,
 
-    /// Pixel data (owned or shared)
-    pub data: Arc<Vec<u8>>,
+    /// Pixel data: CPU memory or GPU DMA-BUF descriptor
+    pub buffer: FrameBuffer,
 
     /// Capture timestamp
     pub capture_time: SystemTime,
@@ -150,7 +221,7 @@ impl VideoFrame {
             stride,
             format,
             monitor_index,
-            data: Arc::new(Vec::new()),
+            buffer: FrameBuffer::Memory(Arc::new(Vec::new())),
             capture_time: SystemTime::now(),
             damage_regions: Vec::new(),
             meta: BufferMeta::default(),
@@ -178,7 +249,7 @@ impl VideoFrame {
             stride,
             format,
             monitor_index,
-            data: Arc::new(data),
+            buffer: FrameBuffer::Memory(Arc::new(data)),
             capture_time: SystemTime::now(),
             damage_regions: Vec::new(),
             meta: BufferMeta::default(),
@@ -237,19 +308,46 @@ impl VideoFrame {
         self.age() <= max_age
     }
 
-    /// Get data size
+    /// Get CPU pixel data if available.
+    /// Returns None for DMA-BUF frames (use `buffer` field directly).
+    pub fn data(&self) -> Option<&Arc<Vec<u8>>> {
+        match &self.buffer {
+            FrameBuffer::Memory(data) => Some(data),
+            FrameBuffer::DmaBuf(_) => None,
+        }
+    }
+
+    /// Check if this frame carries a DMA-BUF descriptor
+    pub fn is_dmabuf(&self) -> bool {
+        matches!(self.buffer, FrameBuffer::DmaBuf(_))
+    }
+
+    /// Get data size (0 for DMA-BUF frames since data is on GPU)
     pub fn data_size(&self) -> usize {
-        self.data.len()
+        match &self.buffer {
+            FrameBuffer::Memory(data) => data.len(),
+            FrameBuffer::DmaBuf(desc) => {
+                // Estimated size based on dimensions
+                (desc.width * desc.height * 4) as usize
+            }
+        }
     }
 
     /// Check if frame data is valid
     pub fn is_valid(&self) -> bool {
-        !self.data.is_empty() && !self.flags.is_corrupted() && !self.flags.is_incomplete()
+        let has_data = match &self.buffer {
+            FrameBuffer::Memory(data) => !data.is_empty(),
+            FrameBuffer::DmaBuf(desc) => !desc.planes.is_empty(),
+        };
+        has_data && !self.flags.is_corrupted() && !self.flags.is_incomplete()
     }
 
-    /// Clone frame data (makes a copy)
+    /// Clone frame data (makes a copy). Returns empty vec for DMA-BUF frames.
     pub fn clone_data(&self) -> Vec<u8> {
-        (*self.data).clone()
+        match &self.buffer {
+            FrameBuffer::Memory(data) => (**data).clone(),
+            FrameBuffer::DmaBuf(_) => Vec::new(),
+        }
     }
 }
 
@@ -262,7 +360,8 @@ impl std::fmt::Debug for VideoFrame {
             .field("height", &self.height)
             .field("format", &self.format)
             .field("monitor_index", &self.monitor_index)
-            .field("data_size", &self.data.len())
+            .field("data_size", &self.data_size())
+            .field("is_dmabuf", &self.is_dmabuf())
             .field("damage_regions", &self.damage_regions.len())
             .field("transform", &self.meta.transform)
             .field("flags", &self.flags.bits())

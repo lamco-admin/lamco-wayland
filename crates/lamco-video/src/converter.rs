@@ -424,7 +424,10 @@ impl BitmapConverter {
         }
 
         // Calculate frame hash for change detection
-        let frame_hash = self.calculate_frame_hash(&frame.data);
+        let pixel_data = frame.data().ok_or_else(|| {
+            ConversionError::InvalidFrame("DMA-BUF frames not supported in bitmap conversion".to_string())
+        })?;
+        let frame_hash = self.calculate_frame_hash(pixel_data);
 
         // Check if frame has changed
         if frame_hash == self.last_frame_hash {
@@ -516,10 +519,13 @@ impl BitmapConverter {
             }
         };
 
+        let pixel_data = frame.data().ok_or_else(|| {
+            ConversionError::InvalidFrame("DMA-BUF frames not supported in format conversion".to_string())
+        })?;
         let dst_stride = calculate_rdp_stride(frame.width, rdp_format);
 
         convert_format(
-            &frame.data,
+            pixel_data,
             dst,
             frame.format,
             target_format,
