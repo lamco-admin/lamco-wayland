@@ -265,7 +265,9 @@ pub use stream::{NegotiatedFormat, PwStreamState, StreamConfig, StreamMetrics, S
 
 // Frame types
 pub use format::{convert_format, PixelFormat};
-pub use frame::{FrameCallback, FrameFlags, FrameStats, VideoFrame};
+pub use frame::{
+    DmaBufDescriptor, DmaBufPlane, FrameBuffer, FrameCallback, FrameFlags, FrameStats, VideoFrame,
+};
 
 // Buffer metadata
 pub use meta::{BufferMeta, CropRegion, CursorMeta, DamageRect, HeaderMeta};
