@@ -686,6 +686,77 @@ fn mmap_fd_buffer(fd: std::os::fd::RawFd, size: usize, offset: usize) -> Result<
     Ok(result)
 }
 
+/// DMA-BUF mmap with caching for the standard (non-passthrough) path.
+///
+/// Uses the per-stream DmaBuf mmap cache to avoid repeated mmap syscalls
+/// for the same FD. Returns the copied pixel data as Vec<u8>.
+fn mmap_dmabuf_to_vec(
+    fd: std::os::fd::RawFd,
+    size: usize,
+    offset: usize,
+    cache: &DmaBufCache,
+) -> Option<Vec<u8>> {
+    use std::os::fd::BorrowedFd;
+
+    use nix::sys::mman::{MapFlags, ProtFlags, mmap};
+
+    let mut cache = cache.borrow_mut();
+
+    let mapped_ptr_opt = if let Some(&(ptr, _sz)) = cache.get(&fd) {
+        debug!("DMA-BUF FD={}: using cached mmap", fd);
+        Some(ptr)
+    } else {
+        info!("DMA-BUF buffer: mmapping {} bytes from FD={} (first time)", size, fd);
+
+        // SAFETY: sysconf(_SC_PAGESIZE) always returns a valid value
+        let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+        let map_offset = (offset / page_size) * page_size;
+        let map_size = size + (offset - map_offset);
+
+        match NonZeroUsize::new(map_size) {
+            Some(nz_size) => {
+                // SAFETY: FD is valid from PipeWire buffer (valid during callback).
+                // We cache the mapping for reuse across frames.
+                unsafe {
+                    let borrowed_fd = BorrowedFd::borrow_raw(fd);
+                    match mmap(None, nz_size, ProtFlags::PROT_READ, MapFlags::MAP_SHARED, borrowed_fd, map_offset as i64) {
+                        Ok(ptr) => {
+                            cache.insert(fd, (ptr, map_size));
+                            info!("DMA-BUF mmap cached for FD={}", fd);
+                            Some(ptr)
+                        }
+                        Err(e) => {
+                            warn!("Failed to mmap DMA-BUF FD={}: {}", fd, e);
+                            None
+                        }
+                    }
+                }
+            }
+            None => {
+                warn!("Invalid map size for DMA-BUF FD={}", fd);
+                None
+            }
+        }
+    };
+
+    if let Some(mapped_ptr) = mapped_ptr_opt {
+        // SAFETY: mapped_ptr is valid from successful mmap or cache.
+        // Vec capacity is allocated before writing.
+        let result = unsafe {
+            let src_ptr = (mapped_ptr.as_ptr() as *const u8).add(offset);
+            let mut vec = Vec::with_capacity(size);
+            std::ptr::copy_nonoverlapping(src_ptr, vec.as_mut_ptr(), size);
+            vec.set_len(size);
+            vec
+        };
+        debug!("DMA-BUF: extracted {} bytes from mapping", result.len());
+        Some(result)
+    } else {
+        warn!("Failed to get DMA-BUF mapping for FD={}", fd);
+        None
+    }
+}
+
 /// Create a stream on the PipeWire thread
 ///
 /// This function performs the complete stream creation, format negotiation,
@@ -985,86 +1056,104 @@ fn create_stream_on_thread(
                             }
                         }
 
-                        // DmaBuf: GPU memory buffer - use cached mmap to avoid syscalls
+                        // DmaBuf: GPU memory buffer
+                        // Two paths: passthrough (zero-copy FD forwarding) or mmap+copy
                         libspa::buffer::DataType::DmaBuf => {
                             if fd >= 0 {
-                                // Check for empty/skip frames (size=0 is normal PipeWire behavior)
                                 if size == 0 {
                                     debug!("DMA-BUF buffer: size=0 (empty/skip frame), ignoring");
                                     None
-                                } else {
-                                    // Check cache first
-                                    let mut cache = dmabuf_cache_for_process.borrow_mut();
+                                } else if config.dmabuf_passthrough {
+                                    // Zero-copy path: dup the FD and send descriptor
+                                    // The encoder imports this FD directly via Vulkan/VA-API
+                                    use std::os::fd::OwnedFd;
 
-                                    // Check cache first, or create new mapping
-                                    let mapped_ptr_opt = if let Some(&(ptr, _sz)) = cache.get(&fd) {
-                                        // Use cached mapping (no syscall!)
-                                        debug!("DMA-BUF FD={}: using cached mmap", fd);
-                                        Some(ptr)
-                                    } else {
-                                        // First time seeing this FD - mmap it
-                                        info!("DMA-BUF buffer: mmapping {} bytes from FD={} (first time)", size, fd);
-
-                                        use nix::sys::mman::{mmap, MapFlags, ProtFlags};
-                                        use std::os::fd::BorrowedFd;
-
-                                        // Calculate page-aligned mapping
-                                        // SAFETY: sysconf(_SC_PAGESIZE) always returns a valid value
-                                        let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
-                                        let map_offset = (offset / page_size) * page_size;
-                                        let map_size = size + (offset - map_offset);
-
-                                        match NonZeroUsize::new(map_size) {
-                                            Some(nz_size) => {
-                                                // SAFETY: FD is valid from PipeWire buffer (valid during callback).
-                                                // We cache the mapping for reuse across frames.
-                                                unsafe {
-                                                    let borrowed_fd = BorrowedFd::borrow_raw(fd);
-                                                    match mmap(
-                                                        None,
-                                                        nz_size,
-                                                        ProtFlags::PROT_READ,
-                                                        MapFlags::MAP_SHARED,
-                                                        borrowed_fd,
-                                                        map_offset as i64,
-                                                    ) {
-                                                        Ok(ptr) => {
-                                                            cache.insert(fd, (ptr, map_size));
-                                                            info!("DMA-BUF mmap cached for FD={}", fd);
-                                                            Some(ptr)
-                                                        }
-                                                        Err(e) => {
-                                                            warn!("Failed to mmap DMA-BUF FD={}: {}", fd, e);
-                                                            None
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            None => {
-                                                warn!("Invalid map size for DMA-BUF FD={}", fd);
-                                                None
-                                            }
+                                    // SAFETY: fd is valid from PipeWire buffer during this callback
+                                    // SAFETY: fd is valid from PipeWire buffer during callback.
+                                    // F_DUPFD_CLOEXEC creates an independent FD copy that
+                                    // survives pw_buffer release (OBS pattern).
+                                    let dup_result = unsafe {
+                                        let dup_fd = libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 0);
+                                        if dup_fd >= 0 {
+                                            Ok(OwnedFd::from_raw_fd(dup_fd))
+                                        } else {
+                                            Err(std::io::Error::last_os_error())
                                         }
                                     };
 
-                                    // Copy data from mapping (cached or fresh)
-                                    if let Some(mapped_ptr) = mapped_ptr_opt {
-                                        // SAFETY: mapped_ptr is valid from successful mmap above or cache.
-                                        // offset + size <= map_size was verified during mmap.
-                                        // Vec capacity is allocated before writing.
-                                        let result = unsafe {
-                                            let src_ptr = (mapped_ptr.as_ptr() as *const u8).add(offset);
-                                            let mut vec = Vec::with_capacity(size);
-                                            std::ptr::copy_nonoverlapping(src_ptr, vec.as_mut_ptr(), size);
-                                            vec.set_len(size);
-                                            vec
-                                        };
-                                        debug!("DMA-BUF: extracted {} bytes from mapping", result.len());
-                                        Some(result)
-                                    } else {
-                                        warn!("Failed to get DMA-BUF mapping for FD={}", fd);
-                                        None
+                                    match dup_result {
+                                        Ok(owned_fd) => {
+                                            use crate::frame::{DmaBufDescriptor, DmaBufPlane};
+
+                                            let desc = DmaBufDescriptor {
+                                                planes: vec![DmaBufPlane {
+                                                    fd: owned_fd,
+                                                    offset: offset as u32,
+                                                    stride: chunk_stride as u32,
+                                                }],
+                                                // DRM format from negotiated pixel format
+                                                drm_format: crate::ffi::spa_video_format_to_drm_fourcc(
+                                                    config.preferred_format.unwrap_or(PixelFormat::BGRx).to_spa(),
+                                                ),
+                                                modifier: 0, // LINEAR assumed; TODO: extract from SPA_META
+                                                width: proc_neg_width.load(Ordering::Acquire),
+                                                height: proc_neg_height.load(Ordering::Acquire),
+                                            };
+
+                                            debug!(
+                                                "DMA-BUF passthrough: FD dup'd, {}x{}, stride={}",
+                                                desc.width, desc.height, chunk_stride
+                                            );
+
+                                            // Build frame with DmaBuf variant directly
+                                            // (bypasses the pixel_data path below)
+                                            let neg_w = desc.width;
+                                            let neg_h = desc.height;
+                                            let pts = stream_time.as_ref().map_or(0, |t| t.now_nsec as u64);
+                                            let damage_regions: Vec<crate::ffi::DamageRegion> = buffer_meta
+                                                .damage
+                                                .iter()
+                                                .map(|d| crate::ffi::DamageRegion::new(d.x, d.y, d.width, d.height))
+                                                .collect();
+
+                                            let mut flags = crate::frame::FrameFlags::new();
+                                            flags.set_dmabuf();
+
+                                            let frame = VideoFrame {
+                                                frame_id: stream_id_for_callbacks as u64,
+                                                pts,
+                                                dts: 0,
+                                                duration: 16_666_667,
+                                                width: neg_w,
+                                                height: neg_h,
+                                                stride: chunk_stride as u32,
+                                                format: config.preferred_format.unwrap_or(PixelFormat::BGRx),
+                                                monitor_index: 0,
+                                                buffer: crate::frame::FrameBuffer::DmaBuf(desc),
+                                                capture_time: SystemTime::now(),
+                                                damage_regions,
+                                                meta: buffer_meta.clone(),
+                                                flags,
+                                            };
+
+                                            if let Err(e) = frame_tx_for_process.try_send(frame) {
+                                                warn!("Failed to send DMA-BUF frame: {} (backpressure)", e);
+                                            }
+                                            // Return None to skip the normal pixel_data path
+                                            // (frame already sent above)
+                                            return;
+                                        }
+                                        Err(e) => {
+                                            warn!("DMA-BUF FD dup failed: {}, falling back to mmap", e);
+                                            // Fall through to mmap path below
+                                        }
                                     }
+
+                                    // Fallback: mmap path (only reached if dup failed)
+                                    mmap_dmabuf_to_vec(fd, size, offset, &dmabuf_cache_for_process)
+                                } else {
+                                    // Standard mmap+copy path (dmabuf_passthrough disabled)
+                                    mmap_dmabuf_to_vec(fd, size, offset, &dmabuf_cache_for_process)
                                 }
                             } else {
                                 debug!("DMA-BUF buffer but no valid FD (fd={})", fd);
