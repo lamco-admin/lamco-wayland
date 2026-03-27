@@ -3,7 +3,7 @@
 # PACKAGE IDENTITY
 # ============================================================================
 name = "lamco-video"
-version = "0.1.6"
+version = "0.1.7"
 
 # ============================================================================
 # PACKAGE CONFIGURATION (inherited from workspace)
@@ -18,12 +18,12 @@ authors.workspace = true
 # ============================================================================
 # CRATE-SPECIFIC METADATA
 # ============================================================================
-description = "Video frame processing and RDP bitmap conversion for Wayland screen capture, by Lamco Development"
+description = "Video frame processing and bitmap conversion for Wayland screen capture, by Lamco Development"
 documentation = "https://docs.rs/lamco-video"
 readme = "README.md"
 
 # Keywords for crates.io search (max 5, max 20 chars each)
-keywords = ["video", "rdp", "bitmap", "wayland", "screen-capture"]
+keywords = ["video", "bitmap", "wayland", "screen-capture", "frame"]
 
 # Categories for crates.io browsing (max 5)
 # See: https://crates.io/category_slugs
