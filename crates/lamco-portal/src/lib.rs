@@ -149,18 +149,11 @@ pub mod remote_desktop;
 pub mod screencast;
 pub mod session;
 
-// Optional ClipboardSink implementation (requires lamco-clipboard-core)
-#[cfg(feature = "clipboard-sink")]
-pub mod clipboard_sink;
-
 // Optional D-Bus clipboard bridge for GNOME fallback
 #[cfg(feature = "dbus-clipboard")]
 pub mod dbus_clipboard;
 
 pub use clipboard::ClipboardManager;
-// Re-export ClipboardSink implementation when feature is enabled
-#[cfg(feature = "clipboard-sink")]
-pub use clipboard_sink::PortalClipboardSink;
 pub use config::{PortalConfig, PortalConfigBuilder};
 // Re-export D-Bus clipboard bridge types when feature is enabled
 #[cfg(feature = "dbus-clipboard")]
