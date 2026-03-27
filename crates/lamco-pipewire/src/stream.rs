@@ -34,6 +34,10 @@ pub struct StreamConfig {
 
     /// Preferred format
     pub preferred_format: Option<PixelFormat>,
+
+    /// Pass DMA-BUF FDs directly to consumer instead of mmap+copy.
+    /// Requires consumer to support DMA-BUF import (e.g., Vulkan Video).
+    pub dmabuf_passthrough: bool,
 }
 
 impl StreamConfig {
@@ -47,6 +51,7 @@ impl StreamConfig {
             use_dmabuf: true,
             buffer_count: 3,
             preferred_format: Some(PixelFormat::BGRA),
+            dmabuf_passthrough: false,
         }
     }
 
