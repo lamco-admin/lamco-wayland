@@ -3,7 +3,7 @@
 # PACKAGE IDENTITY
 # ============================================================================
 name = "lamco-video"
-version = "0.1.7"
+version = "0.1.8"
 
 # ============================================================================
 # PACKAGE CONFIGURATION (inherited from workspace)

@@ -378,7 +378,7 @@ impl BitmapConverter {
         Self {
             buffer_pool: Arc::new(RwLock::new(BufferPool::new(BUFFER_POOL_SIZE))),
             damage_tracker: Arc::new(RwLock::new(DamageTracker::new(width, height))),
-            last_frame_hash: 0,
+            last_frame_hash: u64::MAX, // Sentinel: ensures first frame is never skipped
             enable_simd: Self::detect_simd_support(),
             stats: Arc::new(RwLock::new(ConversionStats::default())),
         }
