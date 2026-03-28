@@ -690,12 +690,7 @@ fn mmap_fd_buffer(fd: std::os::fd::RawFd, size: usize, offset: usize) -> Result<
 ///
 /// Uses the per-stream DmaBuf mmap cache to avoid repeated mmap syscalls
 /// for the same FD. Returns the copied pixel data as Vec<u8>.
-fn mmap_dmabuf_to_vec(
-    fd: std::os::fd::RawFd,
-    size: usize,
-    offset: usize,
-    cache: &DmaBufCache,
-) -> Option<Vec<u8>> {
+fn mmap_dmabuf_to_vec(fd: std::os::fd::RawFd, size: usize, offset: usize, cache: &DmaBufCache) -> Option<Vec<u8>> {
     use std::os::fd::BorrowedFd;
 
     use nix::sys::mman::{MapFlags, ProtFlags, mmap};
@@ -719,7 +714,14 @@ fn mmap_dmabuf_to_vec(
                 // We cache the mapping for reuse across frames.
                 unsafe {
                     let borrowed_fd = BorrowedFd::borrow_raw(fd);
-                    match mmap(None, nz_size, ProtFlags::PROT_READ, MapFlags::MAP_SHARED, borrowed_fd, map_offset as i64) {
+                    match mmap(
+                        None,
+                        nz_size,
+                        ProtFlags::PROT_READ,
+                        MapFlags::MAP_SHARED,
+                        borrowed_fd,
+                        map_offset as i64,
+                    ) {
                         Ok(ptr) => {
                             cache.insert(fd, (ptr, map_size));
                             info!("DMA-BUF mmap cached for FD={}", fd);
@@ -740,6 +742,28 @@ fn mmap_dmabuf_to_vec(
     };
 
     if let Some(mapped_ptr) = mapped_ptr_opt {
+        // Sync DMA-BUF for CPU read access. Without this, the CPU cache may
+        // contain stale data and the mmap read returns zeros on GPU-rendered buffers.
+        // Constants from linux/dma-buf.h (not yet in libc crate).
+        const DMA_BUF_SYNC_READ: u64 = 1;
+        const DMA_BUF_SYNC_START: u64 = 0;
+        const DMA_BUF_SYNC_END: u64 = 4;
+        // DMA_BUF_IOCTL_SYNC = _IOW('b', 0, struct dma_buf_sync) = 0x40086201
+        const DMA_BUF_IOCTL_SYNC: libc::c_ulong = 0x40086201;
+
+        #[repr(C)]
+        struct DmaBufSync {
+            flags: u64,
+        }
+
+        let sync_start = DmaBufSync {
+            flags: DMA_BUF_SYNC_START | DMA_BUF_SYNC_READ,
+        };
+        // SAFETY: fd is a valid DMA-BUF file descriptor from PipeWire.
+        unsafe {
+            libc::ioctl(fd, DMA_BUF_IOCTL_SYNC, &sync_start);
+        }
+
         // SAFETY: mapped_ptr is valid from successful mmap or cache.
         // Vec capacity is allocated before writing.
         let result = unsafe {
@@ -749,6 +773,15 @@ fn mmap_dmabuf_to_vec(
             vec.set_len(size);
             vec
         };
+
+        let sync_end = DmaBufSync {
+            flags: DMA_BUF_SYNC_END | DMA_BUF_SYNC_READ,
+        };
+        // SAFETY: fd is a valid DMA-BUF file descriptor from PipeWire.
+        unsafe {
+            libc::ioctl(fd, DMA_BUF_IOCTL_SYNC, &sync_end);
+        }
+
         debug!("DMA-BUF: extracted {} bytes from mapping", result.len());
         Some(result)
     } else {
