@@ -748,8 +748,8 @@ fn mmap_dmabuf_to_vec(fd: std::os::fd::RawFd, size: usize, offset: usize, cache:
         const DMA_BUF_SYNC_READ: u64 = 1;
         const DMA_BUF_SYNC_START: u64 = 0;
         const DMA_BUF_SYNC_END: u64 = 4;
-        // DMA_BUF_IOCTL_SYNC = _IOW('b', 0, struct dma_buf_sync) = 0x40086201
-        const DMA_BUF_IOCTL_SYNC: libc::c_ulong = 0x40086201;
+        // DMA_BUF_IOCTL_SYNC = _IOW('b', 0, struct dma_buf_sync) = 0x40086200
+        const DMA_BUF_IOCTL_SYNC: libc::c_ulong = 0x40086200;
 
         #[repr(C)]
         struct DmaBufSync {
