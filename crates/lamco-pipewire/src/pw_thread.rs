@@ -782,6 +782,23 @@ fn mmap_dmabuf_to_vec(fd: std::os::fd::RawFd, size: usize, offset: usize, cache:
             libc::ioctl(fd, DMA_BUF_IOCTL_SYNC, &sync_end);
         }
 
+        // Detect zero-data: DMA-BUF mmap on virtual GPUs (virtio-gpu, bochs)
+        // returns all zeros because GPU memory uses non-linear tiling that CPU
+        // mmap can't read, even with DMA_BUF_IOCTL_SYNC. Check a sample of
+        // the buffer and return None if entirely blank, signaling the caller
+        // to fall back to MemFd.
+        let sample_size = result.len().min(4096);
+        let is_all_zeros = result[..sample_size].iter().all(|&b| b == 0);
+        if is_all_zeros && !result.is_empty() {
+            warn!(
+                "DMA-BUF mmap returned all zeros ({} bytes sampled) — \
+                 virtual GPU likely incompatible with CPU mmap. \
+                 Stream should reconnect with MemFd buffers.",
+                sample_size
+            );
+            return None;
+        }
+
         debug!("DMA-BUF: extracted {} bytes from mapping", result.len());
         Some(result)
     } else {
@@ -939,7 +956,9 @@ fn create_stream_on_thread(
                 warn!("Stream {} failed to request buffer metadata: {}", stream_id_for_callbacks, e);
             }
         })
-        .process(move |stream, _user_data| {
+        .process({
+            let dmabuf_zero_failures = std::cell::Cell::new(0u32);
+            move |stream, _user_data| {
             // This callback is called when a new frame buffer is available
             info!("process() callback fired for stream {}", stream_id_for_callbacks);
 
@@ -1232,6 +1251,24 @@ fn create_stream_on_thread(
                         }
                     };
 
+                    if pixel_data.is_none() && data_type == libspa::buffer::DataType::DmaBuf {
+                        // DMA-BUF mmap returned None (likely all zeros on virtual GPU).
+                        // Track consecutive failures. After 3, warn loudly -- the server
+                        // should reconnect this stream with use_dmabuf=false.
+                        dmabuf_zero_failures.set(dmabuf_zero_failures.get() + 1);
+                        let failures = dmabuf_zero_failures.get();
+                        if failures == 3 {
+                            error!(
+                                "DMA-BUF mmap returned unusable data 3 times consecutively. \
+                                 This GPU likely doesn't support CPU-readable DMA-BUF mmap. \
+                                 Reconnect the stream with use_dmabuf=false for MemFd buffers."
+                            );
+                        }
+                    } else if pixel_data.is_some() {
+                        // Reset counter on success
+                        dmabuf_zero_failures.set(0);
+                    }
+
                     if let Some(pixel_data) = pixel_data {
                         // === BUFFER VALIDATION ===
                         // PipeWire sometimes provides zero-size or undersized buffers.
@@ -1388,7 +1425,7 @@ fn create_stream_on_thread(
             } else {
                 warn!("No data blocks in buffer for stream {}", stream_id_for_callbacks);
             }
-        })
+        }})
         .register()
         .map_err(|e| PipeWireError::StreamCreationFailed(format!("Listener registration failed: {}", e)))?;
 
