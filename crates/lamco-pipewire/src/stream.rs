@@ -195,8 +195,8 @@ impl PipeWireStream {
 #[derive(Debug, Clone, Default)]
 pub struct StreamTime {
     /// Graph clock timestamp (nanoseconds, CLOCK_MONOTONIC).
-    /// Compare with [`get_stream_nsec()`] to compute elapsed time since
-    /// this report was generated.
+    /// Compare with the crate-internal `get_stream_nsec()` to compute elapsed
+    /// time since this report was generated.
     pub now_nsec: i64,
 
     /// Tick rate as a fraction (numerator / denominator).

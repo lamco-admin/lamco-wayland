@@ -462,7 +462,7 @@ fn run_pipewire_main_loop(
         loop_iterations += 1;
 
         // Log periodic heartbeat
-        if loop_iterations % 1000 == 0 {
+        if loop_iterations.is_multiple_of(1000) {
             info!(
                 "PipeWire main loop heartbeat: {} iterations, {} streams active",
                 loop_iterations,
@@ -576,7 +576,7 @@ fn run_pipewire_main_loop(
         let loop_ref = main_loop.loop_();
         let events_processed = loop_ref.iterate(Duration::from_millis(0));
 
-        if loop_iterations % 1000 == 0 {
+        if loop_iterations.is_multiple_of(1000) {
             trace!(
                 "loop.iterate() returned {} (events processed this iteration)",
                 events_processed

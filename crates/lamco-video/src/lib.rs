@@ -1,4 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
+// Test stat-builders assign fields after Default; that is fine in test code.
+#![cfg_attr(test, allow(clippy::field_reassign_with_default))]
 
 //! # lamco-video
 //!

@@ -1,4 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
+// Integration tests unwrap on live D-Bus calls; that is fine in test code.
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 
 //! XDG Desktop Portal integration for Wayland screen capture and input control
 //!
@@ -332,12 +334,17 @@ impl PortalManager {
         let session_tracking_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
         info!(
             session_id = %session_tracking_id,
-            "RemoteDesktop session created"
+            user_session_id = %session_id,
+            "RemoteDesktop session created (combined PortalManager session)"
         );
         trace!(
             session_id = %session_tracking_id,
             "Session state is INIT (required for clipboard.request)"
         );
+        // Note: Session.Closed signal subscription happens at the caller in
+        // server/mod.rs after the Arc<RwLock<Session>> wrap (Rust 2024 lifetime
+        // capture on ashpd's impl Stream means subscription must hold an owned
+        // reference to the session — we can't subscribe here and then move).
 
         // Portal spec requires clipboard.request() when session state is INIT,
         // which means we must call it before SelectDevices or SelectSources.
