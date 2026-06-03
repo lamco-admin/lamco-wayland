@@ -171,7 +171,7 @@ pub fn yuy2_to_bgra(src: &[u8], width: u32, height: u32) -> Vec<u8> {
     let w = width as usize;
     let h = height as usize;
 
-    assert!(w % 2 == 0, "YUY2 width must be even");
+    assert!(w.is_multiple_of(2), "YUY2 width must be even");
     assert!(src.len() >= w * h * 2, "YUY2 source data too small");
 
     let mut dst = vec![0u8; w * h * 4];
@@ -260,14 +260,44 @@ impl YuvConverter {
     ///
     /// Reference to internal BGRA buffer (valid until next conversion)
     pub fn convert_to_bgra(&mut self, src: &[u8], width: u32, height: u32, format: PixelFormat) -> Option<&[u8]> {
+        let w = width as usize;
+        let h = height as usize;
+
+        // The primitive converters assume a correctly sized source and panic
+        // otherwise. Validate dimensions and length here, with checked
+        // arithmetic, so this fallible entry point returns None rather than
+        // panicking or over-allocating on a malformed frame.
+        if width == 0 || height == 0 {
+            return None;
+        }
+        let pixels = w.checked_mul(h)?;
+        pixels.checked_mul(4)?; // BGRA output must not overflow usize
+        let required = match format {
+            // 4:2:0 chroma subsampling (NV12, I420) requires even dimensions;
+            // an odd width or height would index past the half-size chroma planes.
+            PixelFormat::NV12 | PixelFormat::I420 => {
+                if !w.is_multiple_of(2) || !h.is_multiple_of(2) {
+                    return None;
+                }
+                pixels.checked_add(pixels / 2)?
+            }
+            PixelFormat::YUY2 => {
+                if !w.is_multiple_of(2) {
+                    return None; // 4:2:2 requires an even width
+                }
+                pixels.checked_mul(2)?
+            }
+            // Already in an RGB family, or unsupported: no conversion.
+            _ => return None,
+        };
+        if src.len() < required {
+            return None;
+        }
+
         let result = match format {
             PixelFormat::NV12 => nv12_to_bgra(src, width, height),
             PixelFormat::I420 => i420_to_bgra(src, width, height),
             PixelFormat::YUY2 => yuy2_to_bgra(src, width, height),
-            // Already in RGB family - no conversion needed
-            PixelFormat::BGRA | PixelFormat::RGBA | PixelFormat::BGRx | PixelFormat::RGBx => {
-                return None;
-            }
             _ => return None,
         };
 
@@ -365,5 +395,27 @@ mod tests {
         let result = converter.convert_to_bgra(&nv12, 2, 2, PixelFormat::NV12);
         assert!(result.is_some());
         assert_eq!(result.expect("should have result").len(), 16);
+    }
+
+    #[test]
+    fn convert_to_bgra_rejects_malformed_without_panic() {
+        // Regression (found by fuzzing): convert_to_bgra returns Option, so a
+        // malformed frame must yield None, never panic or over-read.
+        let mut conv = YuvConverter::new();
+        // Source too small for the claimed dimensions.
+        assert!(conv.convert_to_bgra(&[0u8; 4], 64, 64, PixelFormat::NV12).is_none());
+        // Odd dimensions are invalid for 4:2:0 (NV12 / I420): the empty chroma
+        // plane used to be indexed out of bounds.
+        assert!(conv.convert_to_bgra(&[0u8; 16], 1, 1, PixelFormat::I420).is_none());
+        assert!(conv.convert_to_bgra(&[0u8; 16], 3, 2, PixelFormat::NV12).is_none());
+        // Odd width is invalid for 4:2:2 (YUY2).
+        assert!(conv.convert_to_bgra(&[0u8; 16], 3, 2, PixelFormat::YUY2).is_none());
+        // Dimensions that overflow usize must not panic.
+        assert!(
+            conv.convert_to_bgra(&[0u8; 16], u32::MAX, u32::MAX, PixelFormat::NV12)
+                .is_none()
+        );
+        // A correctly sized 2x2 NV12 frame (4 Y + 2 UV bytes) still converts.
+        assert!(conv.convert_to_bgra(&[0u8; 6], 2, 2, PixelFormat::NV12).is_some());
     }
 }

@@ -1,0 +1,20 @@
+# cargo-about configuration. Generates THIRD_PARTY_NOTICES.md from the lockfile:
+#   cargo about generate about.hbs --all-features > THIRD_PARTY_NOTICES.md
+# Build/dev dependencies are excluded: only code that ships in the published
+# crates needs attribution. If a dependency license is rejected, add it here.
+
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Unlicense",
+]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+filter-noassertion = true

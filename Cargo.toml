@@ -3,7 +3,7 @@
 # PACKAGE IDENTITY
 # ============================================================================
 name = "lamco-wayland"
-version = "0.4.4"
+version = "0.4.5"
 
 # ============================================================================
 # PACKAGE CONFIGURATION (inherited from workspace)
@@ -13,7 +13,6 @@ rust-version.workspace = true
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true
-authors.workspace = true
 
 # ============================================================================
 # CRATE-SPECIFIC METADATA
@@ -93,9 +92,9 @@ workspace = true
 # ============================================================================
 # NOTE: For local development, use path dependencies. For publishing, switch to version only.
 [dependencies]
-lamco-portal = { version = "0.4.0", path = "crates/lamco-portal", optional = true }
-lamco-pipewire = { version = "0.4.2", path = "crates/lamco-pipewire", optional = true }
-lamco-video = { version = "0.1.8", path = "crates/lamco-video", optional = true }
+lamco-portal = { version = "0.4.1", path = "crates/lamco-portal", optional = true }
+lamco-pipewire = { version = "0.4.3", path = "crates/lamco-pipewire", optional = true }
+lamco-video = { version = "0.1.9", path = "crates/lamco-video", optional = true }
 
 # ============================================================================
 # WORKSPACE CONFIGURATION
@@ -115,7 +114,7 @@ resolver = "2"
 edition = "2024"
 
 # Minimum Supported Rust Version
-rust-version = "1.85"
+rust-version = "1.87"
 
 # Dual license (permissive, industry standard)
 license = "MIT OR Apache-2.0"
@@ -123,9 +122,6 @@ license = "MIT OR Apache-2.0"
 # Organization URLs
 homepage = "https://lamco.ai"
 repository = "https://github.com/lamco-admin/lamco-wayland"
-
-# Primary author/maintainer
-authors = ["Greg Lamberson <greg@lamco.io>"]
 
 [workspace.lints.rust]
 unsafe_code = "warn"

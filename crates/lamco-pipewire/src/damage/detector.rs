@@ -417,17 +417,18 @@ impl DamageDetector {
     pub fn detect(&mut self, frame: &[u8], width: u32, height: u32) -> Vec<DetectedRegion> {
         let start = Instant::now();
         let frame_area = width as u64 * height as u64;
-        let expected_len = (width as usize) * (height as usize) * 4;
 
-        assert_eq!(
-            frame.len(),
-            expected_len,
-            "Frame size mismatch: got {} bytes, expected {} for {}x{}",
-            frame.len(),
-            expected_len,
-            width,
-            height
-        );
+        // A frame whose length does not match width*height*4 (or whose
+        // dimensions overflow usize) is malformed. Rather than panic, resync
+        // state and conservatively report the whole frame as damaged.
+        let expected_len = (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|p| p.checked_mul(4));
+        if expected_len != Some(frame.len()) {
+            self.previous_frame = None;
+            self.invalidated = true;
+            return vec![DetectedRegion::full_frame(width, height)];
+        }
 
         let dimensions_changed = self.previous_dimensions.is_none_or(|(w, h)| w != width || h != height);
 
@@ -740,11 +741,13 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Frame size mismatch")]
-    fn test_wrong_size_panics() {
+    fn test_wrong_size_reports_full_frame() {
+        // A frame whose length does not match the claimed dimensions degrades to
+        // full-frame damage rather than panicking (fuzz-found robustness fix).
         let mut detector = DamageDetector::with_defaults();
         let frame = create_solid_frame(640, 480, [0, 0, 0, 255]);
-        let _ = detector.detect(&frame, 800, 600);
+        let regions = detector.detect(&frame, 800, 600);
+        assert_eq!(regions.len(), 1);
     }
 
     #[test]
@@ -757,5 +760,15 @@ mod tests {
 
         let damage2 = detector.detect(&frame, 3840, 2160);
         assert!(damage2.is_empty());
+    }
+
+    #[test]
+    fn detect_handles_frame_size_mismatch_without_panic() {
+        // Regression (found by fuzzing): a frame whose length does not match
+        // width*height*4 must degrade to full-frame damage, not panic.
+        let mut det = DamageDetector::new(DamageConfig::default());
+        assert_eq!(det.detect(&[0u8; 10], 64, 64).len(), 1);
+        // Dimensions that overflow usize must not panic either.
+        assert_eq!(det.detect(&[0u8; 10], u32::MAX, u32::MAX).len(), 1);
     }
 }

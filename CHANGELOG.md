@@ -5,6 +5,24 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2026-06-03
+
+### Changed
+- Relicensed to Lamco Development LLC; removed `authors` metadata.
+- Workspace MSRV raised to 1.87 to match ashpd 0.13 / zbus 5.
+- `thiserror` updated from 1.0 to 2.0 across all crates (removes a duplicate dep).
+- CI hardened: clippy `--all-targets` in both default and all-features modes,
+  cargo-deny, a 1.87 MSRV gate, a fuzz-smoke job (with PipeWire system deps), and
+  THIRD_PARTY_NOTICES.
+- Sub-crate versions: lamco-portal 0.4.1, lamco-pipewire 0.4.3, lamco-video 0.1.9.
+
+### Fixed
+- lamco-pipewire 0.4.3: the YUV `convert_to_bgra` and damage `detect` entry points
+  no longer panic or over-read on malformed frames (size mismatch, oversized
+  dimensions, or odd dimensions for 4:2:0). Found by fuzzing; added fuzz targets
+  and regression tests.
+- Advisory RUSTSEC-2026-0007: bumped the transitive `bytes` to 1.11.1.
+
 ## [0.4.4] - 2026-03-28
 
 ### Changed

@@ -3,7 +3,7 @@
 # PACKAGE IDENTITY
 # ============================================================================
 name = "lamco-video"
-version = "0.1.8"
+version = "0.1.9"
 
 # ============================================================================
 # PACKAGE CONFIGURATION (inherited from workspace)
@@ -13,7 +13,6 @@ rust-version.workspace = true
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true
-authors.workspace = true
 
 # ============================================================================
 # CRATE-SPECIFIC METADATA
@@ -117,7 +116,7 @@ needless_range_loop = "allow"
 # ============================================================================
 [dependencies]
 # PipeWire frame types (VideoFrame, PixelFormat, DamageRegion)
-lamco-pipewire = { path = "../lamco-pipewire", version = "0.4.0" }
+lamco-pipewire = { path = "../lamco-pipewire", version = "0.4.3" }
 
 # Async runtime
 tokio = { version = "1", features = ["sync", "rt", "time"] }
@@ -126,7 +125,7 @@ tokio = { version = "1", features = ["sync", "rt", "time"] }
 tracing = "0.1"
 
 # Error handling
-thiserror = "1.0"
+thiserror = "2"
 
 # Concurrency
 parking_lot = "0.12"
