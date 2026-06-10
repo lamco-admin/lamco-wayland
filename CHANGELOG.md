@@ -5,6 +5,32 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.6] - 2026-06-09
+
+### Changed
+- Updated lamco-pipewire to 0.4.4
+- lamco-pipewire 0.4.4: per-frame capture logging demoted from info to
+  trace/debug (was ~7 info lines per frame — 200+ journal lines/sec at 30fps).
+
+### Fixed
+- lamco-pipewire 0.4.4: DMA-BUF capture negotiates `DRM_FORMAT_MOD_LINEAR`
+  instead of `DRM_FORMAT_MOD_INVALID`. The CPU-mmap consume path can only read
+  row-major linear buffers; advertising "any modifier" let compositors fixate
+  tiled or host-resident layouts that read back as garbage on real GPUs and
+  all-zeros on virtio-gpu (issue #5). Producers that cannot supply linear fall
+  through to the existing SHM/MemFd param automatically.
+- lamco-pipewire 0.4.4: the process callback now checks the negotiated modifier
+  before CPU-reading a DMA-BUF and skips non-linear frames with a throttled
+  error instead of delivering garbage; the passthrough descriptor carries the
+  negotiated modifier instead of a hardcoded 0.
+- lamco-pipewire 0.4.4: direct-frame-adapter thread now honors shutdown — it
+  previously blocked on `recv()` until upstream closed, leaving a zombie
+  process for minutes after SIGINT. Also adds drop-rate warnings and a 10s
+  ingress heartbeat.
+- lamco-pipewire 0.4.4: DestroyStream cleanup uses `try_borrow_mut` on the
+  DMA-BUF mmap cache, preventing a `BorrowMutError` panic on reentrant
+  PipeWire dispatch (resize path).
+
 ## [0.4.5] - 2026-06-03
 
 ### Changed

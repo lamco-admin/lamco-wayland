@@ -5,6 +5,43 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2026-06-09
+
+### Fixed
+- **DMA-BUF modifier negotiation**: advertise `DRM_FORMAT_MOD_LINEAR` instead of
+  `DRM_FORMAT_MOD_INVALID`. This consumer reads buffers with a plain CPU mmap,
+  which can only interpret row-major linear layouts; "any modifier" invited
+  tiled or host-resident allocations that read back as garbage on real GPUs and
+  all-zeros on virtio-gpu. Producers that cannot supply linear skip the
+  MANDATORY DmaBuf pod and fall through to the SHM/MemFd fallback.
+- **Negotiated-modifier guard**: the process callback stores the modifier
+  fixated in `param_changed` and refuses to CPU-read a DMA-BUF whose layout is
+  not linear (throttled error, frame skipped). The passthrough descriptor now
+  carries the negotiated modifier instead of a hardcoded 0.
+- **Direct-frame-adapter shutdown gate**: the adapter thread blocked on
+  `recv()` until the upstream sender dropped, which never happened on SIGINT —
+  the process kept running for minutes after the visible shutdown sequence.
+  The adapter now polls a shutdown flag on a 250ms `recv_timeout` loop and the
+  manager notifies it on shutdown. Also adds rate-limited drop warnings and a
+  10-second ingress heartbeat.
+- **DestroyStream reentrancy**: DMA-BUF cache cleanup uses `try_borrow_mut`
+  instead of `borrow_mut`, preventing a `BorrowMutError` panic when PipeWire
+  dispatches reentrantly during stream destruction (observed on resize).
+
+### Changed
+- Per-frame capture logging demoted from `info` to `trace`/`debug`. The
+  process/buffer path logged 7+ info lines per captured frame (200+ journal
+  lines per second at 30fps). First-frames analysis and one-time negotiation
+  logging keep their levels.
+
+## [0.4.3] - 2026-06-03
+
+### Fixed
+- The YUV `convert_to_bgra` and damage `detect` entry points no longer panic or
+  over-read on malformed frames (size mismatch, oversized dimensions, or odd
+  dimensions for 4:2:0). Found by fuzzing; added fuzz targets and regression
+  tests.
+
 ## [0.4.2] - 2026-03-28
 
 ### Fixed
