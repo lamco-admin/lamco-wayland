@@ -729,7 +729,7 @@ fn mmap_fd_buffer(fd: std::os::fd::RawFd, size: usize, offset: usize) -> Result<
     let map_size = size + (offset - map_offset);
     let data_offset_in_map = offset - map_offset;
 
-    info!(
+    trace!(
         "mmap: fd={}, size={}, offset={}, page_size={}, map_offset={}, map_size={}",
         fd, size, offset, page_size, map_offset, map_size
     );
@@ -774,7 +774,7 @@ fn mmap_fd_buffer(fd: std::os::fd::RawFd, size: usize, offset: usize) -> Result<
         munmap(addr, map_size).map_err(|e| warn!("munmap warning: {}", e)).ok();
     }
 
-    info!("mmap successful: extracted {} bytes", result.len());
+    trace!("mmap successful: extracted {} bytes", result.len());
     Ok(result)
 }
 
@@ -790,7 +790,7 @@ fn mmap_dmabuf_to_vec(fd: std::os::fd::RawFd, size: usize, offset: usize, cache:
     let mut cache = cache.borrow_mut();
 
     let mapped_ptr_opt = if let Some(&(ptr, _sz)) = cache.get(&fd) {
-        debug!("DMA-BUF FD={}: using cached mmap", fd);
+        trace!("DMA-BUF FD={}: using cached mmap", fd);
         Some(ptr)
     } else {
         info!("DMA-BUF buffer: mmapping {} bytes from FD={} (first time)", size, fd);
@@ -874,7 +874,7 @@ fn mmap_dmabuf_to_vec(fd: std::os::fd::RawFd, size: usize, offset: usize, cache:
             libc::ioctl(fd, DMA_BUF_IOCTL_SYNC, &sync_end);
         }
 
-        debug!("DMA-BUF: extracted {} bytes from mapping", result.len());
+        trace!("DMA-BUF: extracted {} bytes from mapping", result.len());
         Some(result)
     } else {
         warn!("Failed to get DMA-BUF mapping for FD={}", fd);
@@ -1042,7 +1042,7 @@ fn create_stream_on_thread(
         })
         .process(move |stream, _user_data| {
             // This callback is called when a new frame buffer is available
-            info!("process() callback fired for stream {}", stream_id_for_callbacks);
+            trace!("process() callback fired for stream {}", stream_id_for_callbacks);
 
             // Capture stream timing before touching buffers (RT-safe)
             // SAFETY: stream pointer is valid within this callback; pw_stream_get_time_n is RT-safe
@@ -1098,14 +1098,14 @@ fn create_stream_on_thread(
                     )
                 };
 
-                info!(
+                trace!(
                     "Got buffer from stream {}: {} data blocks",
                     stream_id_for_callbacks, n_datas
                 );
                 for (i, d) in datas_slice.iter_mut().enumerate() {
                     let has_data = d.data().is_some();
                     let data_len = d.data().map_or(0, |s| s.len());
-                    info!(
+                    trace!(
                         "  data[{}]: type={}, fd={}, has_data={}, data_len={}, chunk_size={}",
                         i,
                         d.type_().as_raw(),
@@ -1134,7 +1134,7 @@ fn create_stream_on_thread(
                     // Extract pixel data based on buffer type
                     let fd = data.fd();
 
-                    info!(
+                    debug!(
                         "Buffer: type={}, size={}, offset={}, fd={}, chunk_stride={}",
                         data_type.as_raw(),
                         size,
@@ -1148,7 +1148,7 @@ fn create_stream_on_thread(
                         libspa::buffer::DataType::MemPtr => {
                             if let Some(mapped_data) = data.data() {
                                 if offset + size <= mapped_data.len() {
-                                    info!("MemPtr buffer: copying {} bytes (offset={})", size, offset);
+                                    trace!("MemPtr buffer: copying {} bytes (offset={})", size, offset);
                                     Some(mapped_data[offset..offset + size].to_vec())
                                 } else {
                                     warn!(
@@ -1175,7 +1175,7 @@ fn create_stream_on_thread(
                                     debug!("MemFd buffer: size=0 (empty/skip frame), ignoring");
                                     None
                                 } else {
-                                    info!("MemFd buffer: manual mmap (FD={}, size={}, offset={})", fd, size, offset);
+                                    trace!("MemFd buffer: manual mmap (FD={}, size={}, offset={})", fd, size, offset);
                                     match mmap_fd_buffer(fd, size, offset) {
                                         Ok(data) => Some(data),
                                         Err(e) => {
@@ -1324,7 +1324,7 @@ fn create_stream_on_thread(
                         _ => {
                             if let Some(mapped_data) = data.data() {
                                 if offset + size <= mapped_data.len() {
-                                    info!(
+                                    debug!(
                                         "Buffer type unknown (raw={}), but mapped data available: {} bytes",
                                         data_type.as_raw(),
                                         size
