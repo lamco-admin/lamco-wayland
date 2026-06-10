@@ -4,6 +4,8 @@
 [![Documentation](https://docs.rs/lamco-portal/badge.svg)](https://docs.rs/lamco-portal)
 [![License](https://img.shields.io/crates/l/lamco-portal.svg)](https://github.com/lamco-admin/lamco-wayland/tree/main/lamco-portal)
 
+**[Website](https://lamco.ai/open-source/lamco-wayland/portal/)** · **[Documentation](https://docs.rs/lamco-portal)** · **[Source](https://github.com/lamco-admin/lamco-wayland)**
+
 High-level Rust interface to XDG Desktop Portal for Wayland screen capture and input control.
 
 ## Features
@@ -223,7 +225,7 @@ sudo dnf install xdg-desktop-portal xdg-desktop-portal-gnome
 
 ## About
 
-Developed by [Lamco Development](https://lamco.ai). Part of the lamco-wayland ecosystem for building Wayland-native applications in Rust.
+Developed by [Lamco Development LLC](https://lamco.ai/open-source/lamco-wayland/portal/). Part of the lamco-wayland ecosystem for building Wayland-native applications in Rust.
 
 ## License
 

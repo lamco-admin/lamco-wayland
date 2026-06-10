@@ -11,13 +11,13 @@ version = "0.1.9"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-homepage.workspace = true
+homepage = "https://lamco.ai/open-source/lamco-wayland/video/"
 repository.workspace = true
 
 # ============================================================================
 # CRATE-SPECIFIC METADATA
 # ============================================================================
-description = "Video frame processing and bitmap conversion for Wayland screen capture, by Lamco Development"
+description = "Video frame processing and bitmap conversion for Wayland screen capture, by Lamco Development LLC"
 documentation = "https://docs.rs/lamco-video"
 readme = "README.md"
 

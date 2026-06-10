@@ -11,13 +11,13 @@ version = "0.4.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-homepage.workspace = true
+homepage = "https://lamco.ai/open-source/lamco-wayland/portal/"
 repository.workspace = true
 
 # ============================================================================
 # CRATE-SPECIFIC METADATA
 # ============================================================================
-description = "XDG Desktop Portal integration for Wayland screen capture and input control, by Lamco Development"
+description = "XDG Desktop Portal integration for Wayland screen capture and input control, by Lamco Development LLC"
 documentation = "https://docs.rs/lamco-portal"
 readme = "README.md"
 
