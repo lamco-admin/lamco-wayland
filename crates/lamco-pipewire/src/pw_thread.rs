@@ -97,7 +97,7 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::os::fd::{FromRawFd, OwnedFd, RawFd};
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc as StdArc, mpsc as std_mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime};
@@ -852,10 +852,15 @@ fn create_stream_on_thread(
     // Shared negotiated resolution — updated by param_changed, read by process
     let negotiated_width = StdArc::new(AtomicU32::new(config.width));
     let negotiated_height = StdArc::new(AtomicU32::new(config.height));
+    // Negotiated DMA-BUF modifier — defaults to LINEAR, the only layout we
+    // advertise and the only one the CPU mmap path can read correctly
+    let negotiated_modifier = StdArc::new(AtomicU64::new(crate::ffi::drm_fourcc::DRM_FORMAT_MOD_LINEAR));
     let param_neg_width = StdArc::clone(&negotiated_width);
     let param_neg_height = StdArc::clone(&negotiated_height);
+    let param_neg_modifier = StdArc::clone(&negotiated_modifier);
     let proc_neg_width = StdArc::clone(&negotiated_width);
     let proc_neg_height = StdArc::clone(&negotiated_height);
+    let proc_neg_modifier = StdArc::clone(&negotiated_modifier);
 
     let state_tx_for_callback = state_event_tx;
 
@@ -923,15 +928,19 @@ fn create_stream_on_thread(
 
             let size = video_info.size();
             let format = video_info.format();
+            let modifier = video_info.modifier();
             info!(
-                "Stream {} negotiated: {}x{} {:?}",
-                stream_id_for_callbacks, size.width, size.height, format
+                "Stream {} negotiated: {}x{} {:?} modifier={:#x}",
+                stream_id_for_callbacks, size.width, size.height, format, modifier
             );
 
             // Update shared atomics so the process callback validates against
             // the actual compositor resolution, not the requested resolution
             param_neg_width.store(size.width, Ordering::Release);
             param_neg_height.store(size.height, Ordering::Release);
+            // Stored so the DmaBuf process path can refuse to CPU-read a
+            // buffer whose layout it cannot interpret (anything non-linear)
+            param_neg_modifier.store(modifier, Ordering::Release);
 
             // Request buffer metadata types from PipeWire.
             // Without this, compositors won't attach metadata to buffers.
@@ -1092,6 +1101,28 @@ fn create_stream_on_thread(
                         // DmaBuf: GPU memory buffer
                         // Two paths: passthrough (zero-copy FD forwarding) or mmap+copy
                         libspa::buffer::DataType::DmaBuf => {
+                            let negotiated_mod = proc_neg_modifier.load(Ordering::Acquire);
+                            // The CPU mmap path can only interpret row-major linear
+                            // buffers. Negotiation pins MOD_LINEAR, but if a producer
+                            // fixates anything else, a linear copy would deliver
+                            // garbage (tiled) or zeros (host-resident) — skip instead.
+                            let mmap_linear_dmabuf = || -> Option<Vec<u8>> {
+                                if negotiated_mod != crate::ffi::drm_fourcc::DRM_FORMAT_MOD_LINEAR {
+                                    static NONLINEAR_SKIPS: AtomicU64 = AtomicU64::new(0);
+                                    let skips = NONLINEAR_SKIPS.fetch_add(1, Ordering::Relaxed);
+                                    if skips.is_multiple_of(300) {
+                                        error!(
+                                            "Stream {}: DMA-BUF modifier {:#x} is not LINEAR — \
+                                             CPU mmap cannot read it, skipping frame ({} skipped so far)",
+                                            stream_id_for_callbacks,
+                                            negotiated_mod,
+                                            skips + 1
+                                        );
+                                    }
+                                    return None;
+                                }
+                                mmap_dmabuf_to_vec(fd, size, offset, &dmabuf_cache_for_process)
+                            };
                             if fd >= 0 {
                                 if size == 0 {
                                     debug!("DMA-BUF buffer: size=0 (empty/skip frame), ignoring");
@@ -1128,7 +1159,7 @@ fn create_stream_on_thread(
                                                 drm_format: crate::ffi::spa_video_format_to_drm_fourcc(
                                                     config.preferred_format.unwrap_or(PixelFormat::BGRx).to_spa(),
                                                 ),
-                                                modifier: 0, // LINEAR assumed; TODO: extract from SPA_META
+                                                modifier: negotiated_mod,
                                                 width: proc_neg_width.load(Ordering::Acquire),
                                                 height: proc_neg_height.load(Ordering::Acquire),
                                             };
@@ -1183,10 +1214,10 @@ fn create_stream_on_thread(
                                     }
 
                                     // Fallback: mmap path (only reached if dup failed)
-                                    mmap_dmabuf_to_vec(fd, size, offset, &dmabuf_cache_for_process)
+                                    mmap_linear_dmabuf()
                                 } else {
                                     // Standard mmap+copy path (dmabuf_passthrough disabled)
-                                    mmap_dmabuf_to_vec(fd, size, offset, &dmabuf_cache_for_process)
+                                    mmap_linear_dmabuf()
                                 }
                             } else {
                                 debug!("DMA-BUF buffer but no valid FD (fd={})", fd);
@@ -1645,17 +1676,22 @@ fn build_stream_parameters(config: &StreamConfig) -> Result<Vec<Vec<u8>>> {
             ),
         );
 
-        // DRM_FORMAT_MOD_INVALID = "any modifier is acceptable"
+        // Only MOD_LINEAR is advertised: this consumer reads buffers with a
+        // plain CPU mmap, which can only interpret row-major linear layouts.
+        // MOD_INVALID ("any modifier") invites tiled or host-resident
+        // allocations that read back as garbage on real GPUs and all-zeros
+        // on virtio-gpu. Producers that cannot supply linear skip this
+        // MANDATORY param and fall through to the SHM pod below.
         // SPA Long is i64, DRM modifiers are u64 — reinterpret bits
-        let mod_invalid = crate::ffi::drm_fourcc::DRM_FORMAT_MOD_INVALID as i64;
+        let mod_linear = crate::ffi::drm_fourcc::DRM_FORMAT_MOD_LINEAR as i64;
         dmabuf_obj.properties.push(Property {
             key: spa::param::format::FormatProperties::VideoModifier.as_raw(),
             flags: PropertyFlags::MANDATORY | PropertyFlags::DONT_FIXATE,
             value: Value::Choice(spa::pod::ChoiceValue::Long(spa::utils::Choice(
                 spa::utils::ChoiceFlags::empty(),
                 spa::utils::ChoiceEnum::Enum {
-                    default: mod_invalid,
-                    alternatives: vec![mod_invalid],
+                    default: mod_linear,
+                    alternatives: vec![mod_linear],
                 },
             ))),
         });
@@ -1665,7 +1701,10 @@ fn build_stream_parameters(config: &StreamConfig) -> Result<Vec<Vec<u8>>> {
                 PipeWireError::FormatNegotiationFailed(format!("DmaBuf format serialization failed: {e:?}"))
             })?;
         let bytes = serialized.0.into_inner();
-        info!("DmaBuf format param: {} bytes (MANDATORY|DONT_FIXATE)", bytes.len());
+        info!(
+            "DmaBuf format param: {} bytes (MOD_LINEAR, MANDATORY|DONT_FIXATE)",
+            bytes.len()
+        );
         param_pods.push(bytes);
     }
 
