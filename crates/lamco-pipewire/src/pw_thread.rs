@@ -97,7 +97,7 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::os::fd::{FromRawFd, OwnedFd, RawFd};
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc as StdArc, mpsc as std_mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime};
@@ -195,6 +195,12 @@ pub struct PipeWireThreadManager {
 
     /// Shutdown flag
     shutdown_tx: Option<std_mpsc::SyncSender<()>>,
+
+    /// Shutdown gate for the direct-frame-adapter path. None when using the
+    /// regular PipeWire main loop (which uses `shutdown_tx` instead). The
+    /// adapter thread polls this flag and exits its recv_timeout loop when
+    /// set — see `new_direct()` for the rationale.
+    direct_shutdown_flag: Option<StdArc<AtomicBool>>,
 }
 
 impl PipeWireThreadManager {
@@ -240,6 +246,7 @@ impl PipeWireThreadManager {
             frame_rx,
             state_event_rx,
             shutdown_tx: Some(shutdown_tx),
+            direct_shutdown_flag: None,
         })
     }
 
@@ -255,6 +262,20 @@ impl PipeWireThreadManager {
         let (frame_tx, frame_rx) = std_mpsc::sync_channel::<VideoFrame>(256);
         let (state_event_tx, state_event_rx) = std_mpsc::sync_channel::<StreamStateEvent>(256);
         let (command_tx, _command_rx) = std_mpsc::sync_channel::<PipeWireThreadCommand>(1);
+        // Dedicated shutdown flag for the direct-frame-adapter thread. The
+        // PipeWire-backed manager has a shutdown channel; the direct path
+        // previously had neither, so the adapter blocked on raw_rx.recv()
+        // until the upstream sender was dropped — which never happened on
+        // SIGINT because nothing in the shutdown path closed it. Result:
+        // the process kept running and dropping frames for minutes after
+        // the visible shutdown sequence finished.
+        let shutdown_flag = Arc::new(AtomicBool::new(false));
+        let shutdown_flag_thread = Arc::clone(&shutdown_flag);
+        // Notify path: the manager flips the flag, then puts a unit on this
+        // channel. The adapter loops on recv_timeout so it wakes on the next
+        // iteration to check the flag, but the explicit signal lets a
+        // currently-blocked recv return promptly.
+        let (notify_shutdown_tx, notify_shutdown_rx) = std_mpsc::sync_channel::<()>(1);
 
         // Send initial Streaming state event
         let _ = state_event_tx.try_send(StreamStateEvent {
@@ -268,8 +289,41 @@ impl PipeWireThreadManager {
             .spawn(move || {
                 let mut frame_count: u64 = 0;
                 info!("Direct frame adapter thread started");
-                while let Ok(raw) = raw_rx.recv() {
+                let mut drops_since_log: u64 = 0;
+                let mut total_drops: u64 = 0;
+                let mut last_drop_log = std::time::Instant::now();
+                // Production-rate heartbeat: symmetric to the drop log so the
+                // operator can compare ingress (frames received from PipeWire)
+                // against egress drops in one place.
+                let mut last_rate_log = std::time::Instant::now();
+                let mut frames_in_window: u64 = 0;
+                loop {
+                    if shutdown_flag_thread.load(Ordering::Acquire) {
+                        info!("Direct frame adapter received shutdown — exiting loop");
+                        break;
+                    }
+                    // Drain any pending notify signal so it doesn't accumulate.
+                    let _ = notify_shutdown_rx.try_recv();
+                    let raw = match raw_rx.recv_timeout(Duration::from_millis(250)) {
+                        Ok(r) => r,
+                        Err(std_mpsc::RecvTimeoutError::Timeout) => continue,
+                        Err(std_mpsc::RecvTimeoutError::Disconnected) => {
+                            info!("Direct frame adapter: upstream raw_rx disconnected");
+                            break;
+                        }
+                    };
                     frame_count += 1;
+                    frames_in_window += 1;
+                    if last_rate_log.elapsed() >= Duration::from_secs(10) {
+                        debug!(
+                            frames_in_last_10s = frames_in_window,
+                            frames_total = frame_count,
+                            drops_total = total_drops,
+                            "Direct frame adapter ingress rate"
+                        );
+                        frames_in_window = 0;
+                        last_rate_log = std::time::Instant::now();
+                    }
                     let frame = VideoFrame {
                         frame_id: frame_count,
                         pts: frame_count * 33_333_333, // ~30fps
@@ -287,10 +341,24 @@ impl PipeWireThreadManager {
                         flags: crate::frame::FrameFlags::new(),
                     };
                     if frame_tx.try_send(frame).is_err() {
-                        // Channel full, drop frame
+                        // Downstream channel full: the display handler is not
+                        // draining fast enough. Drop the frame. Rate-limit the
+                        // log so a sustained burst doesn't flood, but keep an
+                        // accurate counter so operators can see the magnitude.
+                        drops_since_log += 1;
+                        total_drops += 1;
+                        if last_drop_log.elapsed() >= Duration::from_secs(1) {
+                            warn!(
+                                drops_in_last_second = drops_since_log,
+                                drops_total = total_drops,
+                                "Direct frame adapter dropping frames — downstream channel full",
+                            );
+                            drops_since_log = 0;
+                            last_drop_log = std::time::Instant::now();
+                        }
                     }
                 }
-                info!("Direct frame adapter thread exited after {} frames", frame_count);
+                info!(frame_count, total_drops, "Direct frame adapter thread exited");
             })
             .expect("Failed to spawn direct frame adapter thread");
 
@@ -299,7 +367,8 @@ impl PipeWireThreadManager {
             command_tx,
             frame_rx,
             state_event_rx,
-            shutdown_tx: None,
+            shutdown_tx: Some(notify_shutdown_tx),
+            direct_shutdown_flag: Some(shutdown_flag),
         }
     }
 
@@ -363,14 +432,31 @@ impl PipeWireThreadManager {
     pub fn shutdown(&mut self) -> Result<()> {
         info!("Shutting down PipeWire thread");
 
-        // Send shutdown command
-        if let Err(e) = self.send_command(PipeWireThreadCommand::Shutdown) {
-            warn!("Failed to send shutdown command: {}", e);
+        // Direct-channel adapter path: flip the AtomicBool so the adapter
+        // loop exits on its next recv_timeout cycle (≤250ms). The notify
+        // signal below wakes it immediately if it's currently blocked.
+        // Without this, the adapter would block on raw_rx.recv() until
+        // upstream closed — observed in the field as a 4-minute zombie
+        // after SIGINT completed its visible shutdown sequence.
+        if let Some(flag) = self.direct_shutdown_flag.take() {
+            flag.store(true, Ordering::Release);
         }
 
-        // Signal shutdown via dedicated channel
+        // Send shutdown command. If this fails, the receiver has already
+        // exited (its main loop returned and dropped command_rx) — which is
+        // benign and means we'll use the dedicated shutdown_tx path below.
+        // Logged at DEBUG (not WARN) because it's a normal race, not a fault.
+        if let Err(e) = self.send_command(PipeWireThreadCommand::Shutdown) {
+            debug!(
+                "PipeWire command_rx already closed (thread exited first): {} — falling back to shutdown_tx signal",
+                e
+            );
+        }
+
+        // Signal shutdown via dedicated channel (PipeWire main loop path)
+        // or notify the direct-channel adapter to break out of recv_timeout.
         if let Some(tx) = self.shutdown_tx.take() {
-            let _ = tx.send(());
+            let _ = tx.try_send(());
         }
 
         // Wait for thread to finish (with timeout)
@@ -522,8 +608,14 @@ fn run_pipewire_main_loop(
                     if let Some(managed_stream) = streams.remove(&stream_id) {
                         // Clean up any DMA-BUF mmaps associated with this stream
                         // Note: We don't know which FDs belong to which stream, so we clear all
-                        // This is safe because streams are destroyed infrequently
-                        let mut cache = dmabuf_mmap_cache.borrow_mut();
+                        // Use try_borrow_mut to avoid panic if a process callback
+                        // is currently borrowing the cache (reentrant PipeWire dispatch)
+                        let Ok(mut cache) = dmabuf_mmap_cache.try_borrow_mut() else {
+                            warn!("DMA-BUF cache busy during stream destroy, skipping cleanup");
+                            drop(managed_stream);
+                            let _ = response_tx.send(Ok(()));
+                            continue;
+                        };
                         for (fd, (ptr, size)) in cache.drain() {
                             // SAFETY: ptr and size were recorded when mmap succeeded.
                             // drain() ensures we process each entry exactly once.
@@ -1267,7 +1359,9 @@ fn create_stream_on_thread(
                         // === BUFFER VALIDATION ===
                         // PipeWire sometimes provides zero-size or undersized buffers.
                         // These MUST be rejected early to prevent visual corruption.
-                        // See: wrd-server-specs/docs/QUALITY-ISSUE-ANALYSIS-2025-12-27.md
+                        // Historical analysis: zero-size buffers correlate with
+                        // PipeWire negotiation races and produce a "black screen"
+                        // failure mode on the client.
 
                         let bytes_per_pixel = 4; // BGRA/BGRx = 4 bytes
                         // Use the actual negotiated resolution from param_changed,
