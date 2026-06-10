@@ -6,6 +6,8 @@ High-performance PipeWire integration for Wayland screen capture with DMA-BUF su
 [![Documentation](https://docs.rs/lamco-pipewire/badge.svg)](https://docs.rs/lamco-pipewire)
 [![License](https://img.shields.io/crates/l/lamco-pipewire.svg)](LICENSE-MIT)
 
+**[Website](https://lamco.ai/open-source/lamco-wayland/pipewire/)** · **[Documentation](https://docs.rs/lamco-pipewire)** · **[Source](https://github.com/lamco-admin/lamco-wayland)**
+
 ## Features
 
 - **Zero-Copy DMA-BUF**: Hardware-accelerated frame transfer when available
@@ -141,7 +143,7 @@ PipeWire's Rust bindings use `Rc<>` and `NonNull<>` internally, making them **no
 
 ## About
 
-Developed by [Lamco Development](https://lamco.ai). Part of the lamco-wayland ecosystem for building Wayland-native applications in Rust.
+Developed by [Lamco Development LLC](https://lamco.ai/open-source/lamco-wayland/pipewire/). Part of the lamco-wayland ecosystem for building Wayland-native applications in Rust.
 
 ## License
 

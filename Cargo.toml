@@ -11,13 +11,13 @@ version = "0.4.6"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-homepage.workspace = true
+homepage = "https://lamco.ai/open-source/lamco-wayland/"
 repository.workspace = true
 
 # ============================================================================
 # CRATE-SPECIFIC METADATA
 # ============================================================================
-description = "Wayland screen capture, XDG Portal integration, and video processing for Rust, by Lamco Development"
+description = "Wayland screen capture, XDG Portal integration, and video processing for Rust, by Lamco Development LLC"
 documentation = "https://docs.rs/lamco-wayland"
 readme = "README.md"
 

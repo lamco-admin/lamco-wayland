@@ -6,6 +6,8 @@ Video frame processing and RDP bitmap conversion for Wayland screen capture.
 [![Documentation](https://docs.rs/lamco-video/badge.svg)](https://docs.rs/lamco-video)
 [![License](https://img.shields.io/crates/l/lamco-video.svg)](LICENSE-MIT)
 
+**[Website](https://lamco.ai/open-source/lamco-wayland/video/)** · **[Documentation](https://docs.rs/lamco-video)** · **[Source](https://github.com/lamco-admin/lamco-wayland)**
+
 ## Features
 
 - **Frame Processing Pipeline**: Configurable video frame processing with rate limiting
@@ -146,7 +148,7 @@ Typical performance on modern hardware:
 
 ## About
 
-Developed by [Lamco Development](https://lamco.ai). Part of the lamco-wayland ecosystem for building Wayland-native applications in Rust.
+Developed by [Lamco Development LLC](https://lamco.ai/open-source/lamco-wayland/video/). Part of the lamco-wayland ecosystem for building Wayland-native applications in Rust.
 
 ## Requirements
 

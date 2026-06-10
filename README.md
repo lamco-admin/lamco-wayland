@@ -7,6 +7,8 @@ Rust libraries for Wayland screen capture, XDG Portal integration, and video pro
 [![CI](https://github.com/lamco-admin/lamco-wayland/actions/workflows/ci.yml/badge.svg)](https://github.com/lamco-admin/lamco-wayland/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](README.md#license)
 
+**[Website](https://lamco.ai/open-source/lamco-wayland/)** · **[Documentation](https://docs.rs/lamco-wayland)** · **[Source](https://github.com/lamco-admin/lamco-wayland)**
+
 ## Crates
 
 | Crate | Version | Description |

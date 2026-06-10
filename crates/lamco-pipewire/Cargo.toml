@@ -11,13 +11,13 @@ version = "0.4.4"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-homepage.workspace = true
+homepage = "https://lamco.ai/open-source/lamco-wayland/pipewire/"
 repository.workspace = true
 
 # ============================================================================
 # CRATE-SPECIFIC METADATA
 # ============================================================================
-description = "High-performance PipeWire screen capture for Wayland with DMA-BUF support, by Lamco Development"
+description = "High-performance PipeWire screen capture for Wayland with DMA-BUF support, by Lamco Development LLC"
 documentation = "https://docs.rs/lamco-pipewire"
 readme = "README.md"
 
