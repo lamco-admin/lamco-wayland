@@ -385,6 +385,9 @@ impl BitmapConverter {
     }
 
     /// Detect SIMD support
+    // nonminimal_bool misfires on the is_x86_feature_detected! macro expansion;
+    // `avx2 || ssse3` is already minimal (two distinct features).
+    #[allow(clippy::nonminimal_bool)]
     fn detect_simd_support() -> bool {
         #[cfg(target_arch = "x86_64")]
         {

@@ -5,6 +5,25 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2026-06-14
+
+### Fixed
+- **Damage detection on aarch64 (NEON)**: the NEON pixel-comparison kernel summed
+  the per-byte "exceeds threshold" mask with an 8-bit horizontal add
+  (`vaddvq_u8`), which overflowed once more than one byte in a 16-byte chunk
+  changed. A fully-changed tile reduced to zero, so changed regions reported no
+  damage and incremental encoding silently broke on arm64. The kernel now reduces
+  one count per BGRA pixel (alpha ignored) with a 32-bit horizontal add that
+  cannot overflow, matching the scalar reference exactly.
+- **AVX2 threshold comparison**: replaced the signed `_mm256_cmpgt_epi8` (wrong
+  once a channel difference exceeds 127) with an unsigned saturating-subtract
+  test, and switched to the same per-pixel reduction. Removes the previous
+  byte-count/3 approximation; results now match the scalar path.
+
+### Added
+- Property test asserting the dispatched SIMD path (AVX2/NEON/scalar) equals the
+  scalar reference across varied buffer lengths and thresholds.
+
 ## [0.4.4] - 2026-06-09
 
 ### Fixed
