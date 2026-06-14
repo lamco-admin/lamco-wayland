@@ -5,6 +5,16 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.7] - 2026-06-14
+
+### Fixed
+- lamco-pipewire 0.4.5: damage detection on aarch64 (NEON) no longer reports zero
+  damage for fully-changed tiles (8-bit horizontal-add overflow); AVX2 threshold
+  comparison corrected. Detection now matches the scalar reference on all targets.
+
+### Changed
+- Updated lamco-pipewire to 0.4.5 and lamco-video to 0.1.10.
+
 ## [0.4.6] - 2026-06-09
 
 ### Changed

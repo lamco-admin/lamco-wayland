@@ -5,6 +5,13 @@ All notable changes to lamco-video will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.10] - 2026-06-14
+
+### Changed
+- No functional changes. Released alongside lamco-pipewire 0.4.5; suppresses a
+  clippy `nonminimal_bool` false positive on the `is_x86_feature_detected!` macro
+  in SIMD support detection so the workspace lint gate stays clean.
+
 ## [0.1.6] - 2026-03-26
 
 ### Changed
