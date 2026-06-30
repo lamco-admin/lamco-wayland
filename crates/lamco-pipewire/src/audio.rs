@@ -427,7 +427,7 @@ impl AudioCapture {
 
         let loop_ref = mainloop.loop_();
         while !self.stop_signal.load(Ordering::Relaxed) {
-            loop_ref.iterate(std::time::Duration::from_millis(100));
+            loop_ref.iterate(pw::loop_::Timeout::Finite(std::time::Duration::from_millis(100)));
         }
 
         info!("Audio capture stopped");

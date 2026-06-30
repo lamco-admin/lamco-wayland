@@ -5,6 +5,26 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-06-30
+
+### Changed
+- **PipeWire / SPA Rust bindings upgraded from 0.9 to 0.10** (`pipewire`,
+  `pipewire-sys`, `libspa`, `libspa-sys`). The `v0_3_33` feature flag and all
+  capture behavior are unchanged — this is a clean version migration; 0.10's
+  new safe metadata wrappers are adopted in a follow-up release.
+  - `Loop::iterate` now takes a `Timeout` enum instead of a `Duration`: the
+    non-blocking 0 ms poll in the capture loop is now `Timeout::None`, and the
+    connection (10 ms) and audio (100 ms) loops use `Timeout::Finite(..)`.
+  - Sub-crate versions: lamco-pipewire 0.4.5 → 0.5.0, lamco-video 0.1.10 →
+    0.2.0. Both are minor (breaking) bumps because the 0.10 bindings appear in
+    their public APIs.
+- MSRV is unchanged (1.87); pipewire 0.10 requires only Rust 1.80.
+
+### Fixed
+- Advisory RUSTSEC-2026-0190: bumped the transitive `anyhow` to 1.0.103
+  (Stacked Borrows UB in `Error::downcast_mut`, reachable only via the
+  `audio` feature).
+
 ## [0.4.7] - 2026-06-14
 
 ### Fixed

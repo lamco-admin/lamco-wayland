@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::thread;
 
 use pipewire::context::ContextBox;
+use pipewire::loop_::Timeout;
 use pipewire::main_loop::MainLoopBox;
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tracing::{debug, error, info, warn};
@@ -206,7 +207,7 @@ impl PipeWireConnection {
                 // Run one iteration of the main loop
                 // pipewire-rs MainLoop doesn't have loop_iterate, use the Loop directly
                 let loop_ref = main_loop.loop_();
-                loop_ref.iterate(std::time::Duration::from_millis(10));
+                loop_ref.iterate(Timeout::Finite(std::time::Duration::from_millis(10)));
             }
 
             debug!("PipeWire thread exiting");

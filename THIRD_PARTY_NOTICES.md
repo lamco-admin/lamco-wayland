@@ -8,7 +8,7 @@ stack). Each is distributed under the terms of the license shown below.
 
 ## Overview
 
-- MIT License: 129 crate(s)
+- MIT License: 127 crate(s)
 - Unicode License v3: 1 crate(s)
 
 ---
@@ -326,42 +326,6 @@ Used by:
 
 ```
 Copyright (c) 2015 Steven Allen
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-
-```
-
----
-
-## MIT License
-
-Used by:
-- unicode-segmentation 1.12.0
-
-```
-Copyright (c) 2015 The Rust Project Developers
 
 Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated
@@ -1149,10 +1113,10 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- libspa-sys 0.9.2
-- libspa 0.9.2
-- pipewire-sys 0.9.2
-- pipewire 0.9.2
+- libspa-sys 0.10.0
+- libspa 0.10.0
+- pipewire-sys 0.10.0
+- pipewire 0.10.0
 
 ```
 Copyright The pipewire-rs Contributors.
@@ -1248,7 +1212,7 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- lamco-video 0.1.8
+- lamco-video 0.2.0
 
 ```
 MIT License
@@ -1280,8 +1244,8 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- lamco-pipewire 0.4.2
-- lamco-portal 0.4.0
+- lamco-pipewire 0.5.0
+- lamco-portal 0.4.1
 
 ```
 MIT License
@@ -1313,38 +1277,7 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- convert_case 0.8.0
-
-```
-MIT License
-
-Copyright (c) 2025 rutrum
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
----
-
-## MIT License
-
-Used by:
-- lamco-wayland 0.4.4
+- lamco-wayland 0.5.0
 
 ```
 MIT License
