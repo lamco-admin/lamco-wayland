@@ -7,7 +7,13 @@
 //!
 //! All metadata types are optional — compositors only provide what they
 //! support, and consumers must handle absent metadata gracefully.
+//!
+//! Extraction goes through libspa 0.10's safe metadata wrappers
+//! ([`Buffer::find_meta`]) rather than raw `libspa_sys` pointer access, so
+//! this module contains no `unsafe` code.
 
+use libspa::buffer::meta::{MetaCursor, MetaHeader, MetaVideoCrop, MetaVideoDamage, MetaVideoTransform};
+use pipewire::buffer::Buffer;
 use tracing::{debug, trace};
 
 /// Metadata extracted from a PipeWire buffer's SPA metadata array.
@@ -33,7 +39,7 @@ pub struct BufferMeta {
     /// Enables partial-frame encoding for bandwidth optimization.
     pub damage: Vec<DamageRect>,
 
-    /// SPA_META_Cursor: cursor position, hotspot, and bitmap info.
+    /// SPA_META_Cursor: cursor position, hotspot, and (when present) bitmap.
     pub cursor: Option<CursorMeta>,
 
     /// Chunk stride from spa_chunk (signed i32).
@@ -87,200 +93,136 @@ pub struct CursorMeta {
     pub position: (i32, i32),
     /// Hotspot offset within the cursor bitmap
     pub hotspot: (i32, i32),
-    /// Offset to bitmap data within the meta struct.
+    /// Raw offset to bitmap data within the SPA cursor struct.
     /// 0 = no bitmap, >= sizeof(spa_meta_cursor) = bitmap follows.
+    /// Prefer [`CursorMeta::bitmap`] for the decoded pixels.
     pub bitmap_offset: u32,
+    /// Decoded cursor bitmap, when the compositor attached one.
+    ///
+    /// Compositors send the cursor image only on a cursor change (most frames
+    /// carry position-only updates), so this is usually `None`.
+    pub bitmap: Option<CursorBitmap>,
+}
+
+/// A cursor image attached to SPA_META_Cursor.
+#[derive(Debug, Clone)]
+pub struct CursorBitmap {
+    /// Raw SPA video format id of the pixels (e.g. BGRA).
+    pub format: u32,
+    /// Bitmap width in pixels.
+    pub width: u32,
+    /// Bitmap height in pixels.
+    pub height: u32,
+    /// Row stride in bytes (signed; negative means bottom-up).
+    pub stride: i32,
+    /// Pixel bytes, `height * stride.abs()` long, copied out of the buffer.
+    pub pixels: Vec<u8>,
 }
 
 /// Extract all metadata from a PipeWire buffer's SPA metadata array.
 ///
-/// # Safety
-///
-/// `spa_buf` must point to a valid `spa_buffer` that is currently dequeued
-/// from a PipeWire stream (i.e., valid for the duration of a process callback).
-pub unsafe fn extract_buffer_meta(spa_buf: *const libspa_sys::spa_buffer) -> BufferMeta {
-    if spa_buf.is_null() {
-        return BufferMeta::default();
-    }
-
+/// Uses the safe libspa 0.10 metadata wrappers; the borrowed metadata is
+/// copied into owned [`BufferMeta`] fields so the result outlives the buffer.
+pub fn extract_buffer_meta(buffer: &Buffer<'_>) -> BufferMeta {
     let mut meta = BufferMeta::default();
 
-    // SAFETY: spa_buf is non-null (checked above) and valid for the process callback duration.
-    // Each read function checks for null metadata pointers before dereferencing.
-    unsafe {
-        meta.header = read_header_meta(spa_buf);
-        meta.transform = read_transform_meta(spa_buf);
-        meta.crop = read_crop_meta(spa_buf);
-        meta.damage = read_damage_meta(spa_buf);
-        meta.cursor = read_cursor_meta(spa_buf);
-    }
-
-    meta
-}
-
-/// Read SPA_META_Header from buffer.
-///
-/// # Safety
-/// `spa_buf` must be a valid, non-null pointer to a dequeued spa_buffer.
-unsafe fn read_header_meta(spa_buf: *const libspa_sys::spa_buffer) -> Option<HeaderMeta> {
-    // SAFETY: spa_buf validity guaranteed by caller
-    let ptr = unsafe {
-        libspa_sys::spa_buffer_find_meta_data(
-            spa_buf,
-            libspa_sys::SPA_META_Header,
-            std::mem::size_of::<libspa_sys::spa_meta_header>(),
-        )
-    };
-    if ptr.is_null() {
-        return None;
-    }
-    // SAFETY: ptr is non-null and points to memory of at least spa_meta_header size
-    let header = unsafe { &*(ptr as *const libspa_sys::spa_meta_header) };
-    trace!(
-        "SPA_META_Header: pts={}, dts_offset={}, seq={}, flags={:#x}",
-        header.pts, header.dts_offset, header.seq, header.flags
-    );
-    Some(HeaderMeta {
-        pts: header.pts,
-        dts_offset: header.dts_offset,
-        seq: header.seq,
-        flags: header.flags,
-    })
-}
-
-/// Read SPA_META_VideoTransform from buffer.
-///
-/// # Safety
-/// `spa_buf` must be a valid, non-null pointer to a dequeued spa_buffer.
-unsafe fn read_transform_meta(spa_buf: *const libspa_sys::spa_buffer) -> Option<u32> {
-    // SAFETY: spa_buf validity guaranteed by caller
-    let ptr = unsafe {
-        libspa_sys::spa_buffer_find_meta_data(
-            spa_buf,
-            libspa_sys::SPA_META_VideoTransform,
-            std::mem::size_of::<libspa_sys::spa_meta_videotransform>(),
-        )
-    };
-    if ptr.is_null() {
-        return None;
-    }
-    // SAFETY: ptr is non-null and points to memory of at least spa_meta_videotransform size
-    let transform = unsafe { &*(ptr as *const libspa_sys::spa_meta_videotransform) };
-    debug!("SPA_META_VideoTransform: value={}", transform.transform);
-    Some(transform.transform)
-}
-
-/// Read SPA_META_VideoCrop from buffer.
-///
-/// # Safety
-/// `spa_buf` must be a valid, non-null pointer to a dequeued spa_buffer.
-unsafe fn read_crop_meta(spa_buf: *const libspa_sys::spa_buffer) -> Option<CropRegion> {
-    // SAFETY: spa_buf validity guaranteed by caller
-    let ptr = unsafe {
-        libspa_sys::spa_buffer_find_meta_data(
-            spa_buf,
-            libspa_sys::SPA_META_VideoCrop,
-            std::mem::size_of::<libspa_sys::spa_meta_region>(),
-        )
-    };
-    if ptr.is_null() {
-        return None;
-    }
-    // SAFETY: ptr is non-null and points to memory of at least spa_meta_region size
-    let region = unsafe { &*(ptr as *const libspa_sys::spa_meta_region) };
-    let r = &region.region;
-    trace!(
-        "SPA_META_VideoCrop: {}x{} at ({},{})",
-        r.size.width, r.size.height, r.position.x, r.position.y
-    );
-    Some(CropRegion {
-        x: r.position.x,
-        y: r.position.y,
-        width: r.size.width,
-        height: r.size.height,
-    })
-}
-
-/// Read SPA_META_VideoDamage from buffer.
-///
-/// This is an array of spa_meta_region entries. An invalid entry
-/// (zero-sized region) marks the end of the array.
-///
-/// # Safety
-/// `spa_buf` must be a valid, non-null pointer to a dequeued spa_buffer.
-unsafe fn read_damage_meta(spa_buf: *const libspa_sys::spa_buffer) -> Vec<DamageRect> {
-    let mut rects = Vec::new();
-
-    // SAFETY: spa_buf validity guaranteed by caller
-    let meta_ptr = unsafe { libspa_sys::spa_buffer_find_meta(spa_buf, libspa_sys::SPA_META_VideoDamage) };
-    if meta_ptr.is_null() {
-        return rects;
-    }
-
-    // SAFETY: meta_ptr is non-null, returned by spa_buffer_find_meta
-    let meta = unsafe { &*meta_ptr };
-    if meta.data.is_null() || meta.size == 0 {
-        return rects;
-    }
-
-    let region_size = std::mem::size_of::<libspa_sys::spa_meta_region>();
-    let max_regions = meta.size as usize / region_size;
-
-    let regions = meta.data as *const libspa_sys::spa_meta_region;
-    for i in 0..max_regions {
-        // SAFETY: i < max_regions which is bounded by the allocated meta.size
-        let region = unsafe { &*regions.add(i) };
-        let r = &region.region;
-        // Zero-size region marks end of array
-        if r.size.width == 0 || r.size.height == 0 {
-            break;
-        }
-        rects.push(DamageRect {
-            x: r.position.x,
-            y: r.position.y,
-            width: r.size.width,
-            height: r.size.height,
+    if let Some(header) = buffer.find_meta::<MetaHeader>() {
+        let flags = header.flags().bits();
+        trace!(
+            "SPA_META_Header: pts={}, dts_offset={}, seq={}, flags={:#x}",
+            header.pts(),
+            header.dts_offset(),
+            header.seq(),
+            flags
+        );
+        meta.header = Some(HeaderMeta {
+            pts: header.pts(),
+            dts_offset: header.dts_offset(),
+            seq: header.seq(),
+            flags,
         });
     }
 
-    if !rects.is_empty() {
-        trace!("SPA_META_VideoDamage: {} regions", rects.len());
+    if let Some(transform) = buffer.find_meta::<MetaVideoTransform>() {
+        let value = transform.transform().as_raw();
+        debug!("SPA_META_VideoTransform: value={}", value);
+        meta.transform = Some(value);
     }
-    rects
-}
 
-/// Read SPA_META_Cursor from buffer.
-///
-/// # Safety
-/// `spa_buf` must be a valid, non-null pointer to a dequeued spa_buffer.
-unsafe fn read_cursor_meta(spa_buf: *const libspa_sys::spa_buffer) -> Option<CursorMeta> {
-    // SAFETY: spa_buf validity guaranteed by caller
-    let ptr = unsafe {
-        libspa_sys::spa_buffer_find_meta_data(
-            spa_buf,
-            libspa_sys::SPA_META_Cursor,
-            std::mem::size_of::<libspa_sys::spa_meta_cursor>(),
-        )
-    };
-    if ptr.is_null() {
-        return None;
+    if let Some(crop) = buffer.find_meta::<MetaVideoCrop>() {
+        let region = crop.meta_region();
+        let position = region.position();
+        let size = region.size();
+        trace!(
+            "SPA_META_VideoCrop: {}x{} at ({},{})",
+            size.width, size.height, position.x, position.y
+        );
+        meta.crop = Some(CropRegion {
+            x: position.x,
+            y: position.y,
+            width: size.width,
+            height: size.height,
+        });
     }
-    // SAFETY: ptr is non-null and points to memory of at least spa_meta_cursor size
-    let cursor = unsafe { &*(ptr as *const libspa_sys::spa_meta_cursor) };
-    // id=0 means no valid cursor data
-    if cursor.id == 0 {
-        return None;
+
+    if let Some(damage) = buffer.find_meta::<MetaVideoDamage>() {
+        // The iterator handles validity and the zero-size terminator internally.
+        meta.damage = damage
+            .iter()
+            .map(|region| {
+                let position = region.position();
+                let size = region.size();
+                DamageRect {
+                    x: position.x,
+                    y: position.y,
+                    width: size.width,
+                    height: size.height,
+                }
+            })
+            .collect();
+        if !meta.damage.is_empty() {
+            trace!("SPA_META_VideoDamage: {} regions", meta.damage.len());
+        }
     }
-    trace!(
-        "SPA_META_Cursor: id={}, pos=({},{}), hotspot=({},{}), bitmap_offset={}",
-        cursor.id, cursor.position.x, cursor.position.y, cursor.hotspot.x, cursor.hotspot.y, cursor.bitmap_offset
-    );
-    Some(CursorMeta {
-        id: cursor.id,
-        position: (cursor.position.x, cursor.position.y),
-        hotspot: (cursor.hotspot.x, cursor.hotspot.y),
-        bitmap_offset: cursor.bitmap_offset,
-    })
+
+    if let Some(cursor) = buffer.find_meta::<MetaCursor>() {
+        // id == 0 means there is no new cursor data this frame.
+        if cursor.id() != 0 {
+            let position = cursor.position();
+            let hotspot = cursor.hotspot();
+            let bitmap = cursor.bitmap().and_then(|bitmap| {
+                bitmap.bitmap_data().map(|pixels| {
+                    let size = bitmap.size();
+                    CursorBitmap {
+                        format: bitmap.format().as_raw(),
+                        width: size.width,
+                        height: size.height,
+                        stride: bitmap.stride(),
+                        pixels: pixels.to_vec(),
+                    }
+                })
+            });
+            trace!(
+                "SPA_META_Cursor: id={}, pos=({},{}), hotspot=({},{}), bitmap_offset={}, bitmap={}",
+                cursor.id(),
+                position.x,
+                position.y,
+                hotspot.x,
+                hotspot.y,
+                cursor.bitmap_offset(),
+                bitmap.is_some()
+            );
+            meta.cursor = Some(CursorMeta {
+                id: cursor.id(),
+                position: (position.x, position.y),
+                hotspot: (hotspot.x, hotspot.y),
+                bitmap_offset: cursor.bitmap_offset(),
+                bitmap,
+            });
+        }
+    }
+
+    meta
 }
 
 /// Maximum number of damage rectangles to request.

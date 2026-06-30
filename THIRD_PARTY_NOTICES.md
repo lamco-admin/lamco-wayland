@@ -1212,7 +1212,7 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- lamco-video 0.2.0
+- lamco-video 0.3.0
 
 ```
 MIT License
@@ -1244,7 +1244,7 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- lamco-pipewire 0.5.0
+- lamco-pipewire 0.6.0
 - lamco-portal 0.4.1
 
 ```
@@ -1277,7 +1277,7 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- lamco-wayland 0.5.0
+- lamco-wayland 0.6.0
 
 ```
 MIT License
@@ -1421,7 +1421,7 @@ DEALINGS IN THE SOFTWARE.
 ## MIT License
 
 Used by:
-- anyhow 1.0.100
+- anyhow 1.0.103
 - async-channel 2.5.0
 - async-executor 1.13.3
 - async-io 2.6.0

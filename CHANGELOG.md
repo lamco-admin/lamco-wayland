@@ -5,6 +5,36 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-06-30
+
+### Changed
+- **lamco-pipewire 0.6.0: metadata extraction rewritten over libspa 0.10's safe
+  wrappers.** `meta.rs` now reads SPA_META_Header / VideoTransform / VideoCrop /
+  VideoDamage / Cursor through `Buffer::find_meta::<T>()` instead of raw
+  `libspa_sys` pointer access — the module is now `unsafe`-free, and the
+  hand-walked damage-region array (the source of the earlier aarch64 overflow
+  bug) is replaced by the wrapper's iterator.
+  - The process callback now uses the safe `Stream::dequeue_buffer()` → `Buffer`
+    (which requeues itself on drop) and `Buffer::datas_mut()`, replacing
+    `dequeue_raw_buffer` + a manual `pw_buffer` queue guard + `from_raw_parts_mut`.
+  - `extract_buffer_meta` is now a safe `fn(&Buffer)` (was
+    `unsafe fn(*const spa_buffer)`).
+  - libspa feature raised `v0_3_33` → `v0_3_62` for the typed `MetaVideoTransform`
+    wrapper (raises the system-library floor to libpipewire 0.3.62).
+  - `ffi::SpaDataType` removed in favor of `ffi::DataType` (re-exported
+    `libspa::buffer::DataType`); `BufferType::from_spa_type` now takes `DataType`.
+
+### Added
+- `CursorMeta::bitmap` (new `CursorBitmap` with `format` / `width` / `height` /
+  `stride` / `pixels`): the actual cursor image, decoded via
+  `MetaCursor::bitmap()` / `MetaBitmap::bitmap_data()` when the compositor
+  attaches one (cursor-change frames). Previously only `bitmap_offset` was
+  exposed. Serves the `cursor` feature.
+
+### Note
+- Sub-crate versions: lamco-pipewire 0.6.0, lamco-video 0.3.0 — both minor
+  (breaking) bumps for the public-API changes above.
+
 ## [0.5.0] - 2026-06-30
 
 ### Changed
