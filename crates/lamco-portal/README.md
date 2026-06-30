@@ -8,6 +8,12 @@
 
 High-level Rust interface to XDG Desktop Portal for Wayland screen capture and input control.
 
+`lamco-portal` 0.4.2 ships on the modern **0.6.x** stack (`ashpd` 0.13.12 /
+`zbus` 5.16); 0.4.1 ships on the low-floor **0.5.x** stack. Both require **Rust
+1.87** (edition 2024). See
+[`docs/COMPATIBILITY.md`](https://github.com/lamco-admin/lamco-wayland/blob/master/docs/COMPATIBILITY.md)
+for how the lines map across the workspace.
+
 ## Features
 
 - **Screen Capture**: Capture monitor or window content through PipeWire streams
@@ -33,7 +39,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-lamco-portal = "0.1"
+lamco-portal = "0.4"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -75,13 +81,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```toml
 [dependencies]
 # Default - basic portal functionality
-lamco-portal = "0.1"
+lamco-portal = "0.4"
 
 # With D-Bus clipboard bridge for GNOME (SelectionOwnerChanged workaround)
-lamco-portal = { version = "0.1", features = ["dbus-clipboard"] }
+lamco-portal = { version = "0.4", features = ["dbus-clipboard"] }
 
 # With ClipboardSink trait for lamco-clipboard-core integration
-lamco-portal = { version = "0.1", features = ["clipboard-sink"] }
+lamco-portal = { version = "0.4", features = ["clipboard-sink"] }
 ```
 
 | Feature | Description |
