@@ -134,8 +134,12 @@ The converter supports these RDP-compatible output formats:
 
 ```toml
 [dependencies]
-lamco-video = { version = "0.1", features = ["full"] }
+lamco-video = { version = "0.3", features = ["full"] }
 ```
+
+`lamco-video` tracks the `lamco-pipewire` line it re-exports: **0.3.x** pairs with
+the modern `lamco-pipewire` 0.6.x head, **0.2.x** with the low-floor 0.5.x line.
+See [`docs/COMPATIBILITY.md`](https://github.com/lamco-admin/lamco-wayland/blob/master/docs/COMPATIBILITY.md).
 
 ## Performance
 
@@ -153,7 +157,7 @@ Developed by [Lamco Development LLC](https://lamco.ai/open-source/lamco-wayland/
 ## Requirements
 
 - **Linux** with a Wayland compositor
-- **Rust 1.85+**
+- **Rust 1.87+** (edition 2024)
 
 ## Related Crates
 

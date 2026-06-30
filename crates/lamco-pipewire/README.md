@@ -14,7 +14,7 @@ High-performance PipeWire integration for Wayland screen capture with DMA-BUF su
 - **Multi-Monitor**: Concurrent handling of multiple monitor streams
 - **Format Negotiation**: Automatic format selection with fallbacks
 - **YUV Conversion**: Built-in NV12, I420, YUY2 to BGRA conversion
-- **Cursor Extraction**: Separate cursor tracking for remote desktop
+- **Cursor Extraction**: Separate cursor tracking — position and, since 0.6.0, the real cursor image (`CursorMeta::bitmap`)
 - **Damage Tracking**: Region-based change detection for efficient encoding
 - **Adaptive Bitrate**: Network-aware bitrate control for streaming
 - **Error Recovery**: Automatic reconnection and stream recovery
@@ -80,8 +80,31 @@ let manager = PipeWireManager::new(config)?;
 
 ```toml
 [dependencies]
-lamco-pipewire = { version = "0.1", features = ["full"] }
+lamco-pipewire = { version = "0.6", features = ["full"] }
 ```
+
+## Versions & compatibility
+
+`lamco-pipewire` ships **two parallel supported lines on the PipeWire/SPA 0.10
+bindings**, plus a legacy 0.9-era line. They differ mainly in their system
+**libpipewire floor** and their metadata internals:
+
+| Line | Latest | PipeWire/SPA bindings | Metadata internals | libpipewire floor | Cursor bitmap |
+|------|--------|-----------------------|--------------------|-------------------|---------------|
+| **0.6.x** (modern head) | **0.6.2** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** | ✅ |
+| **0.5.x** (low floor) | **0.5.1** | 0.10 | raw `libspa_sys` FFI | **0.3.33** | — |
+| 0.4.x (legacy) | 0.4.5 | 0.9 | raw `libspa_sys` FFI | 0.3.33 | — |
+
+- **New code → `0.6` (0.6.2):** safe metadata internals, real cursor pixels,
+  current deps; needs system **libpipewire ≥ 0.3.62** (present on every
+  currently-supported distro).
+- **Older/minimal environments → `0.5` (0.5.1):** same 0.10 bindings and the
+  **same DMA-BUF race fix**, with a lower floor (**libpipewire ≥ 0.3.33**).
+
+Both 0.5.1 and 0.6.2 contain the DMA-BUF mmap-cache cross-thread race fix; on
+0.5.0 / 0.6.0 / 0.6.1, update within your line. The two lines are not
+semver-compatible with each other — pin to one deliberately. Full detail:
+[`docs/COMPATIBILITY.md`](https://github.com/lamco-admin/lamco-wayland/blob/master/docs/COMPATIBILITY.md).
 
 ## Architecture
 
@@ -125,8 +148,8 @@ PipeWire's Rust bindings use `Rc<>` and `NonNull<>` internally, making them **no
 
 - **Linux** with a Wayland compositor
 - **PipeWire** installed and running
-- **PipeWire development libraries**: `libpipewire-0.3-dev` (Debian/Ubuntu) or `pipewire-devel` (Fedora)
-- **Rust 1.77+**
+- **PipeWire development libraries**: `libpipewire-0.3-dev` (Debian/Ubuntu) or `pipewire-devel` (Fedora) — **≥ 0.3.62** for the 0.6.x line, **≥ 0.3.33** for the 0.5.x line
+- **Rust 1.87+** (edition 2024)
 
 ## Platform Compatibility
 

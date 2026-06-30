@@ -238,7 +238,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Linux only (Wayland required)
 - Tested on GNOME, KDE Plasma, Sway
 
-[Unreleased]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-wayland-v0.2.4...HEAD
+[Unreleased]: https://github.com/lamco-admin/lamco-wayland/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/lamco-admin/lamco-wayland/compare/v0.6.1...v0.6.2
+[0.6.1]: https://github.com/lamco-admin/lamco-wayland/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/lamco-admin/lamco-wayland/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/lamco-admin/lamco-wayland/compare/v0.4.7...v0.5.0
+[0.4.7]: https://github.com/lamco-admin/lamco-wayland/compare/v0.4.6...v0.4.7
+[0.4.6]: https://github.com/lamco-admin/lamco-wayland/compare/v0.4.5...v0.4.6
+[0.4.5]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-wayland-v0.2.6...v0.4.5
 [0.2.4]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-wayland-v0.2.3...lamco-wayland-v0.2.4
 [0.2.3]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-wayland-v0.2.0...lamco-wayland-v0.2.3
 [0.2.0]: https://github.com/lamco-admin/lamco-wayland/compare/lamco-wayland-v0.1.1...lamco-wayland-v0.2.0
