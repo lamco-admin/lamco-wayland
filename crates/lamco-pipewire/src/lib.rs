@@ -279,7 +279,7 @@ pub use damage::{
 pub use error::{ErrorContext, ErrorType, PipeWireError, RecoveryAction, Result, RetryConfig, classify_error};
 // FFI utilities
 pub use ffi::{
-    DamageRegion as FfiDamageRegion, SpaDataType, calculate_buffer_size, calculate_stride, drm_fourcc,
+    DamageRegion as FfiDamageRegion, DataType, calculate_buffer_size, calculate_stride, drm_fourcc,
     get_bytes_per_pixel, spa_video_format_to_drm_fourcc,
 };
 // Frame types

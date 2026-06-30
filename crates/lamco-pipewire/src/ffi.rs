@@ -5,6 +5,7 @@
 //! needed for DMA-BUF handling and advanced features.
 
 // Re-export ref types from pipewire crate (not owned Box/Rc types)
+pub use libspa::buffer::{Data, DataType};
 pub use libspa::param::ParamType;
 pub use libspa::param::format::{MediaSubtype, MediaType};
 pub use libspa::param::video::{VideoFormat, VideoInfoRaw};
@@ -96,28 +97,6 @@ pub fn calculate_buffer_size(width: u32, height: u32, format: VideoFormat) -> us
         VideoFormat::YUY2 => stride * height as usize,
 
         _ => stride * height as usize,
-    }
-}
-
-/// SPA Data type for buffer negotiation
-#[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SpaDataType {
-    Invalid = 0,
-    MemPtr = 1,
-    MemFd = 2,
-    DmaBuf = 3,
-}
-
-impl SpaDataType {
-    pub fn from_u32(value: u32) -> Option<Self> {
-        match value {
-            0 => Some(Self::Invalid),
-            1 => Some(Self::MemPtr),
-            2 => Some(Self::MemFd),
-            3 => Some(Self::DmaBuf),
-            _ => None,
-        }
     }
 }
 

@@ -9,8 +9,9 @@ use std::time::SystemTime;
 
 use tokio::sync::Mutex;
 
+use libspa::buffer::DataType;
+
 use crate::error::{PipeWireError, Result};
-use crate::ffi::SpaDataType;
 
 /// Safe wrapper for raw pointer that implements Send+Sync
 pub(crate) struct SendPtr(*mut u8);
@@ -49,11 +50,11 @@ pub enum BufferType {
 }
 
 impl BufferType {
-    pub fn from_spa_type(spa_type: SpaDataType) -> Option<Self> {
+    pub fn from_spa_type(spa_type: DataType) -> Option<Self> {
         match spa_type {
-            SpaDataType::DmaBuf => Some(Self::DmaBuf),
-            SpaDataType::MemFd => Some(Self::MemFd),
-            SpaDataType::MemPtr => Some(Self::MemPtr),
+            DataType::DmaBuf => Some(Self::DmaBuf),
+            DataType::MemFd => Some(Self::MemFd),
+            DataType::MemPtr => Some(Self::MemPtr),
             _ => None,
         }
     }

@@ -1049,59 +1049,32 @@ fn create_stream_on_thread(
             // SAFETY: stream pointer is valid within this callback; pw_stream_get_time_n is RT-safe
             let stream_time = unsafe { crate::stream::get_stream_time(stream.as_raw_ptr()) };
 
-            // Use dequeue_raw_buffer to access both SPA metadata and pixel data.
-            // Buffer must be queued back when we're done — handled at scope exit.
-            // SAFETY: stream is valid within this callback; dequeue returns null on empty queue
-            let raw_buf = unsafe { stream.dequeue_raw_buffer() };
-            if raw_buf.is_null() {
-                debug!(
-                    "No buffer available (dequeue returned None) for stream {}",
-                    stream_id_for_callbacks
-                );
-                return;
-            }
-
-            // Scope guard: always queue the buffer back when we exit this block
-            struct BufferGuard<'a> {
-                stream: &'a pipewire::stream::Stream,
-                raw_buf: *mut pipewire::sys::pw_buffer,
-            }
-            impl Drop for BufferGuard<'_> {
-                fn drop(&mut self) {
-                    // SAFETY: raw_buf was obtained from dequeue and stream is still valid
-                    unsafe { self.stream.queue_raw_buffer(self.raw_buf); }
+            // Dequeue a buffer via the safe API. The returned `Buffer` requeues
+            // itself on drop, so no manual queue guard is needed. `None` means the
+            // stream's buffer queue is currently empty.
+            let mut buffer = match stream.dequeue_buffer() {
+                Some(buffer) => buffer,
+                None => {
+                    debug!(
+                        "No buffer available (dequeue returned None) for stream {}",
+                        stream_id_for_callbacks
+                    );
+                    return;
                 }
-            }
-            let _guard = BufferGuard { stream, raw_buf };
-
-            // SAFETY: raw_buf is non-null (checked above) and valid for this callback
-            let spa_buf: *mut libspa_sys::spa_buffer = unsafe { (*raw_buf).buffer };
-            if spa_buf.is_null() {
-                warn!("pw_buffer has null spa_buffer for stream {}", stream_id_for_callbacks);
-                return;
-            }
-
-            // SAFETY: spa_buf is non-null (checked above), valid for callback lifetime
-            let mut buffer_meta = unsafe { crate::meta::extract_buffer_meta(spa_buf) };
-
-            // SAFETY: spa_buf is non-null (checked above), n_datas and datas are valid struct fields
-            let (n_datas, datas_ptr) = unsafe {
-                ((*spa_buf).n_datas as usize, (*spa_buf).datas)
             };
 
-            // Debug: dump buffer data block details
-            if !datas_ptr.is_null() && n_datas > 0 {
-                // SAFETY: datas_ptr is non-null, n_datas matches the allocated array length
-                let datas_slice = unsafe {
-                    std::slice::from_raw_parts_mut(
-                        datas_ptr as *mut libspa::buffer::Data,
-                        n_datas,
-                    )
-                };
+            // Extract SPA metadata via the safe libspa wrappers. This borrows the
+            // buffer immutably and copies into owned fields, so the borrow is
+            // released before the data blocks are taken mutably below.
+            let mut buffer_meta = crate::meta::extract_buffer_meta(&buffer);
 
+            // Access the data blocks as a safe `&mut [Data]` (no raw pointer rebuild).
+            let datas_slice = buffer.datas_mut();
+            if !datas_slice.is_empty() {
                 trace!(
                     "Got buffer from stream {}: {} data blocks",
-                    stream_id_for_callbacks, n_datas
+                    stream_id_for_callbacks,
+                    datas_slice.len()
                 );
                 for (i, d) in datas_slice.iter_mut().enumerate() {
                     let has_data = d.data().is_some();
@@ -1512,7 +1485,10 @@ fn create_stream_on_thread(
                     warn!("No data in buffer for stream {}", stream_id_for_callbacks);
                 }
             } else {
-                warn!("No data blocks in buffer for stream {}", stream_id_for_callbacks);
+                // Reached for both a genuinely empty datas array and the rare anomaly
+                // of a pw_buffer with a null inner spa_buffer (which datas_mut() reports
+                // as empty). Either way the frame is skipped and the buffer requeued.
+                warn!("No data blocks in buffer (empty or malformed) for stream {}", stream_id_for_callbacks);
             }
         })
         .register()
