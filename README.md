@@ -123,7 +123,7 @@ cargo doc --no-deps --workspace --open
 
 ## About
 
-These libraries are extracted from the [Lamco RDP Server](https://lamco.ai) project but designed for general use. They work with any Wayland compositor and are not RDP-specific.
+These libraries are extracted from the [Lamco RDP Server](https://lamco.ai/products/lamco-rdp-server/) project but designed for general use. They work with any Wayland compositor and are not RDP-specific.
 
 Built with production-tested code from real-world remote desktop deployment.
 
@@ -145,4 +145,4 @@ Unless you explicitly state otherwise, any contribution intentionally submitted 
 - [Documentation](https://docs.rs/lamco-wayland)
 - [Crates.io](https://crates.io/crates/lamco-wayland)
 - [GitHub](https://github.com/lamco-admin/lamco-wayland)
-- [Lamco RDP Server](https://lamco.ai)
+- [Lamco RDP Server](https://lamco.ai/products/lamco-rdp-server/)
