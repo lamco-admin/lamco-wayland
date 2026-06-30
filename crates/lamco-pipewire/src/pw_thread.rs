@@ -103,6 +103,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime};
 
 use pipewire::context::ContextBox;
+use pipewire::loop_::Timeout;
 use pipewire::main_loop::MainLoopBox;
 use pipewire::properties::PropertiesBox;
 use pipewire::spa::param::video::VideoInfoRaw;
@@ -663,10 +664,10 @@ fn run_pipewire_main_loop(
         }
 
         // Run one iteration of PipeWire main loop
-        // Use non-blocking iterate (0ms timeout) to avoid frame timing jitter
+        // Use non-blocking poll (Timeout::None == 0ms) to avoid frame timing jitter
         // Then sleep based on expected frame timing for efficiency
         let loop_ref = main_loop.loop_();
-        let events_processed = loop_ref.iterate(Duration::from_millis(0));
+        let events_processed = loop_ref.iterate(Timeout::None);
 
         if loop_iterations.is_multiple_of(1000) {
             trace!(

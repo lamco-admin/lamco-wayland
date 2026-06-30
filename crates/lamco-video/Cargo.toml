@@ -3,7 +3,7 @@
 # PACKAGE IDENTITY
 # ============================================================================
 name = "lamco-video"
-version = "0.1.10"
+version = "0.2.0"
 
 # ============================================================================
 # PACKAGE CONFIGURATION (inherited from workspace)
@@ -116,7 +116,7 @@ needless_range_loop = "allow"
 # ============================================================================
 [dependencies]
 # PipeWire frame types (VideoFrame, PixelFormat, DamageRegion)
-lamco-pipewire = { path = "../lamco-pipewire", version = "0.4.4" }
+lamco-pipewire = { path = "../lamco-pipewire", version = "0.5.0" }
 
 # Async runtime
 tokio = { version = "1", features = ["sync", "rt", "time"] }
