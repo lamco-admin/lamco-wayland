@@ -5,6 +5,20 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-06-30
+
+### Fixed
+- **lamco-pipewire 0.6.2: fixed a cross-thread data race on the DMA-BUF mmap
+  cache.** With the `RT_PROCESS` stream flag, the `process()` callback runs on a
+  separate realtime data-loop thread (confirmed against the PipeWire 1.4.2
+  source), so the mmap cache it shared with the main-loop stream-destroy handler
+  via `Rc<RefCell<…>>` was reachable from two threads — undefined behavior. The
+  cache is now `Arc<Mutex<…>>` with a `Send`-justified pointer wrapper, so every
+  access is synchronized. No API or behavior change; per-frame mmap caching and
+  `DMA_BUF_IOCTL_SYNC` bracketing are unchanged. The defect is present in
+  0.5.0 / 0.6.0 / 0.6.1; backported to the 0.5.x line as 0.5.1.
+- meta-crate re-bundles lamco-pipewire 0.6.2.
+
 ## [0.6.1] - 2026-06-30
 
 ### Changed

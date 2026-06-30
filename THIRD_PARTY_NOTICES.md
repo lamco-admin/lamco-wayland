@@ -1244,7 +1244,7 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- lamco-pipewire 0.6.1
+- lamco-pipewire 0.6.2
 - lamco-portal 0.4.2
 
 ```
@@ -1277,7 +1277,7 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- lamco-wayland 0.6.1
+- lamco-wayland 0.6.2
 
 ```
 MIT License
