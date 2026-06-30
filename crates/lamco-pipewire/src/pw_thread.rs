@@ -118,8 +118,26 @@ use crate::format::PixelFormat;
 use crate::frame::{FrameFlags, VideoFrame};
 use crate::stream::{PwStreamState, StreamConfig, StreamStateEvent};
 
-/// DMA-BUF mmap cache: FD -> (mapped pointer, size)
-type DmaBufCache = std::rc::Rc<std::cell::RefCell<HashMap<RawFd, (NonNull<libc::c_void>, usize)>>>;
+/// A cached mmap base pointer for a DMA-BUF FD.
+///
+/// Wrapped so the cache can be shared between the PipeWire main-loop thread
+/// (which destroys streams and unmaps) and the realtime data-loop thread
+/// (which reads frames in `process()` under `RT_PROCESS`).
+#[derive(Clone, Copy)]
+struct CachedMmap(NonNull<libc::c_void>);
+
+// SAFETY: the wrapped pointer refers to a `MAP_SHARED` mapping, which is valid
+// across threads. Every access to the map holding it is serialized by the
+// `Mutex` in `DmaBufCache`, and the mapping is only `munmap`ped under that same
+// lock, so the pointer is never used after it has been unmapped.
+unsafe impl Send for CachedMmap {}
+
+/// DMA-BUF mmap cache: FD -> (mapped pointer, size).
+///
+/// `Arc<Mutex<…>>`, not `Rc<RefCell<…>>`: with `RT_PROCESS` the stream's
+/// `process()` callback runs on a separate realtime data-loop thread, so this
+/// cache is shared across threads and every access must be synchronized.
+type DmaBufCache = StdArc<parking_lot::Mutex<HashMap<RawFd, (CachedMmap, usize)>>>;
 
 /// Commands sent to the PipeWire thread
 pub enum PipeWireThreadCommand {
@@ -537,11 +555,10 @@ fn run_pipewire_main_loop(
     let mut streams: HashMap<u32, ManagedStream> = HashMap::new();
 
     // DMA-BUF mmap cache: Maps FD -> (ptr, size) to avoid remapping every frame
-    // Using Rc<RefCell<>> because we're on a single thread (PipeWire doesn't support multi-threading)
-    // This cache is shared with all stream process() callbacks
-    use std::cell::RefCell;
-    use std::rc::Rc;
-    let dmabuf_mmap_cache: DmaBufCache = Rc::new(RefCell::new(HashMap::new()));
+    // Arc<Mutex<>>: process() runs on a separate realtime data-loop thread under
+    // RT_PROCESS, while stream destroy runs on this main-loop thread, so the
+    // cache is shared across threads and access must be synchronized.
+    let dmabuf_mmap_cache: DmaBufCache = StdArc::new(parking_lot::Mutex::new(HashMap::new()));
 
     // Main event loop
     let mut loop_iterations = 0u64;
@@ -582,7 +599,7 @@ fn run_pipewire_main_loop(
                         config,
                         frame_tx.clone(),
                         state_event_tx.clone(),
-                        Rc::clone(&dmabuf_mmap_cache),
+                        StdArc::clone(&dmabuf_mmap_cache),
                     );
 
                     match result {
@@ -611,7 +628,7 @@ fn run_pipewire_main_loop(
                         // Note: We don't know which FDs belong to which stream, so we clear all
                         // Use try_borrow_mut to avoid panic if a process callback
                         // is currently borrowing the cache (reentrant PipeWire dispatch)
-                        let Ok(mut cache) = dmabuf_mmap_cache.try_borrow_mut() else {
+                        let Some(mut cache) = dmabuf_mmap_cache.try_lock() else {
                             warn!("DMA-BUF cache busy during stream destroy, skipping cleanup");
                             drop(managed_stream);
                             let _ = response_tx.send(Ok(()));
@@ -622,7 +639,7 @@ fn run_pipewire_main_loop(
                             // drain() ensures we process each entry exactly once.
                             unsafe {
                                 use nix::sys::mman::munmap;
-                                if let Err(e) = munmap(ptr, size) {
+                                if let Err(e) = munmap(ptr.0, size) {
                                     warn!("Failed to munmap DMA-BUF FD={}: {}", fd, e);
                                 }
                             }
@@ -788,7 +805,7 @@ fn mmap_dmabuf_to_vec(fd: std::os::fd::RawFd, size: usize, offset: usize, cache:
 
     use nix::sys::mman::{MapFlags, ProtFlags, mmap};
 
-    let mut cache = cache.borrow_mut();
+    let mut cache = cache.lock();
 
     let mapped_ptr_opt = if let Some(&(ptr, _sz)) = cache.get(&fd) {
         trace!("DMA-BUF FD={}: using cached mmap", fd);
@@ -816,9 +833,9 @@ fn mmap_dmabuf_to_vec(fd: std::os::fd::RawFd, size: usize, offset: usize, cache:
                         map_offset as i64,
                     ) {
                         Ok(ptr) => {
-                            cache.insert(fd, (ptr, map_size));
+                            cache.insert(fd, (CachedMmap(ptr), map_size));
                             info!("DMA-BUF mmap cached for FD={}", fd);
-                            Some(ptr)
+                            Some(CachedMmap(ptr))
                         }
                         Err(e) => {
                             warn!("Failed to mmap DMA-BUF FD={}: {}", fd, e);
@@ -860,7 +877,7 @@ fn mmap_dmabuf_to_vec(fd: std::os::fd::RawFd, size: usize, offset: usize, cache:
         // SAFETY: mapped_ptr is valid from successful mmap or cache.
         // Vec capacity is allocated before writing.
         let result = unsafe {
-            let src_ptr = (mapped_ptr.as_ptr() as *const u8).add(offset);
+            let src_ptr = (mapped_ptr.0.as_ptr() as *const u8).add(offset);
             let mut vec = Vec::with_capacity(size);
             std::ptr::copy_nonoverlapping(src_ptr, vec.as_mut_ptr(), size);
             vec.set_len(size);
@@ -935,7 +952,7 @@ fn create_stream_on_thread(
     // Clone frame_tx and dmabuf_cache for use in closures
     let frame_tx_for_process = frame_tx.clone();
     let stream_id_for_callbacks = stream_id;
-    let dmabuf_cache_for_process = std::rc::Rc::clone(&dmabuf_cache);
+    let dmabuf_cache_for_process = StdArc::clone(&dmabuf_cache);
 
     info!(
         " Registering stream {} callbacks (state_changed, param_changed, process)",
