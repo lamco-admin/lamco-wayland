@@ -8,7 +8,7 @@ stack). Each is distributed under the terms of the license shown below.
 
 ## Overview
 
-- MIT License: 127 crate(s)
+- MIT License: 128 crate(s)
 - Unicode License v3: 1 crate(s)
 
 ---
@@ -278,42 +278,6 @@ NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
 LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-```
-
----
-
-## MIT License
-
-Used by:
-- libc 0.2.178
-
-```
-Copyright (c) 2014-2020 The Rust Project Developers
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
 
 ```
 
@@ -1041,11 +1005,11 @@ DEALINGS IN THE SOFTWARE.
 ## MIT License
 
 Used by:
-- zbus 5.14.0
-- zbus_macros 5.14.0
-- zbus_names 4.3.1
-- zvariant 5.10.0
-- zvariant_derive 5.10.0
+- zbus 5.16.0
+- zbus_macros 5.16.0
+- zbus_names 4.3.2
+- zvariant 5.12.0
+- zvariant_derive 5.12.0
 
 ```
 Copyright (c) 2024 Zeeshan Ali Khan & zbus contributors
@@ -1105,6 +1069,42 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+```
+
+---
+
+## MIT License
+
+Used by:
+- libc 0.2.186
+
+```
+Copyright (c) The Rust Project Developers
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
 
 ```
 
@@ -1180,7 +1180,7 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- ashpd 0.13.7
+- ashpd 0.13.12
 
 ```
 MIT License
@@ -1244,8 +1244,8 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- lamco-pipewire 0.6.0
-- lamco-portal 0.4.1
+- lamco-pipewire 0.6.1
+- lamco-portal 0.4.2
 
 ```
 MIT License
@@ -1277,7 +1277,7 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- lamco-wayland 0.6.0
+- lamco-wayland 0.6.1
 
 ```
 MIT License
@@ -1461,7 +1461,7 @@ Used by:
 - wasi 0.11.1+wasi-snapshot-preview1
 - wit-bindgen 0.46.0
 - wit-bindgen 0.51.0
-- zvariant_utils 3.3.0
+- zvariant_utils 3.4.0
 
 ```
 Permission is hereby granted, free of charge, to any
@@ -1496,6 +1496,7 @@ DEALINGS IN THE SOFTWARE.
 
 Used by:
 - winnow 0.7.14
+- winnow 1.0.3
 
 ```
 Permission is hereby granted, free of charge, to any person obtaining
@@ -1556,7 +1557,7 @@ THE SOFTWARE.
 ## MIT License
 
 Used by:
-- nix 0.30.1
+- nix 0.31.3
 
 ```
 The MIT License (MIT)

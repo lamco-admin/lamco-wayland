@@ -5,6 +5,16 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-06-30
+
+### Changed
+- Dependency sweep — no API or behavior change:
+  - lamco-portal 0.4.2: `ashpd` 0.13.7 → 0.13.12; `zbus` resolves to 5.16.
+  - lamco-pipewire 0.6.1: `nix` 0.30 → 0.31 (the `mman` mmap/munmap API is
+    source-compatible — no code change required).
+- cargo-deny clean on the updated dependency tree. lamco-video is unchanged
+  (0.3.0) and is not republished.
+
 ## [0.6.0] - 2026-06-30
 
 ### Changed
