@@ -5,6 +5,20 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-07-07
+
+### Fixed
+- **lamco-pipewire 0.5.2: let the PipeWire server release a destroyed stream
+  before `DestroyStream` reports success** (backport of the 0.6.3 fix to the
+  0.5.x line). The command drain loop processes queued commands back-to-back with
+  no main-loop `iterate()` between them, so a `DestroyStream` immediately followed
+  by a `CreateStream` never let the server release the old node first — a
+  suspected contributor to a reconnect-volume zero-frame capture failure in
+  downstream consumers. The destroy handler now pumps the loop a bounded number of
+  times after teardown so the release is processed server-side before responding.
+  No API change. The 0.6.x line is fixed in 0.6.3.
+- meta-crate re-bundles lamco-pipewire 0.5.2.
+
 ## [0.5.1] - 2026-06-30
 
 ### Fixed
