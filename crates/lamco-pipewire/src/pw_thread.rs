@@ -624,30 +624,42 @@ fn run_pipewire_main_loop(
                     debug!("Destroying stream {}", stream_id);
 
                     if let Some(managed_stream) = streams.remove(&stream_id) {
-                        // Clean up any DMA-BUF mmaps associated with this stream
-                        // Note: We don't know which FDs belong to which stream, so we clear all
-                        // Use try_borrow_mut to avoid panic if a process callback
-                        // is currently borrowing the cache (reentrant PipeWire dispatch)
-                        let Some(mut cache) = dmabuf_mmap_cache.try_lock() else {
-                            warn!("DMA-BUF cache busy during stream destroy, skipping cleanup");
-                            drop(managed_stream);
-                            let _ = response_tx.send(Ok(()));
-                            continue;
-                        };
-                        for (fd, (ptr, size)) in cache.drain() {
-                            // SAFETY: ptr and size were recorded when mmap succeeded.
-                            // drain() ensures we process each entry exactly once.
-                            unsafe {
-                                use nix::sys::mman::munmap;
-                                if let Err(e) = munmap(ptr.0, size) {
-                                    warn!("Failed to munmap DMA-BUF FD={}: {}", fd, e);
+                        // Clean up any DMA-BUF mmaps associated with this stream.
+                        // try_lock avoids a panic if a process callback is currently
+                        // borrowing the cache (reentrant PipeWire dispatch).
+                        if let Some(mut cache) = dmabuf_mmap_cache.try_lock() {
+                            for (fd, (ptr, size)) in cache.drain() {
+                                // SAFETY: ptr and size were recorded when mmap succeeded.
+                                // drain() ensures we process each entry exactly once.
+                                unsafe {
+                                    use nix::sys::mman::munmap;
+                                    if let Err(e) = munmap(ptr.0, size) {
+                                        warn!("Failed to munmap DMA-BUF FD={}: {}", fd, e);
+                                    }
                                 }
+                                debug!("Unmapped DMA-BUF cache entry for FD={}", fd);
                             }
-                            debug!("Unmapped DMA-BUF cache entry for FD={}", fd);
+                        } else {
+                            warn!("DMA-BUF cache busy during stream destroy, skipping cleanup");
                         }
 
-                        // Stream is automatically dropped here
+                        // Stream is dropped here.
                         drop(managed_stream);
+
+                        // #57: the command drain loop (`while let Ok(command) =
+                        // command_rx.try_recv()`) processes queued commands
+                        // back-to-back with no `loop.iterate()` between them, so a
+                        // Destroy immediately followed by a Create never lets the
+                        // PipeWire server release the old node first. Pump the loop a
+                        // bounded number of times so the teardown is processed
+                        // server-side before we report success and the next command
+                        // (e.g. CreateStream) runs.
+                        let loop_ref = main_loop.loop_();
+                        for _ in 0..10 {
+                            loop_ref.iterate(Timeout::None);
+                            std::thread::sleep(Duration::from_millis(2));
+                        }
+
                         let _ = response_tx.send(Ok(()));
                         info!("Stream {} destroyed, DMA-BUF cache cleared", stream_id);
                     } else {
