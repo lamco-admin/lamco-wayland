@@ -13,8 +13,8 @@ target environment.
 
 | Line | `lamco-pipewire` | `lamco-wayland` (meta) | `lamco-video` | `lamco-portal` | PipeWire/SPA bindings | Metadata path | System libpipewire floor |
 |---|---|---|---|---|---|---|---|
-| **0.6.x — modern head** | **0.6.2** | **0.6.2** | **0.3.0** | **0.4.2** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** |
-| **0.5.x — low floor** | **0.5.1** | **0.5.1** | 0.2.0 | 0.4.1 | 0.10 | raw `libspa_sys` FFI | **0.3.33** |
+| **0.6.x — modern head** | **0.6.3** | **0.6.3** | **0.3.0** | **0.4.2** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** |
+| **0.5.x — low floor** | **0.5.2** | **0.5.2** | 0.2.0 | 0.4.1 | 0.10 | raw `libspa_sys` FFI | **0.3.33** |
 | 0.4.x — legacy (0.9) | 0.4.5 | 0.4.7 | 0.1.10 | 0.4.1 | 0.9 | raw `libspa_sys` FFI | 0.3.33 |
 
 MSRV for every current line is **Rust 1.87** (edition 2024). PipeWire 0.10 itself
@@ -22,7 +22,7 @@ only requires Rust 1.80; the 1.87 floor comes from the workspace, not the bindin
 
 ## Which line should I use?
 
-- **New code, or any currently-supported distribution → `0.6.x` (0.6.2).**
+- **New code, or any currently-supported distribution → `0.6.x` (0.6.3).**
   This is the maintained head. Metadata extraction runs entirely through
   libspa 0.10's **safe wrappers** (the `meta.rs` module is `unsafe`-free), it
   exposes the **real cursor image** (`CursorMeta::bitmap`), and it tracks the
@@ -31,8 +31,8 @@ only requires Rust 1.80; the 1.87 floor comes from the workspace, not the bindin
   **libpipewire ≥ 0.3.62** (released 2022 — present on every currently-supported
   Linux distribution).
 
-- **Older or minimal environments → `0.5.x` (0.5.1).**
-  Same PipeWire 0.10 bindings and the **same DMA-BUF race fix** as 0.6.2, but a
+- **Older or minimal environments → `0.5.x` (0.5.2).**
+  Same PipeWire 0.10 bindings and the **same DMA-BUF race fix** as 0.6.3, but a
   **lower system-library floor (libpipewire ≥ 0.3.33)** for environments that do
   not ship 0.3.62. Its metadata path uses raw `libspa_sys` FFI internally;
   behavior is functionally equivalent to 0.6.x minus the cursor-bitmap addition.
@@ -40,8 +40,10 @@ only requires Rust 1.80; the 1.87 floor comes from the workspace, not the bindin
 - **Still pinned to the PipeWire 0.9 bindings → `0.4.x` (0.4.5).**
   Legacy. No 0.10; kept available for consumers that have not yet migrated.
 
-Both **0.5.1** and **0.6.2** contain the DMA-BUF mmap-cache cross-thread race fix
-(see below). If you are on 0.5.0, 0.6.0, or 0.6.1, update within your line.
+Both **0.5.2** and **0.6.3** contain the DMA-BUF mmap-cache cross-thread race fix
+(see below) plus the **0.6.3 / 0.5.2 DestroyStream release-ordering fix** (the
+destroy handler now pumps the loop so the server releases a node before the next
+command runs; see CHANGELOG). If you are on an earlier patch, update within your line.
 
 ## What changed across the 0.10 program
 
@@ -89,6 +91,7 @@ See [`../CHANGELOG.md`](../CHANGELOG.md) for the complete per-version history.
 | **Cursor bitmap (real pixels, `CursorMeta::bitmap`)** | — | — | ✅ |
 | `unsafe`-free metadata module | — | — | ✅ |
 | DMA-BUF mmap-cache race fix | — | ✅ (0.5.1) | ✅ (0.6.2) |
+| DestroyStream release-ordering fix | — | ✅ (0.5.2) | ✅ (0.6.3) |
 
 ## Dependency floors by line
 

@@ -36,8 +36,8 @@ bindings**, plus a legacy 0.9-era line. The meta-crate version tracks the line:
 
 | Line | `lamco-wayland` | `lamco-pipewire` | `lamco-portal` | `lamco-video` | PipeWire bindings | libpipewire floor |
 |------|-----------------|------------------|----------------|---------------|-------------------|-------------------|
-| **0.6.x** (modern head) | **0.6.2** | 0.6.2 | 0.4.2 | 0.3.0 | 0.10 | **0.3.62** |
-| **0.5.x** (low floor) | **0.5.1** | 0.5.1 | 0.4.1 | 0.2.0 | 0.10 | **0.3.33** |
+| **0.6.x** (modern head) | **0.6.3** | 0.6.3 | 0.4.2 | 0.3.0 | 0.10 | **0.3.62** |
+| **0.5.x** (low floor) | **0.5.2** | 0.5.2 | 0.4.1 | 0.2.0 | 0.10 | **0.3.33** |
 | 0.4.x (legacy) | 0.4.7 | 0.4.5 | 0.4.1 | 0.1.10 | 0.9 | 0.3.33 |
 
 - **New code → `lamco-wayland = "0.6"`** — safe (`unsafe`-free) PipeWire metadata
@@ -46,7 +46,7 @@ bindings**, plus a legacy 0.9-era line. The meta-crate version tracks the line:
 - **Older/minimal environments → `lamco-wayland = "0.5"`** — same 0.10 bindings
   and the same DMA-BUF race fix, with a lower floor (**libpipewire ≥ 0.3.33**).
 
-Both 0.5.1 and 0.6.2 carry the DMA-BUF mmap-cache cross-thread race fix. MSRV is
+Both 0.5.2 and 0.6.3 carry the DMA-BUF mmap-cache cross-thread race fix. MSRV is
 **Rust 1.87** (edition 2024) on every current line. The 0.5 and 0.6 lines are not
 semver-compatible with each other — pin to one deliberately. Full detail:
 [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
