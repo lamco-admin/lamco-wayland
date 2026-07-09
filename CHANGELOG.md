@@ -5,6 +5,16 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] - 2026-07-08
+
+### Changed
+- **lamco-pipewire 0.5.3: bump `nix` 0.30 → 0.31** (features unchanged: `mman`
+  only). Aligns the 0.5.x maintenance line with the `nix` release already used by
+  the 0.6.x head, part of collapsing downstream dependency trees onto a single
+  `nix` version. No API or behavioral change; the PipeWire/SPA bindings and the
+  libpipewire floor (≥ 0.3.33) are unaffected.
+- meta-crate re-bundles lamco-pipewire 0.5.3.
+
 ## [0.5.2] - 2026-07-07
 
 ### Fixed
