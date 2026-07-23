@@ -5,6 +5,17 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.4] - 2026-07-23
+
+### Changed
+- **lamco-pipewire 0.6.4: quiet the empty-frame capture path.** On some
+  compositors a large fraction of PipeWire buffers arrive size-zero (skip /
+  heartbeat frames). The capture thread logged each at `debug` and then emitted a
+  second, misleadingly-worded "could not extract pixel data" line for the same
+  frame, so debug-level capture logs were dominated by normal empty frames. Both
+  are now `trace`. No API or behavioral change.
+- **lamco-wayland 0.6.4:** metacrate bump re-bundling lamco-pipewire 0.6.4.
+
 ## [0.6.3] - 2026-07-07
 
 ### Fixed
