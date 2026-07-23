@@ -1175,7 +1175,7 @@ fn create_stream_on_thread(
                         libspa::buffer::DataType::MemFd => {
                             if fd >= 0 {
                                 if size == 0 {
-                                    debug!("MemFd buffer: size=0 (empty/skip frame), ignoring");
+                                    trace!("MemFd buffer: size=0 (empty/skip frame), ignoring");
                                     None
                                 } else {
                                     trace!("MemFd buffer: manual mmap (FD={}, size={}, offset={})", fd, size, offset);
@@ -1220,7 +1220,7 @@ fn create_stream_on_thread(
                             };
                             if fd >= 0 {
                                 if size == 0 {
-                                    debug!("DMA-BUF buffer: size=0 (empty/skip frame), ignoring");
+                                    trace!("DMA-BUF buffer: size=0 (empty/skip frame), ignoring");
                                     None
                                 } else if config.dmabuf_passthrough {
                                     // Zero-copy path: dup the FD and send descriptor
@@ -1508,7 +1508,7 @@ fn create_stream_on_thread(
                             debug!("Frame sent to async runtime");
                         }
                     } else {
-                        debug!("Could not extract pixel data from buffer");
+                        trace!("No frame produced from buffer (empty/skip or unreadable)");
                     }
                 } else {
                     warn!("No data in buffer for stream {}", stream_id_for_callbacks);
