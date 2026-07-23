@@ -393,9 +393,16 @@ impl AudioCapture {
             .register()
             .context("Failed to register stream listener")?;
 
-        // Build format parameters for negotiation
+        // Build format parameters for negotiation. Pin the rate and channel
+        // count as well as the format: leaving them unset advertises "any", so
+        // PipeWire delivers its graph-native rate (typically 48 kHz) and ignores
+        // the requested sample_rate entirely. Setting the rate makes PipeWire
+        // insert a resampler, so a consumer asking for 44.1 kHz actually receives
+        // 44.1 kHz (needed for RDP clients whose endpoints resample poorly).
         let mut audio_info = spa::param::audio::AudioInfoRaw::new();
         audio_info.set_format(self.config.format.to_spa_format());
+        audio_info.set_rate(self.config.sample_rate);
+        audio_info.set_channels(self.config.channels);
 
         let obj = spa::pod::Object {
             type_: spa::utils::SpaTypes::ObjectParamFormat.as_raw(),
