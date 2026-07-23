@@ -5,6 +5,19 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.5] - 2026-07-23
+
+### Fixed
+- **lamco-pipewire 0.6.5: honor the requested audio capture rate and channel
+  count.** The capture code set only the sample format on the SPA `AudioInfoRaw`,
+  leaving rate and channels unset (advertised as "any"), so PipeWire ignored
+  `config.sample_rate` and always delivered its graph-native rate (typically
+  48 kHz). It now pins rate and channels, so a consumer asking for 44.1 kHz
+  receives a resampled 44.1 kHz stream. Fixes RDP desktop audio playing at the
+  wrong pitch and drifting progressively out of sync on clients whose endpoint is
+  44.1 kHz (e.g. mstsc), which were fed 48 kHz data. No API change.
+- **lamco-wayland 0.6.5:** metacrate bump re-bundling lamco-pipewire 0.6.5.
+
 ## [0.6.4] - 2026-07-23
 
 ### Changed
