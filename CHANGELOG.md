@@ -5,6 +5,22 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.6] - 2026-08-17
+
+### Fixed
+- **lamco-pipewire 0.6.6: log the formats we offered when a stream enters
+  error state.** PipeWire's own error only names the failure mode (e.g. "no
+  more input formats"), not what either side actually offered, making
+  format-negotiation failures opaque to debug from server logs alone. The
+  DmaBuf/SHM EnumFormat pods are now built up front (rather than
+  immediately before `stream.connect()`) so a summary of the formats and
+  DMA-BUF modifier we offered can be captured into the `state_changed`
+  listener and logged alongside the error message. We still can't see the
+  producer's own EnumFormat pods from the stream API — that would need
+  extra node/port introspection — so this covers only what we can see
+  locally. No API or behavioral change.
+- **lamco-wayland 0.6.6:** metacrate bump re-bundling lamco-pipewire 0.6.6.
+
 ## [0.6.5] - 2026-07-23
 
 ### Fixed
