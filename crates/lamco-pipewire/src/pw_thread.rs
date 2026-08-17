@@ -925,6 +925,11 @@ fn create_stream_on_thread(
     state_event_tx: std_mpsc::SyncSender<StreamStateEvent>,
     dmabuf_cache: DmaBufCache,
 ) -> Result<ManagedStream> {
+    // Built up front (pure function of config, no PipeWire object dependency)
+    // so the offered-format summary is available to capture into the
+    // state_changed listener below, for logging if negotiation fails.
+    let (param_pod_bytes, offered_formats_summary) = build_stream_parameters(&config)?;
+
     let stream_name = format!("lamco-pw-{}", stream_id);
     let node_target = node_id.to_string();
 
@@ -985,6 +990,7 @@ fn create_stream_on_thread(
     let proc_neg_modifier = StdArc::clone(&negotiated_modifier);
 
     let state_tx_for_callback = state_event_tx;
+    let offered_formats_summary_for_error = offered_formats_summary.clone();
 
     let _listener = stream
         .add_local_listener::<()>()
@@ -997,6 +1003,14 @@ fn create_stream_on_thread(
             match new_state {
                 StreamState::Error(ref err_msg) => {
                     error!("Stream {} entered error state: {}", stream_id_for_callbacks, err_msg);
+                    // PipeWire's own error only names the failure mode (e.g. "no more
+                    // input formats"), not what either side offered. We can't see the
+                    // producer's EnumFormat pods from the stream API, but at least our
+                    // own half of the negotiation is unambiguous in the log.
+                    error!(
+                        "Stream {} format negotiation failure — our {}",
+                        stream_id_for_callbacks, offered_formats_summary_for_error
+                    );
                 }
                 StreamState::Streaming => {
                     info!("Stream {} is now streaming", stream_id_for_callbacks);
@@ -1549,10 +1563,8 @@ fn create_stream_on_thread(
 
     info!("Stream {} callbacks registered successfully", stream_id);
 
-    // Build format negotiation parameters
-    // When DmaBuf is enabled, produces two EnumFormat pods: DmaBuf (MANDATORY) + SHM fallback
-    // PipeWire tries params in order and skips MANDATORY params it can't satisfy
-    let param_pod_bytes = build_stream_parameters(&config)?;
+    // Format negotiation parameters were built up front, before listener
+    // registration, so state_changed could capture the offered-format summary.
     let pods: Vec<&Pod> = param_pod_bytes
         .iter()
         .filter_map(|bytes| Pod::from_bytes(bytes))
@@ -1731,7 +1743,15 @@ fn request_buffer_metadata(stream: &pipewire::stream::Stream, stream_id: u32) ->
 /// so DmaBuf is preferred but SHM works as automatic fallback.
 ///
 /// When `config.use_dmabuf` is false, produces a single SHM-only param.
-fn build_stream_parameters(config: &StreamConfig) -> Result<Vec<Vec<u8>>> {
+///
+/// Returns the serialized pods alongside a short human-readable summary of
+/// what was offered (formats, dmabuf modifier). Negotiation failures are
+/// otherwise opaque — PipeWire's own error only names the failure mode
+/// ("no more input formats"), not what either side actually offered — so
+/// this summary is captured by the caller and logged if the stream enters
+/// `StreamState::Error`, at least making our own half of the negotiation
+/// unambiguous in the log.
+fn build_stream_parameters(config: &StreamConfig) -> Result<(Vec<Vec<u8>>, String)> {
     use std::io::Cursor;
 
     use pipewire::spa;
@@ -1898,7 +1918,15 @@ fn build_stream_parameters(config: &StreamConfig) -> Result<Vec<Vec<u8>>> {
         config.use_dmabuf
     );
 
-    Ok(param_pods)
+    let summary = if config.use_dmabuf {
+        "offered: [1] DmaBuf formats=[BGRx,BGRA,RGBx,RGBA] modifier=MOD_LINEAR(MANDATORY); \
+         [2] SHM formats=[BGRx,BGRA,RGBx,RGBA] (no modifier)"
+            .to_string()
+    } else {
+        "offered: [1] SHM formats=[BGRx,BGRA,RGBx,RGBA] (no modifier)".to_string()
+    };
+
+    Ok((param_pods, summary))
 }
 
 #[cfg(test)]
