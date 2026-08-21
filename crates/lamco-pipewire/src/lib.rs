@@ -205,6 +205,7 @@ pub mod format;
 pub mod frame;
 pub mod manager;
 pub mod meta;
+mod pw_lifecycle;
 pub mod pw_thread;
 pub mod stream;
 pub mod thread_comm;
@@ -307,7 +308,11 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Initialize PipeWire library
 ///
 /// This should be called once at application startup.
-/// It's safe to call multiple times.
+/// It's safe to call multiple times, including concurrently with the
+/// crate's own internal PipeWire users (video capture, audio capture,
+/// [`connection::PipeWireConnection`]) — every call site shares one
+/// process-wide reference count, so `deinit()` only tears PipeWire down once
+/// every caller, internal or external, has released it.
 ///
 /// # Examples
 ///
@@ -319,25 +324,32 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// }
 /// ```
 pub fn init() {
-    pipewire::init();
+    pw_lifecycle::acquire();
 }
 
 /// Deinitialize PipeWire library
 ///
 /// This should be called at application shutdown after all PipeWire
-/// resources have been dropped.
+/// resources *this caller* created have been dropped. It does not
+/// necessarily tear PipeWire down immediately: the real `pipewire::deinit()`
+/// only runs once every caller sharing the process-wide reference count
+/// (including this crate's own internal video/audio/connection threads) has
+/// released, so a still-running internal capture thread is never left
+/// holding a dangling reference to library state this call freed.
 ///
 /// # Safety
 ///
 /// This function is safe to call if:
 /// - [`init()`] was called previously
-/// - All PipeWire resources (managers, connections, streams) have been dropped
-/// - No other PipeWire operations are in progress
+/// - All PipeWire resources *this caller* created (managers, connections, streams) have been dropped
 pub fn deinit() {
-    // SAFETY: Caller ensures init() was called and all resources are dropped.
-    // The pipewire crate tracks initialization state internally.
+    // SAFETY: caller ensures init() was called and this caller's own
+    // resources are dropped, per this function's contract. Whether it's
+    // additionally safe to run the real pipewire::deinit() right now is
+    // determined by the shared reference count inside pw_lifecycle, not by
+    // this caller alone.
     unsafe {
-        pipewire::deinit();
+        pw_lifecycle::release();
     }
 }
 

@@ -511,8 +511,13 @@ fn run_pipewire_main_loop(
 ) {
     info!("PipeWire main loop thread started");
 
-    // Initialize PipeWire library
-    pipewire::init();
+    // Initialize PipeWire library. Shared, reference-counted acquire — see
+    // crate::pw_lifecycle: the audio capture thread (audio.rs) is an
+    // independent PipeWire user with its own init/deinit lifecycle, and
+    // pipewire::deinit() frees process-global library state, not per-caller
+    // state. Calling the real pipewire::init()/deinit() directly here would
+    // let audio's shutdown free memory this loop is still using.
+    crate::pw_lifecycle::acquire();
 
     // Create main loop
     let main_loop = match MainLoopBox::new(None) {
@@ -717,11 +722,17 @@ fn run_pipewire_main_loop(
     drop(context);
     drop(main_loop);
 
-    // SAFETY: pipewire::deinit() must be called once per pipewire::init().
-    // All PipeWire resources (streams, core, context, main_loop) have been dropped.
-    // This thread called init() and no other code uses this PipeWire instance.
+    // Release this thread's share of the process-wide PipeWire reference
+    // count (crate::pw_lifecycle). All of THIS thread's own resources
+    // (streams, core, context, main_loop) are dropped above; the real
+    // pipewire::deinit() only actually runs once every other independent
+    // PipeWire user in the process (audio capture, PipeWireConnection) has
+    // released too, so this thread finishing early can never free memory a
+    // still-running sibling thread depends on.
+    // SAFETY: this thread's own resources are dropped, per pw_lifecycle::
+    // release()'s contract.
     unsafe {
-        pipewire::deinit();
+        crate::pw_lifecycle::release();
     }
 
     info!("PipeWire thread exited");
