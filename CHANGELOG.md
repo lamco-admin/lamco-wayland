@@ -5,6 +5,33 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.7] - 2026-08-21
+
+### Fixed
+- **lamco-pipewire 0.5.7: fix a use-after-free on disconnect when audio and
+  video capture race their independent `pipewire::init()`/`deinit()` calls.**
+  `pipewire::deinit()` is process-global, not per-caller: it frees a shared
+  SPA plugin handle via `unref_handle()`. This crate has three independent
+  PipeWire users, each on its own thread with its own `init()`/`deinit()`
+  lifecycle assuming (incorrectly) that it's the sole user of the library:
+  the video capture loop (`pw_thread.rs`), the audio capture loop
+  (`audio.rs`), and `connection::PipeWireConnection`. When one finished
+  first and called `deinit()`, it could free library state a still-running
+  sibling's loop was built on top of; that sibling's next `Loop::iterate()`
+  call then dereferenced freed memory. Confirmed via valgrind on a real
+  reproduction (RDP client disconnect on GNOME/Mutter): the audio thread's
+  `deinit()` on capture-stop froze the exact allocation the still-running
+  video thread's `MainLoopBox` depended on, segfaulting inside
+  `Loop::enter()` on its next iteration. Same fix as lamco-pipewire 0.6.7
+  on the modern line.
+  All four call sites (the three above, plus the crate's own public
+  `init()`/`deinit()`) now share one process-wide reference count in a new
+  internal `pw_lifecycle` module: the real `pipewire::init()` runs only on
+  the first acquire, and the real `pipewire::deinit()` only on the last
+  release, so no caller's shutdown can free memory a sibling still needs.
+  No public API change.
+- **lamco-wayland 0.5.7:** metacrate bump re-bundling lamco-pipewire 0.5.7.
+
 ## [0.5.6] - 2026-08-17
 
 ### Fixed
