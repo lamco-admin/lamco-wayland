@@ -546,9 +546,7 @@ impl DamageDetector {
         let tile_pixels = (tile_size * tile_size) as u32;
         let diff_threshold_count = (tile_pixels as f32 * self.config.diff_threshold) as u32;
 
-        for flag in &mut self.tile_dirty {
-            *flag = false;
-        }
+        self.tile_dirty.fill(false);
 
         for ty in 0..self.tiles_y {
             for tx in 0..self.tiles_x {
