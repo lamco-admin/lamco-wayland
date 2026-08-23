@@ -148,9 +148,14 @@ should_implement_trait = "allow"
 # ============================================================================
 [dependencies]
 # PipeWire bindings
-# v0_3_33 enables PropertyFlags::DONT_FIXATE for DmaBuf modifier negotiation
-pipewire = { version = "0.10", features = ["v0_3_33"] }
-libspa = { version = "0.10", features = ["v0_3_33"] }
+# v0_3_33 enables PropertyFlags::DONT_FIXATE for DmaBuf modifier negotiation.
+# v0_3_65 enables VideoFlags::MODIFIER: compile-time bindgen gate only (no
+# runtime libpipewire/libspa version requirement, verified against
+# libspa-sys's build.rs: it's a #define for the vendored C shim, not a
+# pkg-config check), so this does NOT raise this crate's low-floor
+# libpipewire>=0.3.33 target.
+pipewire = { version = "0.10", features = ["v0_3_33", "v0_3_65"] }
+libspa = { version = "0.10", features = ["v0_3_33", "v0_3_65"] }
 libspa-sys = "0.10"
 
 # Async runtime
