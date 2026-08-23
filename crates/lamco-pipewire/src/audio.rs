@@ -468,27 +468,18 @@ pub fn spawn_audio_capture(
         .name("pipewire-audio".into())
         .spawn(move || {
             // Shared, reference-counted acquire — see crate::pw_lifecycle.
-            // pipewire::deinit() frees process-global library state, not
-            // per-caller state: this thread finishing before the video
-            // capture thread (pw_thread.rs) must not tear down memory that
-            // thread's still-running loop depends on. Confirmed via
-            // valgrind: exactly this call, racing pw_thread.rs's loop, was
-            // the proven cause of a SIGSEGV on disconnect.
+            // See crate::pw_lifecycle for why this goes through the shared
+            // acquire()/release() pair instead of pipewire::init() directly.
             crate::pw_lifecycle::acquire();
 
             if let Err(e) = capture.start_capture(node_id) {
                 error!("Audio capture error: {:#}", e);
             }
 
-            // Release this thread's share of the process-wide PipeWire
-            // reference count. Called after all of THIS thread's own
-            // resources are dropped; the real pipewire::deinit() only runs
-            // once every other independent PipeWire user has released too.
-            // SAFETY: this thread's own resources are dropped, per
-            // pw_lifecycle::release()'s contract.
-            unsafe {
-                crate::pw_lifecycle::release();
-            }
+            // Release this thread's share of the process-wide PipeWire user
+            // count. See crate::pw_lifecycle: this is bookkeeping only, it
+            // does not call the real pipewire::deinit().
+            crate::pw_lifecycle::release();
         })
         .context("Failed to spawn audio capture thread")?;
 
