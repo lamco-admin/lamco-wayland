@@ -5,6 +5,21 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.8] - 2026-08-22
+
+### Fixed
+- **lamco-pipewire 0.6.8: disambiguate `modifier=0x0` in the stream
+  negotiation log.** `DRM_FORMAT_MOD_LINEAR` is itself `0x0`, so when
+  negotiation fell back to an SHM pod (no DMA-BUF modifier at all), the log
+  line was indistinguishable from a genuine LINEAR DMA-BUF negotiation. The
+  log now checks `VideoInfoRaw::flags().contains(VideoFlags::MODIFIER)` and
+  reports "none (SHM pod selected)" when the modifier field isn't actually
+  present, instead of printing a bare `0x0`. Requires the new `v0_3_65`
+  libspa feature (compile-time bindgen gate only: does not raise the
+  runtime libpipewire floor past 0.3.62, see the dependency comment in
+  Cargo.toml). No API change.
+- **lamco-wayland 0.6.8:** metacrate bump re-bundling lamco-pipewire 0.6.8.
+
 ## [0.6.7] - 2026-08-21
 
 ### Fixed
