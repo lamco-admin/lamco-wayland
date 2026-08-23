@@ -151,11 +151,9 @@ impl PipeWireConnection {
         let thread_handle = thread::spawn(move || {
             debug!("PipeWire thread started");
 
-            // Initialize PipeWire library. Shared, reference-counted acquire
-            // — see crate::pw_lifecycle: pipewire::deinit() frees
-            // process-global library state, not per-caller state, so a
-            // sibling PipeWire user elsewhere in the process (video capture,
-            // audio capture) finishing first must not tear this down early.
+            // Initialize PipeWire library. Shared acquire — see
+            // crate::pw_lifecycle for why this goes through the shared
+            // acquire()/release() pair instead of pipewire::init() directly.
             crate::pw_lifecycle::acquire();
 
             // Create main loop
@@ -221,17 +219,10 @@ impl PipeWireConnection {
             drop(context);
             drop(main_loop);
 
-            // Release this thread's share of the process-wide PipeWire
-            // reference count (crate::pw_lifecycle). Called at thread exit
-            // after all of THIS thread's own resources (core, context,
-            // main_loop) have been dropped; the real pipewire::deinit() only
-            // runs once every other independent PipeWire user in the process
-            // has released too.
-            // SAFETY: this thread's own resources are dropped, per
-            // pw_lifecycle::release()'s contract.
-            unsafe {
-                crate::pw_lifecycle::release();
-            }
+            // Release this thread's share of the process-wide PipeWire user
+            // count. See crate::pw_lifecycle: this is bookkeeping only, it
+            // does not call the real pipewire::deinit().
+            crate::pw_lifecycle::release();
         });
 
         self.thread_handle = Some(thread_handle);
