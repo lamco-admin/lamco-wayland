@@ -151,8 +151,13 @@ should_implement_trait = "allow"
 # pipewire v0_3_33: PropertyFlags::DONT_FIXATE for DmaBuf modifier negotiation.
 # libspa  v0_3_62: typed MetaVideoTransform wrapper (additive; raises the
 #                  system-library floor to libpipewire 0.3.62, universally present).
+# libspa  v0_3_65: VideoFlags::MODIFIER: compile-time bindgen gate only (no
+#                  further runtime libpipewire/libspa version requirement,
+#                  verified against libspa-sys's build.rs: it's a #define for
+#                  the vendored C shim, not a pkg-config check), so this does
+#                  NOT raise this crate's floor past 0.3.62.
 pipewire = { version = "0.10", features = ["v0_3_33"] }
-libspa = { version = "0.10", features = ["v0_3_62"] }
+libspa = { version = "0.10", features = ["v0_3_62", "v0_3_65"] }
 libspa-sys = "0.10"
 
 # Async runtime
