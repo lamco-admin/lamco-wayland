@@ -106,7 +106,7 @@ use pipewire::context::ContextBox;
 use pipewire::loop_::Timeout;
 use pipewire::main_loop::MainLoopBox;
 use pipewire::properties::PropertiesBox;
-use pipewire::spa::param::video::VideoInfoRaw;
+use pipewire::spa::param::video::{VideoFlags, VideoInfoRaw};
 use pipewire::spa::param::{ParamType, format_utils};
 use pipewire::spa::pod::Pod;
 use pipewire::spa::utils::Direction;
@@ -1075,10 +1075,26 @@ fn create_stream_on_thread(
 
             let size = video_info.size();
             let format = video_info.format();
+            // `modifier()` reads the raw field regardless of whether a
+            // modifier property was actually present in the negotiated pod.
+            // `VideoInfoRaw` zero-initializes it, and 0 is ALSO the real
+            // value of DRM_FORMAT_MOD_LINEAR — so a bare `modifier=0x0` log
+            // is ambiguous between "SHM fallback pod selected, no modifier
+            // property at all" and "DmaBuf pod selected with MOD_LINEAR".
+            // The MODIFIER flag is what actually distinguishes them.
+            let has_modifier = video_info.flags().contains(VideoFlags::MODIFIER);
             let modifier = video_info.modifier();
             info!(
-                "Stream {} negotiated: {}x{} {:?} modifier={:#x}",
-                stream_id_for_callbacks, size.width, size.height, format, modifier
+                "Stream {} negotiated: {}x{} {:?} modifier={}",
+                stream_id_for_callbacks,
+                size.width,
+                size.height,
+                format,
+                if has_modifier {
+                    format!("{modifier:#x}")
+                } else {
+                    "none (SHM pod selected)".to_string()
+                }
             );
 
             // Update shared atomics so the process callback validates against
