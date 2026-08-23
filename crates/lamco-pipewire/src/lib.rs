@@ -330,27 +330,11 @@ pub fn init() {
 /// Deinitialize PipeWire library
 ///
 /// This should be called at application shutdown after all PipeWire
-/// resources *this caller* created have been dropped. It does not
-/// necessarily tear PipeWire down immediately: the real `pipewire::deinit()`
-/// only runs once every caller sharing the process-wide reference count
-/// (including this crate's own internal video/audio/connection threads) has
-/// released, so a still-running internal capture thread is never left
-/// holding a dangling reference to library state this call freed.
-///
-/// # Safety
-///
-/// This function is safe to call if:
-/// - [`init()`] was called previously
-/// - All PipeWire resources *this caller* created (managers, connections, streams) have been dropped
+/// resources *this caller* created have been dropped. See
+/// [`pw_lifecycle`] for why this is bookkeeping only — it does not call the
+/// real `pipewire::deinit()`.
 pub fn deinit() {
-    // SAFETY: caller ensures init() was called and this caller's own
-    // resources are dropped, per this function's contract. Whether it's
-    // additionally safe to run the real pipewire::deinit() right now is
-    // determined by the shared reference count inside pw_lifecycle, not by
-    // this caller alone.
-    unsafe {
-        pw_lifecycle::release();
-    }
+    pw_lifecycle::release();
 }
 
 /// Get supported video formats in order of preference

@@ -1,26 +1,43 @@
-//! Process-wide reference-counted `pipewire::init()` / `pipewire::deinit()`.
+//! Process-wide `pipewire::init()`, deliberately never `pipewire::deinit()`.
 //!
-//! `pipewire::deinit()` is not a per-caller operation: it calls the underlying
-//! `pw_deinit()`, which frees process-global SPA plugin handle state via
-//! `unref_handle()`. This crate has multiple independent PipeWire users, each
-//! on its own dedicated thread with its own lifetime (the video capture loop
-//! in [`crate::pw_thread`], the audio capture loop in [`crate::audio`], and
-//! [`crate::connection::PipeWireConnection`]) — none of which know about the
-//! others. If one finishes and calls `deinit()` while another is still
-//! running, the still-running one is left holding a dangling pointer into the
-//! handle memory the first one just freed, and its next `Loop::iterate()`
-//! call segfaults.
+//! This module originally reference-counted both `init()` and `deinit()`
+//! across this crate's independent PipeWire users (the video capture loop in
+//! [`crate::pw_thread`], the audio capture loop in [`crate::audio`], and
+//! [`crate::connection::PipeWireConnection`]), on the theory that the only
+//! hazard was `deinit()` racing a still-running sibling's use of the shared
+//! library state.
 //!
-//! Confirmed via valgrind on a real reproduction: the freed block and the
-//! block the crashing `Loop::enter()` read from were the same allocation —
-//! `unref_handle`/`pw_deinit`, called from an audio-capture thread's exit,
-//! freed the handle a still-running video-capture thread's loop was built on
-//! top of (`pw_load_spa_handle` → `pw_loop_new` → `pw_main_loop_new`).
+//! That was real (confirmed via valgrind: `unref_handle`/`pw_deinit`, called
+//! from a finishing audio-capture thread, freed the handle a still-running
+//! video-capture thread's loop was built on top of) and the refcounting
+//! fixed it. But a second, deeper hazard surfaced later: `pw_deinit()`
+//! reproducibly segfaults a PipeWire-internal worker thread (observed as
+//! `pipewire-main` in `dmesg`, not a thread this crate names or owns) even
+//! with exactly ONE registered user across the process's entire lifetime —
+//! confirmed by instrumenting [`acquire()`]/[`release()`] directly and
+//! observing a single clean `0 -> 1 -> 0` cycle immediately before the
+//! crash. A 300ms wall-clock delay before the call made no difference either
+//! (ruling out "the internal thread just needs more time"), while skipping
+//! the real `pw_deinit()` call entirely eliminated the crash outright, 2/2
+//! reconnects. The working theory: any stream created with the
+//! `RT_PROCESS` flag causes PipeWire's client library to spin up a
+//! process-lifetime realtime worker thread pool that `pw_deinit()` does not
+//! safely tear down or wait for, regardless of how carefully the caller's
+//! own stream/core/context/main-loop are sequenced beforehand.
 //!
-//! Every call site in this crate that starts or stops PipeWire must go
-//! through [`acquire()`] / [`release()`] instead of `pipewire::init()`
-//! / `pipewire::deinit()` directly, so the real `pipewire::deinit()` only
-//! ever runs once the last user has released it.
+//! The fix: never call the real `pipewire::deinit()` at all. This is a
+//! deliberate, common trade-off for long-running processes linking C
+//! libraries with fragile global teardown — the alternative (a graceful,
+//! ordered library-wide shutdown) isn't achievable through the public API
+//! surface this crate has, and every caller here is a server process that
+//! lives for the RDP session's lifetime, not a short-lived tool that
+//! init/deinits in a tight loop. The OS reclaims everything on process exit,
+//! which is what would happen on `deinit()`'s own failure path anyway.
+//!
+//! [`acquire()`]/[`release()`] stay paired (rather than just calling
+//! `pipewire::init()` once at startup) so the bookkeeping remains honest and
+//! auditable, and so a future fix upstream (or a safe teardown path PipeWire
+//! itself provides later) has a single call site to change.
 
 use std::sync::Mutex;
 
@@ -39,17 +56,11 @@ pub(crate) fn acquire() {
     *count += 1;
 }
 
-/// Unregister one PipeWire user. Calls the real `pipewire::deinit()` only
-/// when the last user releases (1 -> 0) — i.e. only when no other thread in
-/// this process still has PipeWire resources alive.
-///
-/// # Safety
-/// The caller must have previously called [`acquire()`] exactly once for
-/// this release, and must have already dropped all of its OWN PipeWire
-/// resources (streams, core, context, main loop). This function does not,
-/// and cannot, know whether a *different* caller's resources are still
-/// alive — that is exactly the property the shared count exists to track.
-pub(crate) unsafe fn release() {
+/// Unregister one PipeWire user. Deliberately never calls the real
+/// `pipewire::deinit()` — see the module doc for why. Bookkeeping-only:
+/// keeps the count honest for any future caller that needs to know whether
+/// it's the last PipeWire user in the process.
+pub(crate) fn release() {
     let mut count = PW_REFCOUNT.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     debug_assert!(
         *count > 0,
@@ -57,15 +68,6 @@ pub(crate) unsafe fn release() {
     );
     if *count > 0 {
         *count -= 1;
-    }
-    if *count == 0 {
-        // SAFETY: the shared count is 0, so this is the last remaining
-        // PipeWire user in the process — every other caller has already
-        // released. The caller's own resources are dropped per this
-        // function's own contract.
-        unsafe {
-            pipewire::deinit();
-        }
     }
 }
 
@@ -102,11 +104,7 @@ mod tests {
         // count is zero.
         acquire();
         acquire();
-        // SAFETY: matches the two acquire() calls above, no PipeWire
-        // resources were created by this test.
-        unsafe {
-            release();
-            release();
-        }
+        release();
+        release();
     }
 }
