@@ -352,6 +352,10 @@ impl PipeWireThreadManager {
                         height: raw.height.unwrap_or(height),
                         stride: raw.stride.unwrap_or(width * 4),
                         format: raw.format.unwrap_or(PixelFormat::BGRx),
+                        // This adapter carries exactly one upstream raw_rx channel with no
+                        // per-stream identity in RawFrameData, unlike the PipeWire-native
+                        // paths below which set this to their real node id. 0 here reflects
+                        // that there's only ever one stream on this path, not an omission.
                         monitor_index: 0,
                         buffer: crate::frame::FrameBuffer::Memory(Arc::new(raw.data)),
                         capture_time: SystemTime::now(),
@@ -1317,7 +1321,12 @@ fn create_stream_on_thread(
                                                 height: neg_h,
                                                 stride: chunk_stride as u32,
                                                 format: config.preferred_format.unwrap_or(PixelFormat::BGRx),
-                                                monitor_index: 0,
+                                                // PipeWire node id, same value already used for frame_id
+                                                // above. Consumers that need to relate a frame to a
+                                                // particular monitor's placement/offset should look up a
+                                                // matching node_id (e.g. in a portal StreamInfo list)
+                                                // rather than treating this as a 0-based array index.
+                                                monitor_index: stream_id_for_callbacks,
                                                 buffer: crate::frame::FrameBuffer::DmaBuf(desc),
                                                 capture_time: SystemTime::now(),
                                                 damage_regions,
@@ -1523,7 +1532,10 @@ fn create_stream_on_thread(
                             height: neg_h,
                             stride: actual_stride,
                             format: config.preferred_format.unwrap_or(PixelFormat::BGRx),
-                            monitor_index: 0,
+                            // PipeWire node id, same value already used for frame_id above.
+                            // See the DMA-BUF branch's identical field for why this isn't a
+                            // 0-based array index.
+                            monitor_index: stream_id_for_callbacks,
                             buffer: crate::frame::FrameBuffer::Memory(StdArc::new(pixel_data)),
                             capture_time: SystemTime::now(),
                             damage_regions,
