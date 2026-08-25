@@ -5,6 +5,41 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.9] - 2026-08-24
+
+### Fixed
+- **lamco-pipewire 0.6.9: never call the real `pipewire::deinit()`.**
+  `pw_lifecycle`'s `acquire()`/`release()` refcounting was already correct
+  (confirmed by instrumenting it directly: a clean single 0 → 1 → 0 cycle,
+  no premature or extra calls). The actual bug was `pw_deinit()` itself: it
+  reliably segfaulted a PipeWire-internal worker thread (`dmesg` showed
+  `pipewire-main`, a thread this crate neither names nor owns) even with
+  exactly one registered user across the process's entire lifetime.
+  Reproduced 5/5 on a real disconnect (portal-generic capture, audio-only
+  PipeWire usage). Skipping the real `deinit()` call entirely eliminates the
+  crash; `release()` now only decrements the bookkeeping counter. No public
+  API change (the `unsafe` dropped from `release()`'s signature was
+  crate-internal, `pub(crate)`).
+- **lamco-pipewire 0.6.9: populate `VideoFrame::monitor_index` with the real
+  PipeWire node id.** Every native construction site (DMA-BUF and MemFd) had
+  the stream's real node id in scope (already used for `frame_id`) but
+  hardcoded `monitor_index` to 0 regardless of which stream produced the
+  frame, so a consumer capturing multiple monitors as separate streams had
+  no way to tell them apart. The direct-frame-adapter path (single raw_rx
+  channel, no per-stream identity) is unaffected and correctly stays at 0.
+- **lamco-pipewire 0.6.9: honor `SPA_CHUNK_FLAG_CORRUPTED` on captured
+  buffers.** `FrameFlags::CORRUPTED` and `VideoFrame::is_valid()` already
+  existed and are already consumed downstream (`lamco-video`'s converter),
+  but nothing ever set the flag from the buffer's real chunk flags. A
+  corrupted chunk's other metadata (notably `SPA_META_VideoDamage`) can be
+  stale data left in a recycled buffer slot rather than a fresh claim, per
+  upstream guidance from a GNOME Mutter maintainer on
+  [mutter#3903](https://gitlab.gnome.org/GNOME/mutter/-/issues/3903).
+  Frames are still forwarded flagged, not dropped here; `is_valid()`
+  downstream decides. No API change.
+- **lamco-wayland 0.6.9:** metacrate bump re-bundling the three lamco-pipewire
+  fixes above.
+
 ## [0.6.8] - 2026-08-22
 
 ### Fixed
