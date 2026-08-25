@@ -1161,12 +1161,25 @@ fn create_stream_on_thread(
                     let offset = chunk.offset() as usize;
                     let chunk_stride = chunk.stride();
                     let data_type = data.type_();
+                    let chunk_corrupted = chunk.flags().contains(libspa::buffer::ChunkFlags::CORRUPTED);
 
                     // Record chunk-level signals in metadata for downstream consumers.
                     // Negative stride signals bottom-up buffer (GL coordinate convention).
                     // Buffer type affects which compositor code path produced the data.
                     buffer_meta.chunk_stride = chunk_stride;
                     buffer_meta.buffer_type = data_type.as_raw();
+
+                    if chunk_corrupted {
+                        // Producer marked this chunk corrupted (SPA_CHUNK_FLAG_CORRUPTED).
+                        // Any other metadata on it, notably SPA_META_VideoDamage, may be
+                        // stale data left in a recycled buffer slot rather than a fresh
+                        // claim, so it must not be trusted. Still forwarded downstream
+                        // (flagged, not dropped here) so callers decide via is_valid().
+                        warn!(
+                            "Stream {}: buffer marked SPA_CHUNK_FLAG_CORRUPTED, forwarding flagged",
+                            stream_id_for_callbacks
+                        );
+                    }
 
                     // Extract pixel data based on buffer type
                     let fd = data.fd();
@@ -1311,6 +1324,9 @@ fn create_stream_on_thread(
 
                                             let mut flags = crate::frame::FrameFlags::new();
                                             flags.set_dmabuf();
+                                            if chunk_corrupted {
+                                                flags.set_corrupted();
+                                            }
 
                                             let frame = VideoFrame {
                                                 frame_id: stream_id_for_callbacks as u64,
@@ -1523,6 +1539,11 @@ fn create_stream_on_thread(
                             ))
                             .collect();
 
+                        let mut flags = FrameFlags::new();
+                        if chunk_corrupted {
+                            flags.set_corrupted();
+                        }
+
                         let frame = VideoFrame {
                             frame_id: stream_id_for_callbacks as u64,
                             pts,
@@ -1540,7 +1561,7 @@ fn create_stream_on_thread(
                             capture_time: SystemTime::now(),
                             damage_regions,
                             meta: buffer_meta.clone(),
-                            flags: FrameFlags::new(),
+                            flags,
                         };
 
                         // Send frame to async runtime
