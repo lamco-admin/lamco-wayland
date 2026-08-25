@@ -330,9 +330,10 @@ pub fn init() {
 /// Deinitialize PipeWire library
 ///
 /// This should be called at application shutdown after all PipeWire
-/// resources *this caller* created have been dropped. See
-/// [`pw_lifecycle`] for why this is bookkeeping only — it does not call the
-/// real `pipewire::deinit()`.
+/// resources *this caller* created have been dropped. This is bookkeeping
+/// only — it does not call the real `pipewire::deinit()`, which reliably
+/// segfaults a PipeWire-internal worker thread even with a single
+/// registered caller across the process's entire lifetime.
 pub fn deinit() {
     pw_lifecycle::release();
 }
