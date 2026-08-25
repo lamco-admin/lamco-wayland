@@ -5,6 +5,32 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.9] - 2026-08-24
+
+### Fixed
+- **lamco-pipewire 0.5.9: never call the real `pipewire::deinit()`.** Same
+  fix as lamco-pipewire 0.6.9 on the modern line. `pw_lifecycle`'s
+  `acquire()`/`release()` refcounting was already correct; the actual bug
+  was `pw_deinit()` itself, which reliably segfaulted a PipeWire-internal
+  worker thread even with exactly one registered user across the process's
+  entire lifetime (reproduced 5/5 on a real disconnect). `release()` now
+  only decrements the bookkeeping counter. No public API change.
+- **lamco-pipewire 0.5.9: populate `VideoFrame::monitor_index` with the
+  real PipeWire node id.** Same fix as 0.6.9. Every native construction
+  site had the stream's real node id in scope but hardcoded
+  `monitor_index` to 0, so a consumer capturing multiple monitors as
+  separate streams had no way to tell them apart.
+- **lamco-pipewire 0.5.9: honor `SPA_CHUNK_FLAG_CORRUPTED` on captured
+  buffers.** Same fix as 0.6.9. `FrameFlags::CORRUPTED` and
+  `VideoFrame::is_valid()` already existed and are already consumed
+  downstream, but nothing ever set the flag from the buffer's real chunk
+  flags. Per upstream guidance from a GNOME Mutter maintainer on
+  [mutter#3903](https://gitlab.gnome.org/GNOME/mutter/-/issues/3903).
+  Frames are still forwarded flagged, not dropped; `is_valid()` downstream
+  decides. No API change.
+- **lamco-wayland 0.5.9:** metacrate bump re-bundling the three
+  lamco-pipewire fixes above.
+
 ## [0.5.8] - 2026-08-22
 
 ### Fixed
