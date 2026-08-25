@@ -91,21 +91,22 @@ bindings**, plus a legacy 0.9-era line. They differ mainly in their system
 
 | Line | Latest | PipeWire/SPA bindings | Metadata internals | libpipewire floor | Cursor bitmap |
 |------|--------|-----------------------|--------------------|-------------------|---------------|
-| **0.6.x** (modern head) | **0.6.8** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** | ✅ |
-| **0.5.x** (low floor) | **0.5.8** | 0.10 | raw `libspa_sys` FFI | **0.3.33** | — |
+| **0.6.x** (modern head) | **0.6.9** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** | ✅ |
+| **0.5.x** (low floor) | **0.5.9** | 0.10 | raw `libspa_sys` FFI | **0.3.33** | — |
 | 0.4.x (legacy) | 0.4.5 | 0.9 | raw `libspa_sys` FFI | 0.3.33 | — |
 
-- **New code → `0.6` (0.6.8):** safe metadata internals, real cursor pixels,
+- **New code → `0.6` (0.6.9):** safe metadata internals, real cursor pixels,
   current deps; needs system **libpipewire ≥ 0.3.62** (present on every
   currently-supported distro).
-- **Older/minimal environments → `0.5` (0.5.8):** same 0.10 bindings and the
+- **Older/minimal environments → `0.5` (0.5.9):** same 0.10 bindings and the
   **same DMA-BUF race fix**, with a lower floor (**libpipewire ≥ 0.3.33**). This
   is the 0.5.x maintenance line.
 
 Both lines contain the DMA-BUF mmap-cache cross-thread race fix, the
-DestroyStream release-ordering fix, the `pw_lifecycle` init/deinit
-reference-counting fix, and the disambiguated `modifier=0x0` negotiation log;
-on earlier patches, update within your line.
+DestroyStream release-ordering fix, the `pw_lifecycle` init-only lifecycle
+fix (deinit is never called), the real-node-id `monitor_index` fix, the
+`SPA_CHUNK_FLAG_CORRUPTED` flag fix, and the disambiguated `modifier=0x0`
+negotiation log; on earlier patches, update within your line.
 The two lines are not semver-compatible with each other — pin to one deliberately.
 Full detail:
 [`docs/COMPATIBILITY.md`](https://github.com/lamco-admin/lamco-wayland/blob/master/docs/COMPATIBILITY.md).

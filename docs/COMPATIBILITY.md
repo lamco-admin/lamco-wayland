@@ -13,8 +13,8 @@ target environment.
 
 | Line | `lamco-pipewire` | `lamco-wayland` (meta) | `lamco-video` | `lamco-portal` | PipeWire/SPA bindings | Metadata path | System libpipewire floor |
 |---|---|---|---|---|---|---|---|
-| **0.6.x — modern head** | **0.6.8** | **0.6.8** | **0.3.0** | **0.4.2** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** |
-| **0.5.x — low floor** | **0.5.8** | **0.5.8** | 0.2.0 | 0.4.1 | 0.10 | raw `libspa_sys` FFI | **0.3.33** |
+| **0.6.x — modern head** | **0.6.9** | **0.6.9** | **0.3.0** | **0.4.2** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** |
+| **0.5.x — low floor** | **0.5.9** | **0.5.9** | 0.2.0 | 0.4.1 | 0.10 | raw `libspa_sys` FFI | **0.3.33** |
 | 0.4.x — legacy (0.9) | 0.4.5 | 0.4.7 | 0.1.10 | 0.4.1 | 0.9 | raw `libspa_sys` FFI | 0.3.33 |
 
 MSRV for every current line is **Rust 1.87** (edition 2024). PipeWire 0.10 itself
@@ -22,7 +22,7 @@ only requires Rust 1.80; the 1.87 floor comes from the workspace, not the bindin
 
 ## Which line should I use?
 
-- **New code, or any currently-supported distribution → `0.6.x` (0.6.8).**
+- **New code, or any currently-supported distribution → `0.6.x` (0.6.9).**
   This is the maintained head. Metadata extraction runs entirely through
   libspa 0.10's **safe wrappers** (the `meta.rs` module is `unsafe`-free), it
   exposes the **real cursor image** (`CursorMeta::bitmap`), and it tracks the
@@ -31,7 +31,7 @@ only requires Rust 1.80; the 1.87 floor comes from the workspace, not the bindin
   **libpipewire ≥ 0.3.62** (released 2022 — present on every currently-supported
   Linux distribution).
 
-- **Older or minimal environments → `0.5.x` (0.5.8).**
+- **Older or minimal environments → `0.5.x` (0.5.9).**
   Same PipeWire 0.10 bindings and the **same DMA-BUF race fix** as 0.6.x, but a
   **lower system-library floor (libpipewire ≥ 0.3.33)** for environments that do
   not ship 0.3.62. Its metadata path uses raw `libspa_sys` FFI internally;
@@ -41,10 +41,12 @@ only requires Rust 1.80; the 1.87 floor comes from the workspace, not the bindin
   Legacy. No 0.10; kept available for consumers that have not yet migrated.
 
 Both lines contain the DMA-BUF mmap-cache cross-thread race fix, the
-DestroyStream release-ordering fix, the `pw_lifecycle` init/deinit
-reference-counting fix, and the disambiguated `modifier=0x0` negotiation log
-(see CHANGELOG for the complete per-version history). If you are on an
-earlier patch, update within your line.
+DestroyStream release-ordering fix, the `pw_lifecycle` init-only lifecycle
+fix (deinit is never called — it reliably segfaulted a PipeWire-internal
+worker thread), the real-node-id `monitor_index` fix, the
+`SPA_CHUNK_FLAG_CORRUPTED` flag fix, and the disambiguated `modifier=0x0`
+negotiation log (see CHANGELOG for the complete per-version history). If you
+are on an earlier patch, update within your line.
 
 ## What changed across the 0.10 program
 
