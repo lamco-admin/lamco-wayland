@@ -197,6 +197,10 @@ impl FrameFlags {
         self.bits & Self::CORRUPTED != 0
     }
 
+    pub fn set_corrupted(&mut self) {
+        self.bits |= Self::CORRUPTED;
+    }
+
     pub fn is_incomplete(&self) -> bool {
         self.bits & Self::INCOMPLETE != 0
     }
