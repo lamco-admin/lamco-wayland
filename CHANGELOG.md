@@ -5,6 +5,13 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.11] - 2026-08-26
+
+### Added
+- **BREAKING**: `lamco-portal` 0.4.3's `StreamInfo::mapping_id` field
+  (re-exported here via `lamco_wayland::portal`). See lamco-portal's own
+  changelog. `lamco-pipewire` is unaffected and stays at 0.6.10.
+
 ## [0.6.10] - 2026-08-26
 
 ### Changed
