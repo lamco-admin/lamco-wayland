@@ -5,6 +5,19 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.10] - 2026-08-26
+
+### Changed
+- **Stream timing now goes through pipewire-rs's own safe `Stream::time()`**
+  (added in pipewire-rs 0.10.0 via upstream MR !268) instead of an in-crate
+  unsafe wrapper around raw `pw_stream_get_time_n()`. No change to this
+  crate's own public `StreamTime` / `get_stream_time` surface; downstream
+  consumers are unaffected. Enables the `v0_3_57` feature on the `pipewire`
+  dependency (cascades to `v0_3_50`, which `Stream::time()` needs internally
+  to reach the `_n` variant and to expose `buffered`/`queued_buffers`/
+  `avail_buffers`); does not raise this crate's documented libpipewire floor,
+  since 0.3.62 already exceeds 0.3.57.
+
 ## [0.4.5] - 2026-06-14
 
 ### Fixed

@@ -250,42 +250,23 @@ impl StreamTime {
     }
 }
 
-/// Query the current stream time via `pw_stream_get_time_n()`.
+/// Query the current stream time via the safe `Stream::time()` wrapper
+/// (pipewire-rs !268, merged in 0.10.0) around `pw_stream_get_time_n()`.
 ///
 /// RT-safe. Can be called from the process callback without blocking.
-/// Returns `None` if the call fails (stream not connected or invalid pointer).
-///
-/// # Safety
-///
-/// The raw stream pointer must be valid and the stream must not have been destroyed.
-/// This is guaranteed when called from within a stream callback or while the
-/// PipeWire main loop is locked.
-pub(crate) unsafe fn get_stream_time(raw_stream: *mut pipewire::sys::pw_stream) -> Option<StreamTime> {
-    let mut time = std::mem::MaybeUninit::<pipewire::sys::pw_time>::uninit();
-    // SAFETY: raw_stream is valid (caller guarantee), pw_time is POD with no
-    // invariants, and pw_stream_get_time_n is documented RT-safe.
-    let ret = unsafe {
-        pipewire::sys::pw_stream_get_time_n(
-            raw_stream,
-            time.as_mut_ptr(),
-            std::mem::size_of::<pipewire::sys::pw_time>(),
-        )
-    };
-    if ret < 0 {
-        return None;
-    }
-    // SAFETY: pw_stream_get_time_n returned success (>= 0), so time is initialized.
-    let t = unsafe { time.assume_init() };
+/// Returns `None` if the call fails (stream not connected).
+pub(crate) fn get_stream_time(stream: &pipewire::stream::Stream) -> Option<StreamTime> {
+    let t = stream.time().ok()?;
     Some(StreamTime {
-        now_nsec: t.now,
-        rate_num: t.rate.num,
-        rate_denom: t.rate.denom,
-        ticks: t.ticks,
-        delay: t.delay,
-        queued_bytes: t.queued,
-        buffered: t.buffered,
-        queued_buffers: t.queued_buffers,
-        avail_buffers: t.avail_buffers,
+        now_nsec: t.now(),
+        rate_num: t.rate().num,
+        rate_denom: t.rate().denom,
+        ticks: t.ticks(),
+        delay: t.delay(),
+        queued_bytes: t.queued(),
+        buffered: t.buffered(),
+        queued_buffers: t.queued_buffers(),
+        avail_buffers: t.avail_buffers(),
     })
 }
 
