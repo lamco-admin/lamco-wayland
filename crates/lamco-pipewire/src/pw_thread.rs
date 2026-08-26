@@ -1109,8 +1109,7 @@ fn create_stream_on_thread(
             trace!("process() callback fired for stream {}", stream_id_for_callbacks);
 
             // Capture stream timing before touching buffers (RT-safe)
-            // SAFETY: stream pointer is valid within this callback; pw_stream_get_time_n is RT-safe
-            let stream_time = unsafe { crate::stream::get_stream_time(stream.as_raw_ptr()) };
+            let stream_time = crate::stream::get_stream_time(stream);
 
             // Use dequeue_raw_buffer to access both SPA metadata and pixel data.
             // Buffer must be queued back when we're done — handled at scope exit.

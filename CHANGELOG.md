@@ -5,6 +5,14 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.10] - 2026-08-26
+
+### Changed
+- **lamco-pipewire 0.5.10:** stream timing now goes through pipewire-rs's own
+  safe `Stream::time()` (pipewire-rs 0.10.0, upstream MR !268) instead of an
+  in-crate unsafe wrapper around raw `pw_stream_get_time_n()`. No change to
+  the public `StreamTime` surface re-exported here.
+
 ## [0.5.9] - 2026-08-24
 
 ### Fixed
