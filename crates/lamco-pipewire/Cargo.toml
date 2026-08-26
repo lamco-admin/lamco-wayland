@@ -3,7 +3,7 @@
 # PACKAGE IDENTITY
 # ============================================================================
 name = "lamco-pipewire"
-version = "0.6.9"
+version = "0.6.10"
 
 # ============================================================================
 # PACKAGE CONFIGURATION (inherited from workspace)
@@ -149,6 +149,12 @@ should_implement_trait = "allow"
 [dependencies]
 # PipeWire bindings
 # pipewire v0_3_33: PropertyFlags::DONT_FIXATE for DmaBuf modifier negotiation.
+# pipewire v0_3_57: unlocks Stream::time()'s pw_stream_get_time_n() path plus
+#                  Time::buffered()/queued_buffers()/avail_buffers(); highest
+#                  pipewire-crate-defined flag at or under this crate's
+#                  documented 0.3.62 floor (no exact v0_3_62 flag exists on
+#                  the `pipewire` crate; that name is libspa's own, below).
+#                  Does not raise the floor: 0.3.62 already exceeds 0.3.57.
 # libspa  v0_3_62: typed MetaVideoTransform wrapper (additive; raises the
 #                  system-library floor to libpipewire 0.3.62, universally present).
 # libspa  v0_3_65: VideoFlags::MODIFIER: compile-time bindgen gate only (no
@@ -156,7 +162,7 @@ should_implement_trait = "allow"
 #                  verified against libspa-sys's build.rs: it's a #define for
 #                  the vendored C shim, not a pkg-config check), so this does
 #                  NOT raise this crate's floor past 0.3.62.
-pipewire = { version = "0.10", features = ["v0_3_33"] }
+pipewire = { version = "0.10", features = ["v0_3_33", "v0_3_57"] }
 libspa = { version = "0.10", features = ["v0_3_62", "v0_3_65"] }
 libspa-sys = "0.10"
 

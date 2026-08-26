@@ -1109,8 +1109,7 @@ fn create_stream_on_thread(
             trace!("process() callback fired for stream {}", stream_id_for_callbacks);
 
             // Capture stream timing before touching buffers (RT-safe)
-            // SAFETY: stream pointer is valid within this callback; pw_stream_get_time_n is RT-safe
-            let stream_time = unsafe { crate::stream::get_stream_time(stream.as_raw_ptr()) };
+            let stream_time = crate::stream::get_stream_time(stream);
 
             // Dequeue a buffer via the safe API. The returned `Buffer` requeues
             // itself on drop, so no manual queue guard is needed. `None` means the
