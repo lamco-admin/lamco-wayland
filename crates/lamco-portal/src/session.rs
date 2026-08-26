@@ -20,6 +20,13 @@ pub struct StreamInfo {
 
     /// Source type (monitor, window, etc.)
     pub source_type: SourceType,
+
+    /// Correlates this stream to the EIS absolute-pointer/touch device for
+    /// the same monitor, when the portal backend supports it (ScreenCast
+    /// portal interface >= 5). Needed to target input at the correct
+    /// monitor in a multi-monitor RemoteDesktop session; `None` on backends
+    /// that don't provide it.
+    pub mapping_id: Option<String>,
 }
 
 /// Source type for streams
@@ -188,6 +195,7 @@ mod tests {
             position: (0, 0),
             size: (1920, 1080),
             source_type: SourceType::Monitor,
+            mapping_id: None,
         };
 
         assert_eq!(stream.node_id, 42);

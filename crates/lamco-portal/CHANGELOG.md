@@ -5,6 +5,16 @@ All notable changes to lamco-portal will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2026-08-26
+
+### Added
+- **BREAKING**: `StreamInfo` gained a `mapping_id: Option<String>` field,
+  populated from ashpd's `Stream::mapping_id()` (ScreenCast portal interface
+  >= 5, already present in the pinned `^0.13.7`). Correlates a stream to its
+  EIS absolute-pointer/touch device for the same monitor. `None` on portal
+  backends that don't provide it. Existing struct-literal construction of
+  `StreamInfo` needs the new field added (`mapping_id: None` if unused).
+
 ## [0.3.4] - 2026-03-15
 
 ### Changed
