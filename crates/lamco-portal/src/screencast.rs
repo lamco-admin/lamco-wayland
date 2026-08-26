@@ -72,6 +72,7 @@ impl ScreenCastManager {
                         size.1.max(0).try_into().unwrap_or(0),
                     ),
                     source_type: super::session::SourceType::Monitor,
+                    mapping_id: stream.mapping_id().map(str::to_owned),
                 }
             })
             .collect();

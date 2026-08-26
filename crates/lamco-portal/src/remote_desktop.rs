@@ -127,10 +127,11 @@ impl RemoteDesktopManager {
                 let node_id = stream.pipe_wire_node_id();
                 let size = stream.size().unwrap_or((0, 0));
                 let position = stream.position().unwrap_or((0, 0));
+                let mapping_id = stream.mapping_id().map(str::to_owned);
 
                 info!(
-                    "Portal provided stream: node_id={}, size=({}, {}), position=({}, {})",
-                    node_id, size.0, size.1, position.0, position.1
+                    "Portal provided stream: node_id={}, size=({}, {}), position=({}, {}), mapping_id={:?}",
+                    node_id, size.0, size.1, position.0, position.1, mapping_id
                 );
 
                 StreamInfo {
@@ -141,6 +142,7 @@ impl RemoteDesktopManager {
                         size.1.max(0).try_into().unwrap_or(0),
                     ),
                     source_type: super::session::SourceType::Monitor,
+                    mapping_id,
                 }
             })
             .collect();
