@@ -220,6 +220,13 @@ pub struct PipeWireThreadManager {
     /// adapter thread polls this flag and exits its recv_timeout loop when
     /// set — see `new_direct()` for the rationale.
     direct_shutdown_flag: Option<StdArc<AtomicBool>>,
+
+    /// Running count of buffers the producer marked SPA_CHUNK_FLAG_CORRUPTED.
+    /// Corrupted buffers usually carry size 0, so they are dropped before a
+    /// frame is built and are otherwise invisible to consumers: a compositor
+    /// emitting nothing but corrupted buffers looks exactly like an idle
+    /// desktop. Sampling this counter separates the two.
+    corrupted_buffers: StdArc<AtomicU64>,
 }
 
 impl PipeWireThreadManager {
@@ -249,11 +256,21 @@ impl PipeWireThreadManager {
         let (state_event_tx, state_event_rx) = std_mpsc::sync_channel::<StreamStateEvent>(256);
         let (shutdown_tx, shutdown_rx) = std_mpsc::sync_channel::<()>(1);
 
+        let corrupted_buffers = StdArc::new(AtomicU64::new(0));
+        let corrupted_for_thread = StdArc::clone(&corrupted_buffers);
+
         // Spawn dedicated PipeWire thread
         let thread_handle = thread::Builder::new()
             .name("pipewire-main".to_string())
             .spawn(move || {
-                run_pipewire_main_loop(fd, command_rx, frame_tx, state_event_tx, shutdown_rx);
+                run_pipewire_main_loop(
+                    fd,
+                    command_rx,
+                    frame_tx,
+                    state_event_tx,
+                    shutdown_rx,
+                    corrupted_for_thread,
+                );
             })
             .map_err(|e| PipeWireError::InitializationFailed(format!("Thread spawn failed: {}", e)))?;
 
@@ -266,6 +283,7 @@ impl PipeWireThreadManager {
             state_event_rx,
             shutdown_tx: Some(shutdown_tx),
             direct_shutdown_flag: None,
+            corrupted_buffers,
         })
     }
 
@@ -392,6 +410,8 @@ impl PipeWireThreadManager {
             state_event_rx,
             shutdown_tx: Some(notify_shutdown_tx),
             direct_shutdown_flag: Some(shutdown_flag),
+            // The direct path never sees SPA chunks, so this stays at zero.
+            corrupted_buffers: StdArc::new(AtomicU64::new(0)),
         }
     }
 
@@ -417,6 +437,19 @@ impl PipeWireThreadManager {
     /// Some(VideoFrame) if a frame is available, None otherwise
     pub fn try_recv_frame(&self) -> Option<VideoFrame> {
         self.frame_rx.try_recv().ok()
+    }
+
+    /// Total buffers seen with `SPA_CHUNK_FLAG_CORRUPTED` since the manager
+    /// started, across all streams.
+    ///
+    /// Most corrupted buffers carry `chunk->size == 0` and are dropped before
+    /// a `VideoFrame` exists, so they never reach `try_recv_frame`. A consumer
+    /// that sees no frames can sample this to tell "compositor has nothing new
+    /// to send" (counter flat) from "compositor is producing only corrupted
+    /// buffers" (counter climbing), which is the observable signature of the
+    /// Mutter direct-scanout screencast freeze, GNOME/mutter#3903.
+    pub fn corrupted_buffer_count(&self) -> u64 {
+        self.corrupted_buffers.load(Ordering::Relaxed)
     }
 
     /// Try to receive a stream state event (non-blocking)
@@ -512,6 +545,7 @@ fn run_pipewire_main_loop(
     frame_tx: std_mpsc::SyncSender<VideoFrame>,
     state_event_tx: std_mpsc::SyncSender<StreamStateEvent>,
     shutdown_rx: std_mpsc::Receiver<()>,
+    corrupted_buffers: StdArc<AtomicU64>,
 ) {
     info!("PipeWire main loop thread started");
 
@@ -606,6 +640,7 @@ fn run_pipewire_main_loop(
                         frame_tx.clone(),
                         state_event_tx.clone(),
                         StdArc::clone(&dmabuf_mmap_cache),
+                        StdArc::clone(&corrupted_buffers),
                     );
 
                     match result {
@@ -928,6 +963,7 @@ fn create_stream_on_thread(
     frame_tx: std_mpsc::SyncSender<VideoFrame>,
     state_event_tx: std_mpsc::SyncSender<StreamStateEvent>,
     dmabuf_cache: DmaBufCache,
+    corrupted_buffers: StdArc<AtomicU64>,
 ) -> Result<ManagedStream> {
     // Built up front (pure function of config, no PipeWire object dependency)
     // so the offered-format summary is available to capture into the
@@ -989,6 +1025,7 @@ fn create_stream_on_thread(
     let param_neg_width = StdArc::clone(&negotiated_width);
     let param_neg_height = StdArc::clone(&negotiated_height);
     let param_neg_modifier = StdArc::clone(&negotiated_modifier);
+    let proc_corrupted_buffers = StdArc::clone(&corrupted_buffers);
     let proc_neg_width = StdArc::clone(&negotiated_width);
     let proc_neg_height = StdArc::clone(&negotiated_height);
     let proc_neg_modifier = StdArc::clone(&negotiated_modifier);
@@ -1201,10 +1238,18 @@ fn create_stream_on_thread(
                         // stale data left in a recycled buffer slot rather than a fresh
                         // claim, so it must not be trusted. Still forwarded downstream
                         // (flagged, not dropped here) so callers decide via is_valid().
-                        warn!(
-                            "Stream {}: buffer marked SPA_CHUNK_FLAG_CORRUPTED, forwarding flagged",
-                            stream_id_for_callbacks
-                        );
+                        //
+                        // Rate-limited: a compositor stuck in direct scanout emits these
+                        // for the whole buffer pool at frame rate (roughly 1000 in a
+                        // minute, GNOME/mutter#3903), which drowns the log. Consumers
+                        // that need the exact rate read corrupted_buffer_count().
+                        let seen = proc_corrupted_buffers.fetch_add(1, Ordering::Relaxed) + 1;
+                        if seen == 1 || seen.is_multiple_of(100) {
+                            warn!(
+                                "Stream {}: buffer marked SPA_CHUNK_FLAG_CORRUPTED, forwarding flagged ({} so far)",
+                                stream_id_for_callbacks, seen
+                            );
+                        }
                     }
 
                     // Extract pixel data based on buffer type
