@@ -5,6 +5,15 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.13] - 2026-08-29
+
+### Changed
+- **lamco-portal 0.4.5:** `ashpd` floor back to 0.13.7 (the version that
+  introduced `Stream::mapping_id()`), so the shared `0.4.x` series does not
+  raise the requirement for the low-floor 0.5.x line, plus README install
+  snippets un-staled from `"0.1"`. No source change. `lamco-pipewire` is
+  unaffected and stays at 0.6.11.
+
 ## [0.6.12] - 2026-08-29
 
 ### Added

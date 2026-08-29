@@ -13,7 +13,7 @@ target environment.
 
 | Line | `lamco-pipewire` | `lamco-wayland` (meta) | `lamco-video` | `lamco-portal` | PipeWire/SPA bindings | Metadata path | System libpipewire floor |
 |---|---|---|---|---|---|---|---|
-| **0.6.x — modern head** | **0.6.11** | **0.6.12** | **0.3.0** | **0.4.4** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** |
+| **0.6.x — modern head** | **0.6.11** | **0.6.13** | **0.3.0** | **0.4.5** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** |
 | **0.5.x — low floor** | **0.5.9** | **0.5.9** | 0.2.0 | 0.4.1 | 0.10 | raw `libspa_sys` FFI | **0.3.33** |
 | 0.4.x — legacy (0.9) | 0.4.5 | 0.4.7 | 0.1.10 | 0.4.1 | 0.9 | raw `libspa_sys` FFI | 0.3.33 |
 
@@ -27,7 +27,7 @@ only requires Rust 1.80; the 1.87 floor comes from the workspace, not the bindin
   libspa 0.10's **safe wrappers** (the `meta.rs` module is `unsafe`-free), it
   exposes the **real cursor image** (`CursorMeta::bitmap`), and it tracks the
   current dependency set (`nix` 0.31; the meta line pulls `ashpd` 0.13.12 /
-  `zbus` 5.16 through `lamco-portal` 0.4.4). It requires the system
+  `zbus` 5.16 through `lamco-portal` 0.4.5). It requires the system
   **libpipewire ≥ 0.3.62** (released 2022 — present on every currently-supported
   Linux distribution).
 
