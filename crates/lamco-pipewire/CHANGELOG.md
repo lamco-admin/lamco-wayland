@@ -5,6 +5,26 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.11] - 2026-08-29
+
+### Added
+- `PipeWireThreadManager::corrupted_buffer_count()` reports how many buffers the
+  producer has marked `SPA_CHUNK_FLAG_CORRUPTED` since the manager started.
+  Corrupted buffers usually carry `chunk->size == 0` and are dropped before a
+  `VideoFrame` is built, so a consumer that only watches the frame channel
+  cannot distinguish "compositor has nothing new to send" from "compositor is
+  producing nothing but corrupted buffers" (the signature of the Mutter
+  direct-scanout screencast freeze, GNOME/mutter#3903). Sampling this counter
+  separates the two.
+
+### Changed
+- The `SPA_CHUNK_FLAG_CORRUPTED` warning is now rate limited: the first
+  occurrence and then every hundredth, each carrying the running total. A
+  compositor stuck in direct scanout flags its whole buffer pool at frame rate
+  (978 in a 63 second session on GNOME 50.4), which previously drowned the log.
+
+Ported from 0.6.11 on `master`; the two lines carry this code identically.
+
 ## [0.5.10] - 2026-08-26
 
 ### Changed

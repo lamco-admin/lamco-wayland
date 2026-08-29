@@ -5,6 +5,16 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.12] - 2026-08-29
+
+### Added
+- **lamco-pipewire 0.5.11:** `PipeWireThreadManager::corrupted_buffer_count()`,
+  so a consumer seeing no frames can tell an idle desktop from a compositor
+  that is producing nothing but buffers flagged `SPA_CHUNK_FLAG_CORRUPTED`.
+  The per-buffer warning for those is now rate limited. Ported from the 0.6.x
+  line (lamco-pipewire 0.6.11 / lamco-wayland 0.6.12). See lamco-pipewire's own
+  changelog. `lamco-portal` is unaffected and stays at 0.4.4.
+
 ## [0.5.11] - 2026-08-26
 
 ### Added
