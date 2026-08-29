@@ -91,11 +91,11 @@ bindings**, plus a legacy 0.9-era line. They differ mainly in their system
 
 | Line | Latest | PipeWire/SPA bindings | Metadata internals | libpipewire floor | Cursor bitmap |
 |------|--------|-----------------------|--------------------|-------------------|---------------|
-| **0.6.x** (modern head) | **0.6.10** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** | ✅ |
+| **0.6.x** (modern head) | **0.6.11** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** | ✅ |
 | **0.5.x** (low floor) | **0.5.10** | 0.10 | raw `libspa_sys` FFI | **0.3.33** | — |
 | 0.4.x (legacy) | 0.4.5 | 0.9 | raw `libspa_sys` FFI | 0.3.33 | — |
 
-- **New code → `0.6` (0.6.10):** safe metadata internals, real cursor pixels,
+- **New code → `0.6` (0.6.11):** safe metadata internals, real cursor pixels,
   current deps; needs system **libpipewire ≥ 0.3.62** (present on every
   currently-supported distro).
 - **Older/minimal environments → `0.5` (0.5.10):** same 0.10 bindings and the
