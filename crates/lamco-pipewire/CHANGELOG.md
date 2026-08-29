@@ -5,7 +5,7 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.10] - 2026-08-26
+## [0.6.11] - 2026-08-29
 
 ### Added
 - `PipeWireThreadManager::corrupted_buffer_count()` reports how many buffers the
@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   occurrence and then every hundredth, each carrying the running total. A
   compositor stuck in direct scanout flags its whole buffer pool at frame rate
   (978 in a 63 second session on GNOME 50.4), which previously drowned the log.
+
+## [0.6.10] - 2026-08-26
+
+### Changed
 - **Stream timing now goes through pipewire-rs's own safe `Stream::time()`**
   (added in pipewire-rs 0.10.0 via upstream MR !268) instead of an in-crate
   unsafe wrapper around raw `pw_stream_get_time_n()`. No change to this
