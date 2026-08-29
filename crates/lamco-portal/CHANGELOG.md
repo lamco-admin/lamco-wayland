@@ -5,6 +5,28 @@ All notable changes to lamco-portal will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2026-08-29
+
+### Changed
+- The `ashpd` requirement drops from 0.13.12 back to **0.13.7**, the version
+  that actually introduced `Stream::mapping_id()`. 0.13.12 came in through a
+  routine dependency sweep, not a code requirement. Because the `0.4.x` series
+  is shared by both workspace lines, publishing the tighter floor from `master`
+  would have raised it for the low-floor `0.5.x` line as well, which is the one
+  thing that line exists to avoid.
+- README install snippets said `lamco-portal = "0.1"`, four minor versions
+  stale. crates.io and docs.rs render that README, so this is the copy people
+  were actually reading. Fixed, along with the line-mapping note.
+
+No source change: `src/` is byte-identical to 0.4.4.
+
+## [0.4.4] - 2026-08-26
+
+Published from the `release/0.5` maintenance branch. Same source as 0.4.3, with
+the `ashpd` floor at 0.13.7 for the low-floor line. Recorded here after the
+fact: the `0.4.x` series is shared by both lines, so its numbering alternates
+between them.
+
 ## [0.4.3] - 2026-08-26
 
 ### Added

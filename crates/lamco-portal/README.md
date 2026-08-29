@@ -8,9 +8,9 @@
 
 High-level Rust interface to XDG Desktop Portal for Wayland screen capture and input control.
 
-`lamco-portal` 0.4.3 ships on the modern **0.6.x** stack (`ashpd` 0.13.12 /
-`zbus` 5.16); 0.4.4 ships on the low-floor **0.5.x** stack. Both require **Rust
-1.87** (edition 2024). See
+`lamco-portal` has a single `0.4.x` series shared by both workspace lines: 0.4.5
+serves the modern **0.6.x** stack and the low-floor **0.5.x** stack alike, and
+requires `ashpd` >= 0.13.7 and **Rust 1.87** (edition 2024). See
 [`docs/COMPATIBILITY.md`](https://github.com/lamco-admin/lamco-wayland/blob/master/docs/COMPATIBILITY.md)
 for how the lines map across the workspace.
 
