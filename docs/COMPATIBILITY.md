@@ -14,7 +14,7 @@ target environment.
 | Line | `lamco-pipewire` | `lamco-wayland` (meta) | `lamco-video` | `lamco-portal` | PipeWire/SPA bindings | Metadata path | System libpipewire floor |
 |---|---|---|---|---|---|---|---|
 | **0.6.x — modern head** | **0.6.11** | **0.6.13** | **0.3.0** | **0.4.5** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** |
-| **0.5.x — low floor** | **0.5.9** | **0.5.9** | 0.2.0 | 0.4.1 | 0.10 | raw `libspa_sys` FFI | **0.3.33** |
+| **0.5.x — low floor** | **0.5.11** | **0.5.12** | 0.2.0 | 0.4.5 | 0.10 | raw `libspa_sys` FFI | **0.3.33** |
 | 0.4.x — legacy (0.9) | 0.4.5 | 0.4.7 | 0.1.10 | 0.4.1 | 0.9 | raw `libspa_sys` FFI | 0.3.33 |
 
 MSRV for every current line is **Rust 1.87** (edition 2024). PipeWire 0.10 itself
@@ -31,7 +31,7 @@ only requires Rust 1.80; the 1.87 floor comes from the workspace, not the bindin
   **libpipewire ≥ 0.3.62** (released 2022 — present on every currently-supported
   Linux distribution).
 
-- **Older or minimal environments → `0.5.x` (0.5.9).**
+- **Older or minimal environments → `0.5.x` (0.5.11).**
   Same PipeWire 0.10 bindings and the **same DMA-BUF race fix** as 0.6.x, but a
   **lower system-library floor (libpipewire ≥ 0.3.33)** for environments that do
   not ship 0.3.62. Its metadata path uses raw `libspa_sys` FFI internally;
