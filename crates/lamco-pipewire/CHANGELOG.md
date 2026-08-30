@@ -5,6 +5,46 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.12] - 2026-08-30
+
+### Fixed
+- **The DMA-BUF mmap cache no longer serves a destroyed buffer's pixels.** The
+  cache is keyed by raw file descriptor and had no per-buffer eviction, only a
+  full clear at stream teardown. An `mmap` keeps its mapping alive after the
+  descriptor is closed, and the kernel reuses low descriptor numbers, so once
+  PipeWire destroyed a buffer generation (which `clear_buffers()` does on every
+  format renegotiation, a resolution change being the ordinary cause) a
+  descriptor number from the new generation could hit the old entry and be
+  served the previous generation's pixels, at the previous generation's size,
+  with nothing failing anywhere. The stream's `remove_buffer` callback is now
+  wired and unmaps the entry for each of the buffer's descriptors, which is the
+  only notification PipeWire gives that this is happening. As a second guard, a
+  cache hit is now rejected when the cached mapping is smaller than the read
+  being asked for, rather than the cached size being discarded.
+
+### Added
+- `BufferMeta::mappable` reports whether the producer set
+  `SPA_DATA_FLAG_MAPPABLE` on the block. Reading a block without it is out of
+  contract, and the read does not fail: mapping host-resident GPU memory
+  succeeds and returns zeros, which is why the absence has to be read rather
+  than inferred from a failed call. Mutter sets the flag on its MemFd path and
+  deliberately withholds it on its DMA-BUF path. Taking a CPU copy without it
+  now logs a rate-limited warning naming the reason, so an all-black capture is
+  traceable to its cause instead of looking like an encoder fault.
+- `BufferMeta::chunk_empty` reports `SPA_CHUNK_FLAG_EMPTY`. SPA defines this as
+  valid media-neutral content (black for video) offered as an optimization
+  hint, not as an absence, so it deliberately does not gate delivery: a screen
+  that has genuinely gone black still has to reach the client. It is forwarded
+  so an encoder can choose to reuse its previous output.
+- `HeaderMeta::is_discont()`, `is_corrupted()` and `has_gap()` interpret the
+  `SPA_META_Header` flags the crate was already storing as a raw integer but
+  never reading. The header-level corrupted bit is independent of the
+  chunk-level one, so both are now available.
+- `ffi::spa_flags` carries the SPA constants that libspa 0.10's `DataFlags` and
+  `ChunkFlags` do not define (`DataFlags` stops at `DYNAMIC`, `ChunkFlags`
+  defines only `CORRUPTED`), so they are invisible through the safe API even
+  though producers set them.
+
 ## [0.6.11] - 2026-08-29
 
 ### Added
