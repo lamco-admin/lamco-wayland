@@ -5,6 +5,21 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.13] - 2026-08-30
+
+### Fixed
+- **lamco-pipewire 0.5.12:** the DMA-BUF mmap cache could serve a destroyed
+  buffer's pixels after a format renegotiation, because it is keyed by raw file
+  descriptor, had no per-buffer eviction, and an `mmap` outlives the descriptor
+  that made it. The stream's `remove_buffer` callback is now wired to unmap
+  those entries. See lamco-pipewire's own changelog. `lamco-portal` is
+  unaffected and stays at 0.4.4.
+
+### Added
+- **lamco-pipewire 0.5.12:** `BufferMeta::mappable` and `BufferMeta::chunk_empty`,
+  `HeaderMeta` flag accessors, and the `ffi::spa_flags` constants libspa 0.10
+  does not define.
+
 ## [0.5.12] - 2026-08-29
 
 ### Added
