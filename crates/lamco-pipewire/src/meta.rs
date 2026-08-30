@@ -45,6 +45,20 @@ pub struct BufferMeta {
     /// Different buffer types may require different transform handling
     /// due to compositor-specific code paths for each type.
     pub buffer_type: u32,
+
+    /// Whether the producer set `SPA_DATA_FLAG_MAPPABLE` on the first data block.
+    ///
+    /// A CPU read of a block without this flag is out of contract. It does not
+    /// fail loudly: mapping host-resident GPU memory succeeds and returns
+    /// zeros, so this flag is the only advance warning that a mmap will produce
+    /// nothing. Set from the data block, not from SPA metadata.
+    pub mappable: bool,
+
+    /// Whether the producer set `SPA_CHUNK_FLAG_EMPTY` on the first chunk.
+    ///
+    /// An explicit "nothing this cycle", as opposed to a zero size, which is
+    /// only an absence. Set from the data chunk, not from SPA metadata.
+    pub chunk_empty: bool,
 }
 
 /// Timing and health metadata from SPA_META_Header.
@@ -58,6 +72,30 @@ pub struct HeaderMeta {
     pub seq: u64,
     /// Buffer flags (CORRUPTED, DISCONT, GAP, DELTA_UNIT)
     pub flags: u32,
+}
+
+impl HeaderMeta {
+    /// Producer marked this buffer as not continuous with the previous one.
+    ///
+    /// A capture consumer that tracks damage regions incrementally has to treat
+    /// a discontinuity as a full-frame invalidation: the accumulated damage
+    /// state describes a sequence this buffer is not part of.
+    pub fn is_discont(&self) -> bool {
+        self.flags & crate::ffi::spa_flags::SPA_META_HEADER_FLAG_DISCONT != 0
+    }
+
+    /// Producer marked this buffer's data as possibly corrupted.
+    ///
+    /// Independent of the chunk-level `SPA_CHUNK_FLAG_CORRUPTED`; a producer
+    /// may set either, so both are read.
+    pub fn is_corrupted(&self) -> bool {
+        self.flags & crate::ffi::spa_flags::SPA_META_HEADER_FLAG_CORRUPTED != 0
+    }
+
+    /// Buffer carries media-neutral filler rather than real content.
+    pub fn has_gap(&self) -> bool {
+        self.flags & crate::ffi::spa_flags::SPA_META_HEADER_FLAG_GAP != 0
+    }
 }
 
 /// Crop region from SPA_META_VideoCrop.

@@ -854,20 +854,43 @@ fn mmap_fd_buffer(fd: std::os::fd::RawFd, size: usize, offset: usize) -> Result<
 fn mmap_dmabuf_to_vec(fd: std::os::fd::RawFd, size: usize, offset: usize, cache: &DmaBufCache) -> Option<Vec<u8>> {
     use std::os::fd::BorrowedFd;
 
-    use nix::sys::mman::{MapFlags, ProtFlags, mmap};
+    use nix::sys::mman::{MapFlags, ProtFlags, mmap, munmap};
 
     let mut cache = cache.lock();
 
-    let mapped_ptr_opt = if let Some(&(ptr, _sz)) = cache.get(&fd) {
+    // SAFETY: sysconf(_SC_PAGESIZE) always returns a valid value
+    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+    let map_offset = (offset / page_size) * page_size;
+    let map_size = size + (offset - map_offset);
+
+    // A cached mapping is reusable only while it still covers the requested
+    // read. remove_buffer evicts entries when PipeWire destroys a buffer, but
+    // this second check is what catches a buffer whose geometry grew under the
+    // same fd: reusing a short mapping would read past its end.
+    let cached_ptr = match cache.get(&fd) {
+        Some(&(ptr, cached_size)) if cached_size >= map_size => Some(ptr),
+        Some(&(ptr, cached_size)) => {
+            warn!(
+                "DMA-BUF FD={}: cached mmap is {} bytes but {} are needed, remapping",
+                fd, cached_size, map_size
+            );
+            // SAFETY: ptr and cached_size were recorded when that mmap succeeded.
+            unsafe {
+                if let Err(e) = munmap(ptr.0, cached_size) {
+                    warn!("Failed to munmap undersized DMA-BUF FD={}: {}", fd, e);
+                }
+            }
+            cache.remove(&fd);
+            None
+        }
+        None => None,
+    };
+
+    let mapped_ptr_opt = if let Some(ptr) = cached_ptr {
         trace!("DMA-BUF FD={}: using cached mmap", fd);
         Some(ptr)
     } else {
         info!("DMA-BUF buffer: mmapping {} bytes from FD={} (first time)", size, fd);
-
-        // SAFETY: sysconf(_SC_PAGESIZE) always returns a valid value
-        let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
-        let map_offset = (offset / page_size) * page_size;
-        let map_size = size + (offset - map_offset);
 
         match NonZeroUsize::new(map_size) {
             Some(nz_size) => {
@@ -1010,9 +1033,10 @@ fn create_stream_on_thread(
     let frame_tx_for_process = frame_tx.clone();
     let stream_id_for_callbacks = stream_id;
     let dmabuf_cache_for_process = StdArc::clone(&dmabuf_cache);
+    let dmabuf_cache_for_remove = StdArc::clone(&dmabuf_cache);
 
     info!(
-        " Registering stream {} callbacks (state_changed, param_changed, process)",
+        " Registering stream {} callbacks (state_changed, param_changed, remove_buffer, process)",
         stream_id
     );
 
@@ -1141,6 +1165,70 @@ fn create_stream_on_thread(
                 warn!("Stream {} failed to request buffer metadata: {}", stream_id_for_callbacks, e);
             }
         })
+        .remove_buffer(move |_stream, _user_data, pw_buffer| {
+            // PipeWire is destroying this buffer and will close its DMA-BUF fds.
+            //
+            // This is the only notification of that, and it is load-bearing here
+            // because the mmap cache is keyed by raw fd. An mmap keeps its mapping
+            // alive after the fd is closed, so an entry left behind is worse than
+            // stale: the kernel reuses low fd numbers, so the next buffer
+            // generation hits this entry and is served the previous generation's
+            // pixels, at the previous generation's size, with nothing failing.
+            // Format renegotiation (a resolution change) makes PipeWire call
+            // clear_buffers(), which is exactly when this fires for every buffer.
+            //
+            // The raw pointer is deliberately not wrapped in pipewire-rs's safe
+            // `Buffer`: that type re-queues the buffer when it drops, which is
+            // wrong for one being destroyed.
+            if pw_buffer.is_null() {
+                return;
+            }
+
+            // SAFETY: PipeWire guarantees the pw_buffer and its spa_buffer are
+            // live for the duration of this callback. Only the data descriptors
+            // are read, and only to collect their fds.
+            let fds: Vec<RawFd> = unsafe {
+                let spa_buffer = (*pw_buffer).buffer;
+                if spa_buffer.is_null() {
+                    Vec::new()
+                } else {
+                    let n_datas = (*spa_buffer).n_datas as usize;
+                    let datas = (*spa_buffer).datas;
+                    (0..n_datas).map(|i| (*datas.add(i)).fd as RawFd).collect()
+                }
+            };
+
+            if fds.is_empty() {
+                return;
+            }
+
+            // try_lock for the same reason the stream-destroy path uses it:
+            // PipeWire dispatch can be reentrant with the process callback.
+            let Some(mut cache) = dmabuf_cache_for_remove.try_lock() else {
+                warn!(
+                    "Stream {}: DMA-BUF cache busy while removing a buffer, mapping left cached",
+                    stream_id_for_callbacks
+                );
+                return;
+            };
+
+            for fd in fds {
+                if let Some((ptr, size)) = cache.remove(&fd) {
+                    // SAFETY: ptr and size were recorded when the mmap succeeded,
+                    // and remove() hands us the entry exactly once.
+                    unsafe {
+                        use nix::sys::mman::munmap;
+                        if let Err(e) = munmap(ptr.0, size) {
+                            warn!("Failed to munmap DMA-BUF FD={} on buffer removal: {}", fd, e);
+                        }
+                    }
+                    debug!(
+                        "Stream {}: dropped DMA-BUF cache entry for FD={} on buffer removal",
+                        stream_id_for_callbacks, fd
+                    );
+                }
+            }
+        })
         .process(move |stream, _user_data| {
             // This callback is called when a new frame buffer is available
             trace!("process() callback fired for stream {}", stream_id_for_callbacks);
@@ -1225,12 +1313,18 @@ fn create_stream_on_thread(
                     let chunk_stride = chunk.stride();
                     let data_type = data.type_();
                     let chunk_corrupted = chunk.flags().contains(libspa::buffer::ChunkFlags::CORRUPTED);
+                    // libspa 0.10's ChunkFlags/DataFlags omit these two, so read the
+                    // raw bits. See crate::ffi::spa_flags for why each one matters.
+                    let chunk_empty = chunk.flags().bits() & crate::ffi::spa_flags::SPA_CHUNK_FLAG_EMPTY != 0;
+                    let mappable = data.flags().bits() & crate::ffi::spa_flags::SPA_DATA_FLAG_MAPPABLE != 0;
 
                     // Record chunk-level signals in metadata for downstream consumers.
                     // Negative stride signals bottom-up buffer (GL coordinate convention).
                     // Buffer type affects which compositor code path produced the data.
                     buffer_meta.chunk_stride = chunk_stride;
                     buffer_meta.buffer_type = data_type.as_raw();
+                    buffer_meta.mappable = mappable;
+                    buffer_meta.chunk_empty = chunk_empty;
 
                     if chunk_corrupted {
                         // Producer marked this chunk corrupted (SPA_CHUNK_FLAG_CORRUPTED).
@@ -1250,6 +1344,19 @@ fn create_stream_on_thread(
                                 stream_id_for_callbacks, seen
                             );
                         }
+                    }
+
+                    if chunk_empty {
+                        // Deliberately not a skip. SPA defines EMPTY as valid
+                        // media-neutral content (black for video), offered as an
+                        // optimization hint, not as an absence: a screen that has
+                        // genuinely gone black still has to reach the client. It is
+                        // forwarded in BufferMeta so an encoder can choose to reuse
+                        // its previous output instead of re-encoding a black frame.
+                        trace!(
+                            "Stream {}: chunk marked SPA_CHUNK_FLAG_EMPTY (neutral content)",
+                            stream_id_for_callbacks
+                        );
                     }
 
                     // Extract pixel data based on buffer type
@@ -1296,6 +1403,23 @@ fn create_stream_on_thread(
                                     trace!("MemFd buffer: size=0 (empty/skip frame), ignoring");
                                     None
                                 } else {
+                                    // Producers that set the flag at all set it on MemFd,
+                                    // so its absence here means either a producer old
+                                    // enough to predate the flag or one signalling that
+                                    // this block is not CPU-readable. Both are worth
+                                    // knowing about before the pixels come back wrong.
+                                    if !mappable {
+                                        static UNMAPPABLE_MEMFD: AtomicU64 = AtomicU64::new(0);
+                                        let seen = UNMAPPABLE_MEMFD.fetch_add(1, Ordering::Relaxed);
+                                        if seen.is_multiple_of(300) {
+                                            warn!(
+                                                "Stream {}: MemFd block lacks SPA_DATA_FLAG_MAPPABLE, \
+                                                 mapping it anyway ({} such frames so far)",
+                                                stream_id_for_callbacks,
+                                                seen + 1
+                                            );
+                                        }
+                                    }
                                     trace!("MemFd buffer: manual mmap (FD={}, size={}, offset={})", fd, size, offset);
                                     match mmap_fd_buffer(fd, size, offset) {
                                         Ok(data) => Some(data),
@@ -1333,6 +1457,25 @@ fn create_stream_on_thread(
                                         );
                                     }
                                     return None;
+                                }
+                                // A block the producer did not mark mappable is out of
+                                // contract to read with mmap, and the read does not fail:
+                                // where the buffer is host-resident GPU memory it maps
+                                // cleanly and returns zeros. Warning here is what makes an
+                                // all-black capture traceable to its cause instead of
+                                // looking like an encoder fault downstream.
+                                if !mappable {
+                                    static UNMAPPABLE_READS: AtomicU64 = AtomicU64::new(0);
+                                    let seen = UNMAPPABLE_READS.fetch_add(1, Ordering::Relaxed);
+                                    if seen.is_multiple_of(300) {
+                                        warn!(
+                                            "Stream {}: DMA-BUF block lacks SPA_DATA_FLAG_MAPPABLE, \
+                                             so this CPU copy is out of contract and may read zeros \
+                                             ({} such frames so far)",
+                                            stream_id_for_callbacks,
+                                            seen + 1
+                                        );
+                                    }
                                 }
                                 mmap_dmabuf_to_vec(fd, size, offset, &dmabuf_cache_for_process)
                             };

@@ -34,6 +34,50 @@ pub mod drm_fourcc {
     pub const DRM_FORMAT_ABGR8888: u32 = 0x34324241; // AB24
 }
 
+/// SPA buffer flags that libspa's safe bitflags types do not define.
+///
+/// `libspa::buffer::DataFlags` stops at `DYNAMIC` (1<<2) and
+/// `libspa::buffer::ChunkFlags` defines only `CORRUPTED`, so the flags below
+/// are invisible through the safe API even though every producer sets them.
+/// Both types are `bitflags`, so the raw bits round-trip through
+/// `from_bits_retain` without losing the unknown ones.
+///
+/// Values are from `spa/buffer/buffer.h` and `spa/buffer/meta.h` (SPA 0.2).
+pub mod spa_flags {
+    /// `SPA_DATA_FLAG_MAPPABLE`: the producer states this block is safe to read
+    /// with a plain mmap/munmap.
+    ///
+    /// This is the signal that separates a legitimate CPU read from an
+    /// out-of-contract one. Mutter sets it on the MemFd path and deliberately
+    /// withholds it on the DMA-BUF path, where the buffer can live in host GPU
+    /// memory: mapping that anyway succeeds and yields zeros rather than
+    /// failing, which is why the absence has to be read rather than inferred
+    /// from a failed call.
+    pub const SPA_DATA_FLAG_MAPPABLE: u32 = 1 << 3;
+
+    /// `SPA_CHUNK_FLAG_EMPTY`: the chunk is intentionally empty.
+    ///
+    /// Distinct from `size == 0`, which is merely an absence. This is the
+    /// producer explicitly saying there is nothing to deliver for this cycle.
+    pub const SPA_CHUNK_FLAG_EMPTY: i32 = 1 << 1;
+
+    /// `SPA_META_HEADER_FLAG_DISCONT`: not continuous with the previous buffer.
+    pub const SPA_META_HEADER_FLAG_DISCONT: u32 = 1 << 0;
+    /// `SPA_META_HEADER_FLAG_CORRUPTED`: data might be corrupted.
+    ///
+    /// Header-level, and independent of the chunk-level `SPA_CHUNK_FLAG_CORRUPTED`.
+    /// A producer may set either, so both have to be read.
+    pub const SPA_META_HEADER_FLAG_CORRUPTED: u32 = 1 << 1;
+    /// `SPA_META_HEADER_FLAG_MARKER`: media specific marker.
+    pub const SPA_META_HEADER_FLAG_MARKER: u32 = 1 << 2;
+    /// `SPA_META_HEADER_FLAG_HEADER`: contains a codec specific header.
+    pub const SPA_META_HEADER_FLAG_HEADER: u32 = 1 << 3;
+    /// `SPA_META_HEADER_FLAG_GAP`: contains media neutral data.
+    pub const SPA_META_HEADER_FLAG_GAP: u32 = 1 << 4;
+    /// `SPA_META_HEADER_FLAG_DELTA_UNIT`: cannot be decoded independently.
+    pub const SPA_META_HEADER_FLAG_DELTA_UNIT: u32 = 1 << 5;
+}
+
 /// SPA video format to DRM fourcc conversion
 pub fn spa_video_format_to_drm_fourcc(format: VideoFormat) -> u32 {
     match format {
