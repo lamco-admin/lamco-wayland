@@ -208,6 +208,7 @@ pub mod meta;
 mod pw_lifecycle;
 pub mod pw_thread;
 pub mod stream;
+pub mod tags;
 pub mod thread_comm;
 
 // =============================================================================

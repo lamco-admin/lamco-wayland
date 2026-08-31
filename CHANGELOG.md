@@ -5,6 +5,15 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.15] - 2026-08-30
+
+### Added
+- **lamco-pipewire 0.6.13:** `SPA_PARAM_Tag` read and write. Reads the tags a
+  producer publishes on a stream (GNOME publishes the monitor scale as
+  `org.gnome.scale`) and can publish tags back upstream, which is how a consumer
+  states a preference such as `org.gnome.preferred-scale`. See lamco-pipewire's
+  own changelog. `lamco-portal` is unaffected and stays at 0.4.5.
+
 ## [0.6.14] - 2026-08-30
 
 ### Fixed

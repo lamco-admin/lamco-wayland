@@ -162,6 +162,19 @@ pub enum PipeWireThreadCommand {
         response_tx: std_mpsc::SyncSender<Option<StreamState>>,
     },
 
+    /// Publish `SPA_PARAM_Tag` back toward the producer.
+    ///
+    /// A consumer states a preference this way: Mutter, for example, reads
+    /// `org.gnome.preferred-scale` off the stream and uses it to pick the
+    /// virtual monitor's scale. The pod is built on the caller's side and the
+    /// stream is updated here, because `update_params` has to run on the
+    /// PipeWire thread.
+    SetStreamTags {
+        stream_id: u32,
+        items: Vec<(String, String)>,
+        response_tx: std_mpsc::SyncSender<Result<()>>,
+    },
+
     /// Shutdown the PipeWire thread
     Shutdown,
 }
@@ -227,6 +240,8 @@ pub struct PipeWireThreadManager {
     /// emitting nothing but corrupted buffers looks exactly like an idle
     /// desktop. Sampling this counter separates the two.
     corrupted_buffers: StdArc<AtomicU64>,
+    /// Tags the producer last published on the stream (`SPA_PARAM_Tag`).
+    stream_tags: StdArc<parking_lot::RwLock<crate::tags::StreamTags>>,
 }
 
 impl PipeWireThreadManager {
@@ -258,6 +273,9 @@ impl PipeWireThreadManager {
 
         let corrupted_buffers = StdArc::new(AtomicU64::new(0));
         let corrupted_for_thread = StdArc::clone(&corrupted_buffers);
+        let stream_tags: StdArc<parking_lot::RwLock<crate::tags::StreamTags>> =
+            StdArc::new(parking_lot::RwLock::new(crate::tags::StreamTags::default()));
+        let tags_for_thread = StdArc::clone(&stream_tags);
 
         // Spawn dedicated PipeWire thread
         let thread_handle = thread::Builder::new()
@@ -270,6 +288,7 @@ impl PipeWireThreadManager {
                     state_event_tx,
                     shutdown_rx,
                     corrupted_for_thread,
+                    tags_for_thread,
                 );
             })
             .map_err(|e| PipeWireError::InitializationFailed(format!("Thread spawn failed: {}", e)))?;
@@ -284,6 +303,7 @@ impl PipeWireThreadManager {
             shutdown_tx: Some(shutdown_tx),
             direct_shutdown_flag: None,
             corrupted_buffers,
+            stream_tags,
         })
     }
 
@@ -412,6 +432,7 @@ impl PipeWireThreadManager {
             direct_shutdown_flag: Some(shutdown_flag),
             // The direct path never sees SPA chunks, so this stays at zero.
             corrupted_buffers: StdArc::new(AtomicU64::new(0)),
+            stream_tags: StdArc::new(parking_lot::RwLock::new(crate::tags::StreamTags::default())),
         }
     }
 
@@ -450,6 +471,44 @@ impl PipeWireThreadManager {
     /// Mutter direct-scanout screencast freeze, GNOME/mutter#3903.
     pub fn corrupted_buffer_count(&self) -> u64 {
         self.corrupted_buffers.load(Ordering::Relaxed)
+    }
+
+    /// Tags the producer last published on the stream (`SPA_PARAM_Tag`).
+    ///
+    /// A snapshot of live state: the producer republishes the whole set when
+    /// anything changes, and the values describe the stream as it is now. Do
+    /// not cache the result past the stream it came from.
+    ///
+    /// Empty until the producer publishes tags, and empty for producers that
+    /// never do.
+    pub fn stream_tags(&self) -> crate::tags::StreamTags {
+        self.stream_tags.read().clone()
+    }
+
+    /// Publish tags back toward the producer.
+    ///
+    /// This is how a consumer states a preference rather than only observing
+    /// one: Mutter reads `org.gnome.preferred-scale` off the stream and uses it
+    /// to choose the virtual monitor's scale. Values are strings on the wire,
+    /// so numeric preferences are formatted by the caller.
+    ///
+    /// Blocks until the PipeWire thread has applied the update, because
+    /// `update_params` has to run there.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the stream is unknown, the pod cannot be built, the
+    /// update is rejected, or the PipeWire thread is gone.
+    pub fn set_stream_tags(&self, stream_id: u32, items: Vec<(String, String)>) -> Result<()> {
+        let (response_tx, response_rx) = std_mpsc::sync_channel(1);
+        self.send_command(PipeWireThreadCommand::SetStreamTags {
+            stream_id,
+            items,
+            response_tx,
+        })?;
+        response_rx.recv().map_err(|_| {
+            PipeWireError::ThreadCommunicationFailed("PipeWire thread dropped the tag response".to_string())
+        })?
     }
 
     /// Try to receive a stream state event (non-blocking)
@@ -546,6 +605,7 @@ fn run_pipewire_main_loop(
     state_event_tx: std_mpsc::SyncSender<StreamStateEvent>,
     shutdown_rx: std_mpsc::Receiver<()>,
     corrupted_buffers: StdArc<AtomicU64>,
+    stream_tags: StdArc<parking_lot::RwLock<crate::tags::StreamTags>>,
 ) {
     info!("PipeWire main loop thread started");
 
@@ -641,6 +701,7 @@ fn run_pipewire_main_loop(
                         state_event_tx.clone(),
                         StdArc::clone(&dmabuf_mmap_cache),
                         StdArc::clone(&corrupted_buffers),
+                        StdArc::clone(&stream_tags),
                     );
 
                     match result {
@@ -718,6 +779,28 @@ fn run_pipewire_main_loop(
                         StreamState::Streaming => StreamState::Streaming,
                     });
                     let _ = response_tx.send(state);
+                }
+
+                PipeWireThreadCommand::SetStreamTags {
+                    stream_id,
+                    items,
+                    response_tx,
+                } => {
+                    let result = (|| {
+                        let managed = streams
+                            .get(&stream_id)
+                            .ok_or(PipeWireError::StreamNotFound(stream_id))?;
+                        let bytes = crate::tags::build_tag_pod(crate::tags::TagDirection::Input, &items)?;
+                        let pod = Pod::from_bytes(&bytes).ok_or_else(|| {
+                            PipeWireError::InvalidParameter("serialized tag pod was not a valid pod".to_string())
+                        })?;
+                        managed.stream.update_params(&mut [pod]).map_err(|e| {
+                            PipeWireError::InvalidParameter(format!("update_params for tags failed: {e}"))
+                        })?;
+                        debug!("Stream {stream_id}: published {} tag(s) upstream", items.len());
+                        Ok(())
+                    })();
+                    let _ = response_tx.send(result);
                 }
 
                 PipeWireThreadCommand::Shutdown => {
@@ -987,6 +1070,7 @@ fn create_stream_on_thread(
     state_event_tx: std_mpsc::SyncSender<StreamStateEvent>,
     dmabuf_cache: DmaBufCache,
     corrupted_buffers: StdArc<AtomicU64>,
+    stream_tags: StdArc<parking_lot::RwLock<crate::tags::StreamTags>>,
 ) -> Result<ManagedStream> {
     // Built up front (pure function of config, no PipeWire object dependency)
     // so the offered-format summary is available to capture into the
@@ -1050,6 +1134,7 @@ fn create_stream_on_thread(
     let param_neg_height = StdArc::clone(&negotiated_height);
     let param_neg_modifier = StdArc::clone(&negotiated_modifier);
     let proc_corrupted_buffers = StdArc::clone(&corrupted_buffers);
+    let param_stream_tags = StdArc::clone(&stream_tags);
     let proc_neg_width = StdArc::clone(&negotiated_width);
     let proc_neg_height = StdArc::clone(&negotiated_height);
     let proc_neg_modifier = StdArc::clone(&negotiated_modifier);
@@ -1104,6 +1189,33 @@ fn create_stream_on_thread(
         })
         .param_changed(move |stream, _user_data, param_id, param| {
             let Some(param) = param else { return; };
+
+            // Tags are how a producer annotates the stream with things that are
+            // neither format nor buffer layout. Mutter publishes the logical
+            // monitor's scale this way on a virtual-monitor stream. They arrive
+            // on this same callback, so reading them costs no extra plumbing.
+            if param_id == libspa_sys::SPA_PARAM_Tag {
+                if let Some(tags) = crate::tags::parse_tag_pod(param) {
+                    if !tags.is_empty() {
+                        info!(
+                            "Stream {} tags: {:?}",
+                            stream_id_for_callbacks,
+                            tags.items()
+                        );
+                    }
+                    // Replaced wholesale: the producer publishes a complete set
+                    // rather than a delta, and this is live state with no
+                    // meaning past the stream that published it.
+                    *param_stream_tags.write() = tags;
+                } else {
+                    debug!(
+                        "Stream {}: SPA_PARAM_Tag pod could not be parsed, ignoring",
+                        stream_id_for_callbacks
+                    );
+                }
+                return;
+            }
+
             if param_id != ParamType::Format.as_raw() { return; }
 
             // Validate media type before parsing video specifics
