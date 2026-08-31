@@ -7,9 +7,8 @@ use std::os::fd::RawFd;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use tokio::sync::Mutex;
-
 use libspa::buffer::DataType;
+use tokio::sync::Mutex;
 
 use crate::error::{PipeWireError, Result};
 

@@ -5,6 +5,34 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.13] - 2026-08-30
+
+### Added
+- **`SPA_PARAM_Tag` support: read the tags a producer publishes, and publish
+  tags back.** Tags are how a producer annotates a stream with information that
+  is neither format nor buffer layout, and how a consumer answers. They arrive
+  on the existing `param_changed` callback, so reading them needed no new
+  subscription. GNOME's Mutter uses this on a virtual-monitor stream: it
+  publishes the logical monitor's scale as `org.gnome.scale`, and reads
+  `org.gnome.preferred-scale` back to decide which scale to apply. Nothing in
+  this crate is GNOME-specific; the mechanism is PipeWire's own.
+  - `PipeWireThreadManager::stream_tags()` returns the tags last published, as a
+    snapshot. The producer republishes the entire set when anything changes, so
+    it is replaced wholesale rather than merged.
+  - `PipeWireThreadManager::set_stream_tags()` publishes tags upstream via
+    `pw_stream_update_params`, which has to run on the PipeWire thread, so it
+    goes through the command channel and blocks until applied.
+  - `tags::{StreamTags, TagDirection, parse_tag_pod, build_tag_pod}` are public
+    for consumers that want to build or inspect a tag pod directly.
+
+  **Nothing is persisted, deliberately.** A tag describes the stream as it is
+  now and is meaningless once that stream is gone, so caching one past its
+  stream is the same class of mistake as caching a buffer mapping past its
+  buffer. libspa 0.10 does not wrap this: `ParamType` has no `Tag` constant and
+  the `spa_tag_parse` helpers are static inline C its bindings do not expose, so
+  the object is read and written through the pod (de)serializer using the raw
+  constants, with no new unsafe code.
+
 ## [0.6.12] - 2026-08-30
 
 ### Fixed
