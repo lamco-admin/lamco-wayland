@@ -3,7 +3,7 @@
 # PACKAGE IDENTITY
 # ============================================================================
 name = "lamco-pipewire"
-version = "0.6.13"
+version = "0.6.14"
 
 # ============================================================================
 # PACKAGE CONFIGURATION (inherited from workspace)
@@ -184,7 +184,7 @@ parking_lot = "0.12"
 
 # Low-level operations
 libc = "0.2"
-nix = { version = "0.31", features = ["mman"] }
+nix = { version = ">=0.30, <0.32", features = ["mman"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["sync", "rt", "time", "macros", "rt-multi-thread"] }

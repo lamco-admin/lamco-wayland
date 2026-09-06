@@ -5,6 +5,13 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.14] - 2026-09-05
+
+### Changed
+- Widened the `nix` dependency to `>=0.30, <0.32`. Only the long-stable
+  `mman` feature (`mmap`/`munmap`) is used, so 0.30 works as well as 0.31;
+  the pin to exactly 0.31 was unnecessarily tight.
+
 ## [0.6.13] - 2026-08-30
 
 ### Added
