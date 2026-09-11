@@ -80,26 +80,28 @@ let manager = PipeWireManager::new(config)?;
 
 ```toml
 [dependencies]
-lamco-pipewire = { version = "0.6", features = ["full"] }
+lamco-pipewire = { version = "0.7", features = ["full"] }
 ```
 
 ## Versions & compatibility
 
-`lamco-pipewire` ships **two parallel supported lines on the PipeWire/SPA 0.10
-bindings**, plus a legacy 0.9-era line. They differ mainly in their system
-**libpipewire floor** and their metadata internals:
+`lamco-pipewire` ships **one actively maintained line on the PipeWire/SPA
+0.10 bindings**, plus a frozen low-floor line and a legacy 0.9-era line.
+They differ mainly in their system **libpipewire floor** and their metadata
+internals:
 
 | Line | Latest | PipeWire/SPA bindings | Metadata internals | libpipewire floor | Cursor bitmap |
 |------|--------|-----------------------|--------------------|-------------------|---------------|
-| **0.6.x** (modern head) | **0.6.12** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** | ✅ |
-| **0.5.x** (low floor) | **0.5.12** | 0.10 | raw `libspa_sys` FFI | **0.3.33** | — |
+| **0.7.x** (current) | **0.7.0** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** | ✅ |
+| 0.5.x (frozen, no longer maintained) | 0.5.12 | 0.10 | raw `libspa_sys` FFI | 0.3.33 | — |
 | 0.4.x (legacy) | 0.4.5 | 0.9 | raw `libspa_sys` FFI | 0.3.33 | — |
 
-- **New code → `0.6` (0.6.12):** safe metadata internals, real cursor pixels,
-  current deps; needs system **libpipewire ≥ 0.3.62** (present on every
-  currently-supported distro).
-- **Older/minimal environments → `0.5` (0.5.12):** same 0.10 bindings and the
-  **same DMA-BUF race fix**, with a lower floor (**libpipewire ≥ 0.3.33**).
+- **New code → `0.7` (0.7.0):** safe metadata internals, real cursor pixels,
+  a virtual microphone source, current deps; needs system
+  **libpipewire ≥ 0.3.62** (present on every currently-supported distro).
+- **`0.5` (0.5.12) is frozen.** Same 0.10 bindings and the same DMA-BUF race
+  fix, with a lower floor (**libpipewire ≥ 0.3.33**). It received fixes in
+  parallel with the modern line for a while; as of 0.7.0 it no longer does.
 
 Both lines contain the DMA-BUF mmap-cache cross-thread race fix, the
 buffer-removal cache eviction that stops a destroyed buffer's mapping being
@@ -153,7 +155,7 @@ PipeWire's Rust bindings use `Rc<>` and `NonNull<>` internally, making them **no
 
 - **Linux** with a Wayland compositor
 - **PipeWire** installed and running
-- **PipeWire development libraries**: `libpipewire-0.3-dev` (Debian/Ubuntu) or `pipewire-devel` (Fedora) — **≥ 0.3.62** for the 0.6.x line, **≥ 0.3.33** for the 0.5.x line
+- **PipeWire development libraries**: `libpipewire-0.3-dev` (Debian/Ubuntu) or `pipewire-devel` (Fedora) — **≥ 0.3.62** for the 0.7.x line, **≥ 0.3.33** for the frozen 0.5.x line
 - **Rust 1.87+** (edition 2024)
 
 ## Platform Compatibility
