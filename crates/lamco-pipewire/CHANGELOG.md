@@ -5,6 +5,35 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-09-10
+
+### Added
+- **Virtual microphone source.** `spawn_virtual_microphone`/`VirtualMicrophone`/
+  `VirtualMicrophoneHandle`/`PlaybackConfig`, the mirror image of the existing
+  audio capture engine: instead of reading PCM from an existing sink/source,
+  this creates a new `Audio/Source` node (selectable as an input device by
+  other applications, e.g. in a mic picker) fed by PCM pushed in through a
+  channel. Carries no protocol knowledge of any kind; a consumer decoding some
+  wire format (MS-RDPEAI, say) pushes decoded PCM into the handle's `sender`.
+  Uses the same `media.class`/`media.category` convention this workspace's own
+  `xdg-desktop-portal-generic` already uses for its `Video/Source`
+  screen-capture node: `media.category=Capture` describes what consumers do
+  with the node, not the local `pw_stream` direction (`Output`, since this
+  side produces the data). No `AUTOCONNECT` (the node is a device, not a
+  client connecting to one) and no `DRIVER` flag (unlike the video precedent,
+  PipeWire's audio graph already has a driver clock). Internally bounded by a
+  200ms ring buffer that drops the oldest bytes on overflow and silence-pads
+  on underrun, absorbing the mismatch between an external producer's arrival
+  cadence and PipeWire's own driver-clock cadence.
+
+### Changed
+- **Bumped to 0.7.0 rather than another 0.6.x patch.** This crate has been on
+  the 0.6.x line for a long time under a project convention that treated
+  patch bumps as sufficient for both features and fixes; the virtual
+  microphone addition is a good boundary to start using minor bumps for new
+  public API going forward. The 0.5.x compatibility line is no longer
+  maintained in parallel.
+
 ## [0.6.14] - 2026-09-05
 
 ### Changed

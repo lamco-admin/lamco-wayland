@@ -252,7 +252,10 @@ pub mod bitrate;
 
 // Manager (primary entry point)
 #[cfg(feature = "audio")]
-pub use audio::{AudioCapture, AudioCaptureHandle, AudioFormat, AudioSamples, CaptureConfig, spawn_audio_capture};
+pub use audio::{
+    AudioCapture, AudioCaptureHandle, AudioFormat, AudioSamples, CaptureConfig, PlaybackConfig, VirtualMicrophone,
+    VirtualMicrophoneHandle, spawn_audio_capture, spawn_virtual_microphone,
+};
 #[cfg(feature = "adaptive")]
 pub use bitrate::{BitrateController, BitrateStats};
 // Buffer management
