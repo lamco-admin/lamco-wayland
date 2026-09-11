@@ -5,6 +5,15 @@ All notable changes to lamco-video will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-09-11
+
+### Changed
+- No functional changes. Widens the `lamco-pipewire` dependency requirement
+  from `^0.6.0` to `^0.7.0` (0.6.14 → 0.7.0's virtual microphone source
+  addition), so a consumer that has already picked up `lamco-pipewire` 0.7.0
+  directly doesn't end up resolving a second, semver-incompatible copy of it
+  through `lamco-video`'s stale floor.
+
 ## [0.1.10] - 2026-06-14
 
 ### Changed

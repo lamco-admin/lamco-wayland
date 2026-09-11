@@ -5,6 +5,17 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-09-11
+
+### Changed
+- **lamco-video 0.3.1:** widened the `lamco-pipewire` dependency requirement
+  from `^0.6.0` to `^0.7.0`, discovered as a real blocker (not just cosmetic
+  duplication) while wiring lamco-pipewire 0.7.0's new virtual-mic primitive
+  into a consumer that also depends on lamco-video: the stale floor resolved
+  a second, type-incompatible copy of `lamco-pipewire` alongside the direct
+  0.7.0 dependency. See lamco-video's own changelog. `lamco-pipewire` and
+  `lamco-portal` are unaffected and stay at 0.7.0 / 0.4.5.
+
 ## [0.7.0] - 2026-09-10
 
 ### Added
