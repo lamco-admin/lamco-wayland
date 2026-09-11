@@ -1,10 +1,10 @@
 # Versions & Compatibility
 
-This workspace publishes **two parallel supported lines** of the screen-capture
-crates, both built on the **PipeWire / SPA Rust bindings 0.10**, plus a legacy
-0.9-era line. They differ in their system-library floor, their metadata
-internals, and the capabilities they expose. Pick the line that matches your
-target environment.
+This workspace publishes **one actively maintained line** of the
+screen-capture crates, built on the **PipeWire / SPA Rust bindings 0.10**,
+plus a frozen low-floor line and a legacy 0.9-era line. They differ in their
+system-library floor, their metadata internals, and the capabilities they
+expose. Pick the line that matches your target environment.
 
 > All versions are MIT OR Apache-2.0, by Lamco Development LLC.
 > Product pages: <https://lamco.ai/open-source/lamco-wayland/>.
@@ -13,29 +13,30 @@ target environment.
 
 | Line | `lamco-pipewire` | `lamco-wayland` (meta) | `lamco-video` | `lamco-portal` | PipeWire/SPA bindings | Metadata path | System libpipewire floor |
 |---|---|---|---|---|---|---|---|
-| **0.6.x — modern head** | **0.6.11** | **0.6.13** | **0.3.0** | **0.4.5** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** |
-| **0.5.x — low floor** | **0.5.11** | **0.5.12** | 0.2.0 | 0.4.5 | 0.10 | raw `libspa_sys` FFI | **0.3.33** |
+| **0.7.x — current** | **0.7.0** | **0.7.0** | **0.3.0** | **0.4.5** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** |
+| 0.5.x — frozen, no longer maintained | 0.5.11 | 0.5.12 | 0.2.0 | 0.4.5 | 0.10 | raw `libspa_sys` FFI | 0.3.33 |
 | 0.4.x — legacy (0.9) | 0.4.5 | 0.4.7 | 0.1.10 | 0.4.1 | 0.9 | raw `libspa_sys` FFI | 0.3.33 |
 
-MSRV for every current line is **Rust 1.87** (edition 2024). PipeWire 0.10 itself
+MSRV for the current line is **Rust 1.87** (edition 2024). PipeWire 0.10 itself
 only requires Rust 1.80; the 1.87 floor comes from the workspace, not the bindings.
 
 ## Which line should I use?
 
-- **New code, or any currently-supported distribution → `0.6.x` (0.6.11).**
+- **New code, or any currently-supported distribution → `0.7.x` (0.7.0).**
   This is the maintained head. Metadata extraction runs entirely through
   libspa 0.10's **safe wrappers** (the `meta.rs` module is `unsafe`-free), it
-  exposes the **real cursor image** (`CursorMeta::bitmap`), and it tracks the
-  current dependency set (`nix` 0.31; the meta line pulls `ashpd` 0.13.12 /
-  `zbus` 5.16 through `lamco-portal` 0.4.5). It requires the system
+  exposes the **real cursor image** (`CursorMeta::bitmap`), a **virtual
+  microphone source** (`spawn_virtual_microphone`, new in 0.7.0), and it
+  tracks the current dependency set (`nix` 0.31; the meta line pulls `ashpd`
+  0.13.12 / `zbus` 5.16 through `lamco-portal` 0.4.5). It requires the system
   **libpipewire ≥ 0.3.62** (released 2022 — present on every currently-supported
   Linux distribution).
 
-- **Older or minimal environments → `0.5.x` (0.5.11).**
-  Same PipeWire 0.10 bindings and the **same DMA-BUF race fix** as 0.6.x, but a
-  **lower system-library floor (libpipewire ≥ 0.3.33)** for environments that do
-  not ship 0.3.62. Its metadata path uses raw `libspa_sys` FFI internally;
-  behavior is functionally equivalent to 0.6.x minus the cursor-bitmap addition.
+- **`0.5.x` (0.5.11) is frozen.** Same PipeWire 0.10 bindings and the same
+  DMA-BUF race fix, with a lower system-library floor (libpipewire ≥ 0.3.33),
+  for environments that do not ship 0.3.62. It received fixes in parallel
+  with the modern line for a while; as of the 0.7.x line it no longer does.
+  Existing consumers keep working, but no new fixes or features land here.
 
 - **Still pinned to the PipeWire 0.9 bindings → `0.4.x` (0.4.5).**
   Legacy. No 0.10; kept available for consumers that have not yet migrated.
@@ -80,11 +81,20 @@ The 0.9 → 0.10 work landed as four steps; each is a published release.
    access is synchronized. **No API or behavior change.** Shipped to both lines
    (0.6.2 on `master`, 0.5.1 on the `release/0.5` maintenance branch).
 
+5. **0.7.0 — virtual microphone source; 0.5.x no longer maintained in
+   parallel.** `spawn_virtual_microphone` / `VirtualMicrophone` /
+   `VirtualMicrophoneHandle` / `PlaybackConfig` in the `audio` module: the
+   mirror image of the existing capture engine, creating an `Audio/Source`
+   node fed by PCM pushed in through a channel instead of reading from an
+   existing sink/source. No breaking change to existing capture APIs. This
+   is also the point at which the `0.5.x` line stops receiving fixes in
+   parallel with the modern line — see "Which line should I use?" above.
+
 See [`../CHANGELOG.md`](../CHANGELOG.md) for the complete per-version history.
 
 ## Capability matrix (`lamco-pipewire`)
 
-| Capability | 0.4.x | 0.5.x | 0.6.x |
+| Capability | 0.4.x | 0.5.x (frozen) | 0.7.x |
 |---|---|---|---|
 | PipeWire/SPA 0.10 bindings | — | ✅ | ✅ |
 | DMA-BUF zero-copy (`DRM_FORMAT_MOD_LINEAR` CPU-mmap) | ✅ | ✅ | ✅ |
@@ -95,10 +105,11 @@ See [`../CHANGELOG.md`](../CHANGELOG.md) for the complete per-version history.
 | `unsafe`-free metadata module | — | — | ✅ |
 | DMA-BUF mmap-cache race fix | — | ✅ (0.5.1) | ✅ (0.6.2) |
 | DestroyStream release-ordering fix | — | ✅ (0.5.2) | ✅ (0.6.3) |
+| **Virtual microphone source (`spawn_virtual_microphone`)** | — | — | ✅ (0.7.0) |
 
 ## Dependency floors by line
 
-| Dependency | 0.5.x | 0.6.x |
+| Dependency | 0.5.x (frozen) | 0.7.x |
 |---|---|---|
 | `pipewire` / `pipewire-sys` / `libspa` / `libspa-sys` | 0.10 | 0.10 |
 | libspa feature flag | `v0_3_33` | `v0_3_62` |
@@ -111,18 +122,17 @@ See [`../CHANGELOG.md`](../CHANGELOG.md) for the complete per-version history.
 ## Choosing in `Cargo.toml`
 
 ```toml
-# Modern head (recommended for new code)
-lamco-pipewire = "0.6"
+# Current line (recommended for new code)
+lamco-pipewire = "0.7"
 # or the whole stack:
-lamco-wayland  = "0.6"
+lamco-wayland  = "0.7"
 
-# Low-floor line, for older/minimal libpipewire environments
+# Frozen low-floor line, for older/minimal libpipewire environments
 lamco-pipewire = "0.5"
 lamco-wayland  = "0.5"
 ```
 
-Cargo's caret ranges keep you on the chosen line: `"0.6"` resolves to the latest
-`0.6.z` (so you get the race fix automatically), and `"0.5"` resolves to the
-latest `0.5.z`. The two lines are **not** semver-compatible with each other
-(0.5 → 0.6 carries the breaking metadata-API change), so pin to one line
-deliberately.
+Cargo's caret ranges keep you on the chosen line: `"0.7"` resolves to the latest
+`0.7.z`, and `"0.5"` resolves to the latest `0.5.z` (frozen at 0.5.13/0.5.12).
+The two lines are **not** semver-compatible with each other, so pin to one
+line deliberately.
