@@ -1,7 +1,16 @@
-//! PipeWire Audio Capture
+//! PipeWire Audio Capture and Virtual Source
 //!
-//! Desktop audio capture via PipeWire, delivering PCM samples through
-//! a channel. Runs on a dedicated thread since PipeWire types are not Send.
+//! Two symmetric directions, both running on a dedicated thread since
+//! PipeWire types are not Send:
+//!
+//! - **Capture** ([`spawn_audio_capture`]): reads PCM from an existing
+//!   PipeWire sink/source (e.g. desktop audio) and delivers it through a
+//!   channel.
+//! - **Virtual source** ([`spawn_virtual_microphone`]): the mirror image.
+//!   Creates a new `Audio/Source` node that other applications can select
+//!   as an input device (a microphone), fed by PCM pushed in through a
+//!   channel. Carries no RDP knowledge; a consumer (e.g. an MS-RDPEAI
+//!   backend) decodes the wire protocol and pushes decoded PCM in.
 //!
 //! # Usage
 //!
@@ -20,6 +29,7 @@
 //! }
 //! ```
 
+use std::collections::VecDeque;
 use std::convert::TryInto;
 use std::mem;
 use std::sync::Arc;
@@ -74,6 +84,36 @@ pub struct CaptureConfig {
 }
 
 impl Default for CaptureConfig {
+    fn default() -> Self {
+        Self {
+            sample_rate: 48000,
+            channels: 2,
+            format: AudioFormat::F32,
+            buffer_frames: 1024,
+        }
+    }
+}
+
+/// Virtual microphone source configuration
+///
+/// Mirrors [`CaptureConfig`]'s fields exactly (same PCM shape, same
+/// defaults); kept as its own type rather than reusing `CaptureConfig`
+/// directly since the two engines are conceptually opposite ends of the
+/// pipe and a `CaptureConfig` passed to [`spawn_virtual_microphone`] would
+/// read backwards at every call site.
+#[derive(Debug, Clone)]
+pub struct PlaybackConfig {
+    /// Sample rate in Hz (default: 48000)
+    pub sample_rate: u32,
+    /// Number of channels (default: 2)
+    pub channels: u32,
+    /// Input sample format (the format callers push in via the channel)
+    pub format: AudioFormat,
+    /// Frames per buffer (default: 1024, ~21ms at 48kHz)
+    pub buffer_frames: u32,
+}
+
+impl Default for PlaybackConfig {
     fn default() -> Self {
         Self {
             sample_rate: 48000,
@@ -486,6 +526,338 @@ pub fn spawn_audio_capture(
     Ok(handle)
 }
 
+/// How much PCM the virtual microphone will buffer before dropping the
+/// oldest bytes rather than growing further.
+///
+/// [`spawn_virtual_microphone`]'s producer (an RDP client's AUDIN Data
+/// PDUs, say) and consumer (PipeWire's own driver clock, calling
+/// `process()` on its own schedule) are not lock-stepped, so short bursts
+/// are normal and must be absorbed. Bounding the absorption window keeps a
+/// slow or bursty producer from turning into unbounded latency: a live
+/// microphone feed that silently falls behind is worse than one that
+/// occasionally drops its oldest backlog to stay near real time.
+const MAX_BUFFERED_MS: u32 = 200;
+
+/// Handle to a running virtual microphone source
+pub struct VirtualMicrophoneHandle {
+    /// Sender for PCM samples to push into the virtual source
+    pub sender: mpsc::Sender<AudioSamples>,
+    stop_signal: Arc<AtomicBool>,
+}
+
+impl VirtualMicrophoneHandle {
+    /// Signal the playback thread to stop
+    pub fn stop(&self) {
+        self.stop_signal.store(true, Ordering::SeqCst);
+    }
+
+    /// Check if playback has been stopped
+    pub fn is_stopped(&self) -> bool {
+        self.stop_signal.load(Ordering::SeqCst)
+    }
+}
+
+struct PlaybackUserData {
+    receiver: mpsc::Receiver<AudioSamples>,
+    format: AudioFormat,
+    bytes_per_frame: usize,
+    max_buffered_bytes: usize,
+    ring: VecDeque<u8>,
+    stop_signal: Arc<AtomicBool>,
+    frames_written: u64,
+    frames_silenced: u64,
+}
+
+/// PipeWire virtual microphone source
+///
+/// Creates an `Audio/Source` node that other applications can select as an
+/// input device, fed by PCM pushed in through a channel. Must be run on a
+/// dedicated thread via [`spawn_virtual_microphone`].
+pub struct VirtualMicrophone {
+    config: PlaybackConfig,
+    receiver: mpsc::Receiver<AudioSamples>,
+    stop_signal: Arc<AtomicBool>,
+}
+
+impl VirtualMicrophone {
+    /// Create a new virtual microphone instance and its handle
+    pub fn new(config: PlaybackConfig, channel_size: usize) -> (Self, VirtualMicrophoneHandle) {
+        let (sender, receiver) = mpsc::channel(channel_size);
+        let stop_signal = Arc::new(AtomicBool::new(false));
+
+        let mic = Self {
+            config,
+            receiver,
+            stop_signal: Arc::clone(&stop_signal),
+        };
+
+        let handle = VirtualMicrophoneHandle { sender, stop_signal };
+
+        (mic, handle)
+    }
+
+    /// Run the PipeWire main loop for the virtual microphone (blocking).
+    ///
+    /// Call from a dedicated thread. Connects to the PipeWire daemon,
+    /// registers the source node, and streams whatever PCM has been pushed
+    /// through the channel until stopped, padding with silence on
+    /// underrun.
+    ///
+    /// `node_label` sets `node.description` (the human-readable name shown
+    /// in mic pickers); defaults to "Lamco Virtual Microphone" when `None`.
+    pub fn start_playback(self, node_label: Option<&str>) -> Result<()> {
+        info!(
+            "Starting virtual microphone: {}Hz, {} channels, format={:?}",
+            self.config.sample_rate, self.config.channels, self.config.format
+        );
+
+        let mainloop = pw::main_loop::MainLoopBox::new(None).context("Failed to create PipeWire MainLoop")?;
+        let context =
+            pw::context::ContextBox::new(mainloop.loop_(), None).context("Failed to create PipeWire Context")?;
+        let core = context.connect(None).context("Failed to connect to PipeWire daemon")?;
+
+        let description = node_label.unwrap_or("Lamco Virtual Microphone");
+
+        let props = pw::properties::properties! {
+            *pw::keys::MEDIA_TYPE => "Audio",
+            // "Capture" describes what CONSUMERS do with this node (they
+            // capture from it, as they would a hardware microphone), not
+            // the local `pw_stream` direction below -- this is the same
+            // convention lamco's own xdg-desktop-portal-generic uses for
+            // its Video/Source screen-capture node.
+            *pw::keys::MEDIA_CATEGORY => "Capture",
+            *pw::keys::MEDIA_CLASS => "Audio/Source",
+            *pw::keys::MEDIA_ROLE => "Communication",
+            *pw::keys::NODE_NAME => "lamco-rdp-microphone",
+            *pw::keys::NODE_DESCRIPTION => description,
+            *pw::keys::APP_NAME => "lamco-pipewire",
+            "stream.is-live" => "true",
+        };
+
+        let stream = pw::stream::StreamBox::new(&core, "lamco-rdp-microphone", props)
+            .context("Failed to create PipeWire stream")?;
+
+        let bytes_per_frame = self.config.channels as usize * self.config.format.bytes_per_sample();
+        let max_buffered_bytes = (self.config.sample_rate as usize * bytes_per_frame * MAX_BUFFERED_MS as usize) / 1000;
+
+        let user_data = PlaybackUserData {
+            receiver: self.receiver,
+            format: self.config.format,
+            bytes_per_frame,
+            max_buffered_bytes,
+            ring: VecDeque::with_capacity(max_buffered_bytes),
+            stop_signal: Arc::clone(&self.stop_signal),
+            frames_written: 0,
+            frames_silenced: 0,
+        };
+
+        let stop_signal_for_callback = Arc::clone(&self.stop_signal);
+
+        let _listener = stream
+            .add_local_listener_with_user_data(user_data)
+            .state_changed(move |_stream, _user_data, old, new| {
+                debug!("Virtual microphone stream state: {:?} -> {:?}", old, new);
+
+                match new {
+                    pw::stream::StreamState::Error(err) => {
+                        error!("Virtual microphone stream error: {}", err);
+                        stop_signal_for_callback.store(true, Ordering::SeqCst);
+                    }
+                    pw::stream::StreamState::Streaming => {
+                        info!("Virtual microphone streaming started");
+                    }
+                    pw::stream::StreamState::Paused => {
+                        debug!("Virtual microphone stream paused");
+                    }
+                    _ => {}
+                }
+            })
+            .param_changed(|_stream, _user_data, id, param| {
+                let Some(param) = param else {
+                    return;
+                };
+
+                if id != spa::param::ParamType::Format.as_raw() {
+                    return;
+                }
+
+                let (media_type, media_subtype) = match format_utils::parse_format(param) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        warn!("Failed to parse virtual microphone format: {:?}", e);
+                        return;
+                    }
+                };
+
+                if media_type != MediaType::Audio || media_subtype != MediaSubtype::Raw {
+                    debug!("Ignoring non-raw audio format: {:?}/{:?}", media_type, media_subtype);
+                    return;
+                }
+
+                let mut info = spa::param::audio::AudioInfoRaw::default();
+                if let Err(e) = info.parse(param) {
+                    warn!("Failed to parse virtual microphone audio info: {:?}", e);
+                    return;
+                }
+
+                info!(
+                    "Virtual microphone format negotiated: rate={}, channels={}, format={:?}",
+                    info.rate(),
+                    info.channels(),
+                    info.format()
+                );
+            })
+            .process(|stream, user_data| {
+                if user_data.stop_signal.load(Ordering::Relaxed) {
+                    return;
+                }
+
+                // Drain everything currently queued from the producer without
+                // blocking. PipeWire calls process() on the graph's own
+                // cadence, not the producer's, so samples arrive in bursts
+                // (e.g. a batch of decoded AUDIN Data PDUs) and must be
+                // buffered here rather than dropped.
+                while let Ok(samples) = user_data.receiver.try_recv() {
+                    let bytes: Vec<u8> = match user_data.format {
+                        AudioFormat::F32 => samples.to_f32().iter().flat_map(|s| s.to_le_bytes()).collect(),
+                        AudioFormat::I16 => samples.to_i16().iter().flat_map(|s| s.to_le_bytes()).collect(),
+                    };
+                    user_data.ring.extend(bytes);
+                }
+
+                while user_data.ring.len() > user_data.max_buffered_bytes {
+                    user_data.ring.pop_front();
+                }
+
+                let Some(mut buffer) = stream.dequeue_buffer() else {
+                    trace!("No buffer available");
+                    return;
+                };
+
+                let datas = buffer.datas_mut();
+                if datas.is_empty() {
+                    return;
+                }
+
+                let data = &mut datas[0];
+                let Some(dest) = data.data() else {
+                    return;
+                };
+
+                let requested = dest.len();
+                let available = user_data.ring.len().min(requested);
+
+                for (i, slot) in dest.iter_mut().enumerate().take(available) {
+                    *slot = user_data.ring[i];
+                }
+                user_data.ring.drain(..available);
+
+                // Silence-pad any shortfall (underrun) so PipeWire always
+                // receives a full-sized buffer; a partially-written chunk
+                // would otherwise contain stale bytes from a previous cycle.
+                if available < requested {
+                    dest[available..requested].fill(0);
+                    user_data.frames_silenced += ((requested - available) / user_data.bytes_per_frame.max(1)) as u64;
+                }
+
+                user_data.frames_written += (available / user_data.bytes_per_frame.max(1)) as u64;
+
+                let chunk = data.chunk_mut();
+                *chunk.offset_mut() = 0;
+                *chunk.stride_mut() = user_data.bytes_per_frame as i32;
+                *chunk.size_mut() = requested as u32;
+            })
+            .register()
+            .context("Failed to register stream listener")?;
+
+        let mut audio_info = spa::param::audio::AudioInfoRaw::new();
+        audio_info.set_format(self.config.format.to_spa_format());
+        audio_info.set_rate(self.config.sample_rate);
+        audio_info.set_channels(self.config.channels);
+
+        let obj = spa::pod::Object {
+            type_: spa::utils::SpaTypes::ObjectParamFormat.as_raw(),
+            id: spa::param::ParamType::EnumFormat.as_raw(),
+            properties: audio_info.into(),
+        };
+
+        let pod_bytes: Vec<u8> = spa::pod::serialize::PodSerializer::serialize(
+            std::io::Cursor::new(Vec::new()),
+            &spa::pod::Value::Object(obj),
+        )
+        .context("Failed to serialize audio format pod")?
+        .0
+        .into_inner();
+
+        let pod = Pod::from_bytes(&pod_bytes).context("Failed to create pod from bytes")?;
+
+        let mut params = [pod];
+
+        // No AUTOCONNECT: this node IS the device, not a client connecting
+        // to one. No DRIVER either, unlike lamco-pipewire's Video/Source
+        // screen-capture node: PipeWire's audio graph already has a driver
+        // clock (a real card or the dummy driver), and this node behaves
+        // like any other audio node scheduled by it.
+        let flags = pw::stream::StreamFlags::MAP_BUFFERS
+            | pw::stream::StreamFlags::ALLOC_BUFFERS
+            | pw::stream::StreamFlags::RT_PROCESS;
+
+        stream
+            .connect(spa::utils::Direction::Output, None, flags, &mut params)
+            .context("Failed to connect PipeWire stream")?;
+
+        info!("Virtual microphone stream connected, starting main loop");
+
+        let loop_ref = mainloop.loop_();
+        while !self.stop_signal.load(Ordering::Relaxed) {
+            loop_ref.iterate(pw::loop_::Timeout::Finite(std::time::Duration::from_millis(100)));
+        }
+
+        info!("Virtual microphone stopped");
+        Ok(())
+    }
+
+    /// Signal the playback to stop
+    pub fn stop(&self) {
+        self.stop_signal.store(true, Ordering::SeqCst);
+    }
+}
+
+/// Spawn a virtual microphone source on a dedicated thread
+///
+/// Returns a handle whose `sender` accepts PCM samples to feed into the
+/// virtual source. The node exists and streams (silence, if nothing has
+/// been pushed yet) until the handle is dropped or `stop()` is called.
+///
+/// # Arguments
+///
+/// * `config` - Virtual microphone configuration
+/// * `node_label` - Human-readable node description (mic-picker display name)
+/// * `channel_size` - Bounded channel capacity for pushed sample batches
+pub fn spawn_virtual_microphone(
+    config: PlaybackConfig,
+    node_label: Option<String>,
+    channel_size: usize,
+) -> Result<VirtualMicrophoneHandle> {
+    let (mic, handle) = VirtualMicrophone::new(config, channel_size);
+
+    std::thread::Builder::new()
+        .name("pipewire-mic".into())
+        .spawn(move || {
+            // Shared, reference-counted acquire -- see crate::pw_lifecycle.
+            crate::pw_lifecycle::acquire();
+
+            if let Err(e) = mic.start_playback(node_label.as_deref()) {
+                error!("Virtual microphone error: {:#}", e);
+            }
+
+            crate::pw_lifecycle::release();
+        })
+        .context("Failed to spawn virtual microphone thread")?;
+
+    Ok(handle)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -533,5 +905,59 @@ mod tests {
         assert!(!handle.is_stopped());
         handle.stop();
         assert!(handle.is_stopped());
+    }
+
+    #[test]
+    fn test_playback_config_default() {
+        let config = PlaybackConfig::default();
+        assert_eq!(config.sample_rate, 48000);
+        assert_eq!(config.channels, 2);
+        assert_eq!(config.format, AudioFormat::F32);
+    }
+
+    #[test]
+    fn test_virtual_microphone_handle_stop() {
+        let config = PlaybackConfig::default();
+        let (_mic, handle) = VirtualMicrophone::new(config, 10);
+
+        assert!(!handle.is_stopped());
+        handle.stop();
+        assert!(handle.is_stopped());
+    }
+
+    #[test]
+    fn test_max_buffered_bytes_matches_two_hundred_ms() {
+        // 48000 Hz * 2 channels * 4 bytes (F32) * 200ms / 1000 = 76800 bytes.
+        let config = PlaybackConfig::default();
+        let bytes_per_frame = config.channels as usize * config.format.bytes_per_sample();
+        let expected = (config.sample_rate as usize * bytes_per_frame * MAX_BUFFERED_MS as usize) / 1000;
+        assert_eq!(expected, 76_800);
+    }
+
+    #[test]
+    fn test_virtual_microphone_underrun_pads_silence() {
+        // Exercises the process()-callback arithmetic in isolation, without a
+        // real PipeWire connection: a ring buffer shorter than the requested
+        // chunk must silence-pad the shortfall rather than leave stale bytes.
+        let bytes_per_frame = 2usize * AudioFormat::I16.bytes_per_sample();
+        let mut ring: VecDeque<u8> = VecDeque::new();
+        ring.extend([1u8, 2, 3, 4]); // one I16 stereo frame
+
+        let requested = 16usize; // four frames worth
+        let mut dest = vec![0xFFu8; requested];
+        let available = ring.len().min(requested);
+
+        for (i, slot) in dest.iter_mut().enumerate().take(available) {
+            *slot = ring[i];
+        }
+        ring.drain(..available);
+
+        if available < requested {
+            dest[available..requested].fill(0);
+        }
+
+        assert_eq!(&dest[..4], &[1, 2, 3, 4]);
+        assert!(dest[4..].iter().all(|&b| b == 0));
+        assert_eq!(available / bytes_per_frame, 1);
     }
 }

@@ -5,6 +5,22 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-09-10
+
+### Added
+- **lamco-pipewire 0.7.0:** virtual microphone source (`spawn_virtual_microphone`,
+  `VirtualMicrophone`, `VirtualMicrophoneHandle`, `PlaybackConfig`) — the mirror
+  image of the existing audio capture engine, creating an `Audio/Source` node
+  fed by PCM pushed in through a channel rather than reading from an existing
+  one. See lamco-pipewire's own changelog. `lamco-portal` is unaffected and
+  stays at 0.4.5; `lamco-video` is unaffected and stays at 0.3.0, only its
+  `lamco-pipewire` dependency floor moved (`^0.6.0` -> `^0.7.0`) to keep
+  resolving against the new version.
+
+### Changed
+- Bumped to 0.7.0 (from the 0.6.x line) alongside lamco-pipewire's own jump to
+  0.7.0. The 0.5.x compatibility line is no longer maintained in parallel.
+
 ## [0.6.15] - 2026-08-30
 
 ### Added
