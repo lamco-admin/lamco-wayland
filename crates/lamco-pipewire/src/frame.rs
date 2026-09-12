@@ -95,6 +95,12 @@ pub struct RawFrameData {
     pub stride: Option<u32>,
     /// Pixel format (None = BGRx).
     pub format: Option<PixelFormat>,
+    /// The real per-output identifier this frame was captured from (the
+    /// caller's stream/node ID convention, matching `VideoFrame::monitor_index`
+    /// downstream). `None` when the source has no per-stream identity to give
+    /// (single-stream direct channels historically had none) -- the adapter
+    /// falls back to `0`, which is also correct for that single-stream case.
+    pub monitor_index: Option<u32>,
 }
 
 /// Video frame captured from PipeWire
