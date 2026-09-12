@@ -632,6 +632,18 @@ impl VirtualMicrophone {
             *pw::keys::NODE_DESCRIPTION => description,
             *pw::keys::APP_NAME => "lamco-pipewire",
             "stream.is-live" => "true",
+            // Root cause of a confirmed live bug: a follower node not
+            // linked to a driver stays "suspended" and its `process()`
+            // callback is never invoked (PipeWire's own docs, "Streams" --
+            // this is the documented default since 0.3.51), even once a
+            // real consumer links to it (verified via `pw-dump`: an active
+            // Link to a running client, node still `suspended`, `process()`
+            // never called). This node must always produce data --
+            // including silence when nothing has been pushed yet, per
+            // `spawn_virtual_microphone`'s own doc comment -- regardless of
+            // whether anything is currently listening, so opt out of the
+            // link-gated default entirely.
+            *pw::keys::NODE_ALWAYS_PROCESS => "true",
         };
 
         let stream = pw::stream::StreamBox::new(&core, "lamco-rdp-microphone", props)
@@ -793,13 +805,24 @@ impl VirtualMicrophone {
 
         let mut params = [pod];
 
-        // No AUTOCONNECT: this node IS the device, not a client connecting
-        // to one. No DRIVER either, unlike lamco-pipewire's Video/Source
-        // screen-capture node: PipeWire's audio graph already has a driver
-        // clock (a real card or the dummy driver), and this node behaves
-        // like any other audio node scheduled by it.
-        let flags = pw::stream::StreamFlags::MAP_BUFFERS
-            | pw::stream::StreamFlags::ALLOC_BUFFERS
+        // AUTOCONNECT: without it, this stream is registered but never
+        // linked into the graph. DRIVER was also tried here and rejected --
+        // PipeWire returned Error("Start error: Invalid argument") for this
+        // stream shape, so it is not a viable fix for this node.
+        //
+        // No ALLOC_BUFFERS: native PipeWire trace (PIPEWIRE_DEBUG=3) showed
+        // the real failure underneath that same "Invalid argument" --
+        // `pw.stream impl_port_use_buffers(): invalid buffer mem` followed
+        // by `pw.node start_node(): start node error -22`, right after the
+        // spa.audioadapter (auto-inserted for our S16LE-mono -> graph-native
+        // format conversion) negotiated buffers. ALLOC_BUFFERS asks this
+        // stream to own the buffer memory itself, which the adapter
+        // apparently cannot accept for this node shape. The proven-working
+        // capture-direction sibling in this same file (`AudioCapture`,
+        // above) uses AUTOCONNECT | MAP_BUFFERS | RT_PROCESS with no
+        // ALLOC_BUFFERS -- match it.
+        let flags = pw::stream::StreamFlags::AUTOCONNECT
+            | pw::stream::StreamFlags::MAP_BUFFERS
             | pw::stream::StreamFlags::RT_PROCESS;
 
         stream
