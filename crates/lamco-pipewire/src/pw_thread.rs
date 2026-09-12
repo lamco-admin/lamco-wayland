@@ -390,11 +390,12 @@ impl PipeWireThreadManager {
                         height: raw.height.unwrap_or(height),
                         stride: raw.stride.unwrap_or(width * 4),
                         format: raw.format.unwrap_or(PixelFormat::BGRx),
-                        // This adapter carries exactly one upstream raw_rx channel with no
-                        // per-stream identity in RawFrameData, unlike the PipeWire-native
-                        // paths below which set this to their real node id. 0 here reflects
-                        // that there's only ever one stream on this path, not an omission.
-                        monitor_index: 0,
+                        // A single raw_rx channel can multiplex frames from several
+                        // upstream streams (a multi-monitor direct-channel source):
+                        // use the caller-supplied identity when given. Falls back to
+                        // 0 for sources with no per-stream identity to give, which is
+                        // also correct for the single-stream case.
+                        monitor_index: raw.monitor_index.unwrap_or(0),
                         buffer: crate::frame::FrameBuffer::Memory(Arc::new(raw.data)),
                         capture_time: SystemTime::now(),
                         damage_regions: vec![],
