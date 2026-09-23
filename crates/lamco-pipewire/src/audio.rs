@@ -538,6 +538,37 @@ pub fn spawn_audio_capture(
 /// occasionally drops its oldest backlog to stay near real time.
 const MAX_BUFFERED_MS: u32 = 200;
 
+/// Fill one PipeWire cycle of the virtual microphone from `ring`.
+///
+/// Writes the frames the graph asked for this cycle (`requested_frames`,
+/// from `pw_buffer.requested`), not the whole mapped buffer: the buffer can
+/// hold many quanta, and filling all of it every cycle consumed the ring far
+/// faster than real time, turning the rest of each chunk into silence.
+/// Older PipeWire reports 0 there, in which case the whole buffer is used.
+/// Any shortfall is silence-padded so the chunk never carries stale bytes.
+///
+/// Returns `(bytes taken from the ring, chunk length in bytes)`.
+fn fill_cycle(
+    ring: &mut VecDeque<u8>,
+    dest: &mut [u8],
+    requested_frames: u64,
+    bytes_per_frame: usize,
+) -> (usize, usize) {
+    let wanted = usize::try_from(requested_frames)
+        .ok()
+        .filter(|&frames| frames > 0)
+        .map_or(dest.len(), |frames| frames.saturating_mul(bytes_per_frame));
+    let chunk_len = wanted.min(dest.len()) / bytes_per_frame * bytes_per_frame;
+    let available = ring.len().min(chunk_len);
+
+    for (slot, byte) in dest[..available].iter_mut().zip(ring.drain(..available)) {
+        *slot = byte;
+    }
+    dest[available..chunk_len].fill(0);
+
+    (available, chunk_len)
+}
+
 /// Handle to a running virtual microphone source
 pub struct VirtualMicrophoneHandle {
     /// Sender for PCM samples to push into the virtual source
@@ -745,6 +776,7 @@ impl VirtualMicrophone {
                     trace!("No buffer available");
                     return;
                 };
+                let requested_frames = buffer.requested();
 
                 let datas = buffer.datas_mut();
                 if datas.is_empty() {
@@ -756,28 +788,15 @@ impl VirtualMicrophone {
                     return;
                 };
 
-                let requested = dest.len();
-                let available = user_data.ring.len().min(requested);
-
-                for (i, slot) in dest.iter_mut().enumerate().take(available) {
-                    *slot = user_data.ring[i];
-                }
-                user_data.ring.drain(..available);
-
-                // Silence-pad any shortfall (underrun) so PipeWire always
-                // receives a full-sized buffer; a partially-written chunk
-                // would otherwise contain stale bytes from a previous cycle.
-                if available < requested {
-                    dest[available..requested].fill(0);
-                    user_data.frames_silenced += ((requested - available) / user_data.bytes_per_frame.max(1)) as u64;
-                }
-
-                user_data.frames_written += (available / user_data.bytes_per_frame.max(1)) as u64;
+                let bytes_per_frame = user_data.bytes_per_frame.max(1);
+                let (available, chunk_len) = fill_cycle(&mut user_data.ring, dest, requested_frames, bytes_per_frame);
+                user_data.frames_silenced += ((chunk_len - available) / bytes_per_frame) as u64;
+                user_data.frames_written += (available / bytes_per_frame) as u64;
 
                 let chunk = data.chunk_mut();
                 *chunk.offset_mut() = 0;
                 *chunk.stride_mut() = user_data.bytes_per_frame as i32;
-                *chunk.size_mut() = requested as u32;
+                *chunk.size_mut() = chunk_len as u32;
             })
             .register()
             .context("Failed to register stream listener")?;
@@ -959,28 +978,44 @@ mod tests {
 
     #[test]
     fn test_virtual_microphone_underrun_pads_silence() {
-        // Exercises the process()-callback arithmetic in isolation, without a
-        // real PipeWire connection: a ring buffer shorter than the requested
-        // chunk must silence-pad the shortfall rather than leave stale bytes.
-        let bytes_per_frame = 2usize * AudioFormat::I16.bytes_per_sample();
-        let mut ring: VecDeque<u8> = VecDeque::new();
-        ring.extend([1u8, 2, 3, 4]); // one I16 stereo frame
+        // A ring shorter than the requested chunk must silence-pad the
+        // shortfall rather than leave stale bytes.
+        let bytes_per_frame = 2 * AudioFormat::I16.bytes_per_sample();
+        let mut ring: VecDeque<u8> = VecDeque::from(vec![1u8, 2, 3, 4]); // one I16 stereo frame
+        let mut dest = vec![0xFFu8; 16]; // four frames
 
-        let requested = 16usize; // four frames worth
-        let mut dest = vec![0xFFu8; requested];
-        let available = ring.len().min(requested);
+        let (available, chunk_len) = fill_cycle(&mut ring, &mut dest, 4, bytes_per_frame);
 
-        for (i, slot) in dest.iter_mut().enumerate().take(available) {
-            *slot = ring[i];
-        }
-        ring.drain(..available);
-
-        if available < requested {
-            dest[available..requested].fill(0);
-        }
-
+        assert_eq!((available, chunk_len), (4, 16));
         assert_eq!(&dest[..4], &[1, 2, 3, 4]);
         assert!(dest[4..].iter().all(|&b| b == 0));
-        assert_eq!(available / bytes_per_frame, 1);
+        assert!(ring.is_empty());
+    }
+
+    #[test]
+    fn test_virtual_microphone_writes_only_the_requested_frames() {
+        // PipeWire maps a buffer several quanta long but asks for one
+        // quantum per cycle. Filling the whole buffer drained the ring
+        // faster than real time and padded the rest with silence.
+        let bytes_per_frame = AudioFormat::I16.bytes_per_sample(); // mono
+        let mut ring: VecDeque<u8> = (0..=255u8).cycle().take(8192).collect();
+        let mut dest = vec![0u8; 24576]; // 12288 frames mapped
+
+        let (available, chunk_len) = fill_cycle(&mut ring, &mut dest, 1024, bytes_per_frame);
+
+        assert_eq!((available, chunk_len), (2048, 2048));
+        assert_eq!(ring.len(), 8192 - 2048, "only one quantum is consumed");
+    }
+
+    #[test]
+    fn test_virtual_microphone_without_requested_fills_the_buffer() {
+        let bytes_per_frame = AudioFormat::I16.bytes_per_sample();
+        let mut ring: VecDeque<u8> = VecDeque::from(vec![7u8; 64]);
+        let mut dest = vec![0xFFu8; 32];
+
+        let (available, chunk_len) = fill_cycle(&mut ring, &mut dest, 0, bytes_per_frame);
+
+        assert_eq!((available, chunk_len), (32, 32));
+        assert!(dest.iter().all(|&b| b == 7));
     }
 }
