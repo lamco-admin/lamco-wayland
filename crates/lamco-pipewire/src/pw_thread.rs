@@ -1135,6 +1135,7 @@ fn create_stream_on_thread(
     let param_neg_height = StdArc::clone(&negotiated_height);
     let param_neg_modifier = StdArc::clone(&negotiated_modifier);
     let proc_corrupted_buffers = StdArc::clone(&corrupted_buffers);
+    let proc_cursor_only_buffers = StdArc::new(AtomicU64::new(0));
     let param_stream_tags = StdArc::clone(&stream_tags);
     let proc_neg_width = StdArc::clone(&negotiated_width);
     let proc_neg_height = StdArc::clone(&negotiated_height);
@@ -1412,7 +1413,23 @@ fn create_stream_on_thread(
                     buffer_meta.mappable = mappable;
                     buffer_meta.chunk_empty = chunk_empty;
 
-                    if chunk_corrupted {
+                    buffer_meta.cursor_only_update = chunk_corrupted
+                        && size == 0
+                        && buffer_meta.cursor.as_ref().is_some_and(|c| c.id != 0);
+
+                    if buffer_meta.cursor_only_update {
+                        // Mutter's routine marker for a buffer that only moves the
+                        // cursor. Kept out of corrupted_buffer_count() so the
+                        // storm and scanout-freeze detectors downstream count only
+                        // buffers that look like real recording failures.
+                        let seen = proc_cursor_only_buffers.fetch_add(1, Ordering::Relaxed) + 1;
+                        if seen == 1 || seen.is_multiple_of(100) {
+                            debug!(
+                                "Stream {}: corrupted-flagged buffer carries only a cursor update ({} so far)",
+                                stream_id_for_callbacks, seen
+                            );
+                        }
+                    } else if chunk_corrupted {
                         // Producer marked this chunk corrupted (SPA_CHUNK_FLAG_CORRUPTED).
                         // Any other metadata on it, notably SPA_META_VideoDamage, may be
                         // stale data left in a recycled buffer slot rather than a fresh
