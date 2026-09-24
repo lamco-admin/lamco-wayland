@@ -1136,6 +1136,9 @@ fn create_stream_on_thread(
     let param_neg_modifier = StdArc::clone(&negotiated_modifier);
     let proc_corrupted_buffers = StdArc::clone(&corrupted_buffers);
     let proc_cursor_only_buffers = StdArc::new(AtomicU64::new(0));
+    // The shared count spans every stream of this manager (for
+    // corrupted_buffer_count()); the log line needs this stream's own.
+    let proc_stream_corrupted_buffers = StdArc::new(AtomicU64::new(0));
     let param_stream_tags = StdArc::clone(&stream_tags);
     let proc_neg_width = StdArc::clone(&negotiated_width);
     let proc_neg_height = StdArc::clone(&negotiated_height);
@@ -1440,11 +1443,24 @@ fn create_stream_on_thread(
                         // for the whole buffer pool at frame rate (roughly 1000 in a
                         // minute, GNOME/mutter#3903), which drowns the log. Consumers
                         // that need the exact rate read corrupted_buffer_count().
-                        let seen = proc_corrupted_buffers.fetch_add(1, Ordering::Relaxed) + 1;
-                        if seen == 1 || seen.is_multiple_of(100) {
+                        let total = proc_corrupted_buffers.fetch_add(1, Ordering::Relaxed) + 1;
+                        let seen = proc_stream_corrupted_buffers.fetch_add(1, Ordering::Relaxed) + 1;
+                        // An empty one carries no pixels and is skipped below, so only a
+                        // flagged buffer with a payload is worth a warning. Both still
+                        // count: the empty kind is what a scanout freeze produces.
+                        if size == 0 {
+                            if seen == 1 || seen.is_multiple_of(100) {
+                                debug!(
+                                    "Stream {}: empty buffer marked SPA_CHUNK_FLAG_CORRUPTED, skipped \
+                                     ({} on this stream, {} across streams)",
+                                    stream_id_for_callbacks, seen, total
+                                );
+                            }
+                        } else if seen == 1 || seen.is_multiple_of(100) {
                             warn!(
-                                "Stream {}: buffer marked SPA_CHUNK_FLAG_CORRUPTED, forwarding flagged ({} so far)",
-                                stream_id_for_callbacks, seen
+                                "Stream {}: buffer marked SPA_CHUNK_FLAG_CORRUPTED, forwarding flagged \
+                                 ({} on this stream, {} across streams)",
+                                stream_id_for_callbacks, seen, total
                             );
                         }
                     }
