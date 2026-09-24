@@ -65,6 +65,16 @@ pub struct BufferMeta {
     /// An explicit "nothing this cycle", as opposed to a zero size, which is
     /// only an absence. Set from the data chunk, not from SPA metadata.
     pub chunk_empty: bool,
+
+    /// Best guess that a `SPA_CHUNK_FLAG_CORRUPTED` chunk is a cursor-only
+    /// update rather than a failed paint.
+    ///
+    /// Mutter marks a buffer that carries only a cursor move corrupted with
+    /// size 0, the same wire signature as a genuine recording failure (it
+    /// clears the header flags on both paths). The only tell is a valid
+    /// SPA_META_Cursor on the buffer, and a recycled slot can carry a stale
+    /// one, so this is a heuristic, not a classification.
+    pub cursor_only_update: bool,
 }
 
 /// Timing and health metadata from SPA_META_Header.
