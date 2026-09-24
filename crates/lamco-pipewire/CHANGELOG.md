@@ -5,6 +5,19 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `PipeWireThreadManager::frame_notify()`: a `tokio::sync::Notify` signalled
+  after every queued frame, so a consumer can await the next frame once
+  `try_recv_frame()` comes back empty instead of polling on a timer.
+
+### Changed
+- The PipeWire thread now waits in `loop.iterate()` (up to 20 ms) instead of
+  a non-blocking iterate plus a fixed 5 ms sleep, which woke it 200 times a
+  second on an idle desktop. PipeWire events are still handled the moment
+  they arrive; commands and shutdown are picked up within 20 ms.
+
 ## [0.7.0] - 2026-09-10
 
 ### Added
