@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   after every queued frame, so a consumer can await the next frame once
   `try_recv_frame()` comes back empty instead of polling on a timer.
 
+### Fixed
+- Cursor metadata is requested as a size range (bitmaps from 1x1 up to
+  1024x1024) instead of a fixed `sizeof(spa_meta_cursor)`. Producers declare
+  one fixed size that includes room for the cursor bitmap (Mutter: 384x384),
+  so the old request never intersected with it: the meta was dropped and no
+  cursor position or shape ever reached the consumer.
+
 ### Changed
 - The PipeWire thread now waits in `loop.iterate()` (up to 20 ms) instead of
   a non-blocking iterate plus a fixed 5 ms sleep, which woke it 200 times a

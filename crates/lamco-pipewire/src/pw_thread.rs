@@ -2045,6 +2045,25 @@ fn request_buffer_metadata(stream: &pipewire::stream::Stream, stream_id: u32) ->
 
     // Each metadata type we want must be requested as a separate SPA_PARAM_Meta object.
     // The object specifies the meta type ID and the minimum allocation size.
+    // Cursor metadata carries the cursor image after the fixed struct, so its
+    // size depends on the bitmap. Producers declare one fixed size (Mutter:
+    // room for a 384x384 cursor) and a single fixed request of just the struct
+    // never intersects with it: the meta is dropped and no cursor position or
+    // shape ever arrives. Offer a range instead, as OBS and the portals do.
+    const fn cursor_meta_size(width: usize, height: usize) -> i32 {
+        (std::mem::size_of::<libspa_sys::spa_meta_cursor>()
+            + std::mem::size_of::<libspa_sys::spa_meta_bitmap>()
+            + width * height * 4) as i32
+    }
+    let cursor_size = Value::Choice(spa::pod::ChoiceValue::Int(spa::utils::Choice(
+        spa::utils::ChoiceFlags::empty(),
+        spa::utils::ChoiceEnum::Range {
+            default: cursor_meta_size(64, 64),
+            min: cursor_meta_size(1, 1),
+            max: cursor_meta_size(1024, 1024),
+        },
+    )));
+
     let meta_requests: &[(u32, usize, &str)] = &[
         (
             libspa_sys::SPA_META_Header,
@@ -2083,17 +2102,33 @@ fn request_buffer_metadata(stream: &pipewire::stream::Stream, stream_id: u32) ->
             id: spa::param::ParamType::Meta.as_raw(),
             properties: vec![
                 spa::pod::Property::new(libspa_sys::SPA_PARAM_META_type, Value::Id(spa::utils::Id(meta_type))),
-                spa::pod::Property::new(libspa_sys::SPA_PARAM_META_size, Value::Int(meta_size as i32)),
+                spa::pod::Property::new(
+                    libspa_sys::SPA_PARAM_META_size,
+                    if meta_type == libspa_sys::SPA_META_Cursor {
+                        cursor_size.clone()
+                    } else {
+                        Value::Int(meta_size as i32)
+                    },
+                ),
             ],
         };
 
         match PodSerializer::serialize(Cursor::new(Vec::new()), &Value::Object(meta_obj)) {
             Ok(serialized) => {
                 param_bytes_list.push(serialized.0.into_inner());
-                debug!(
-                    "Stream {}: requested SPA_META_{} ({} bytes)",
-                    stream_id, name, meta_size
-                );
+                if meta_type == libspa_sys::SPA_META_Cursor {
+                    debug!(
+                        "Stream {}: requested SPA_META_Cursor ({}..{} bytes, bitmaps up to 1024x1024)",
+                        stream_id,
+                        cursor_meta_size(1, 1),
+                        cursor_meta_size(1024, 1024)
+                    );
+                } else {
+                    debug!(
+                        "Stream {}: requested SPA_META_{} ({} bytes)",
+                        stream_id, name, meta_size
+                    );
+                }
             }
             Err(e) => {
                 warn!(
