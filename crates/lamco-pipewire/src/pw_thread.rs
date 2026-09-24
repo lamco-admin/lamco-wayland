@@ -118,6 +118,41 @@ use crate::format::PixelFormat;
 use crate::frame::{FrameFlags, VideoFrame};
 use crate::stream::{PwStreamState, StreamConfig, StreamStateEvent};
 
+/// Longest the PipeWire thread blocks in the loop before checking its command
+/// and shutdown channels. Commands (stream create and destroy) only come at
+/// connect, resize and rebind, so 20 ms is invisible there.
+const COMMAND_POLL: Duration = Duration::from_millis(20);
+
+/// Frame queue sender that wakes the async consumer after every queued frame.
+#[derive(Clone)]
+struct FrameSender {
+    tx: std_mpsc::SyncSender<VideoFrame>,
+    ready: StdArc<tokio::sync::Notify>,
+}
+
+impl FrameSender {
+    fn new(tx: std_mpsc::SyncSender<VideoFrame>) -> (Self, StdArc<tokio::sync::Notify>) {
+        let ready = StdArc::new(tokio::sync::Notify::new());
+        (
+            Self {
+                tx,
+                ready: StdArc::clone(&ready),
+            },
+            ready,
+        )
+    }
+
+    /// The rejected frame is dropped: every caller discards it anyway.
+    fn try_send(&self, frame: VideoFrame) -> std::result::Result<(), std_mpsc::TrySendError<()>> {
+        self.tx.try_send(frame).map_err(|e| match e {
+            std_mpsc::TrySendError::Full(_) => std_mpsc::TrySendError::Full(()),
+            std_mpsc::TrySendError::Disconnected(_) => std_mpsc::TrySendError::Disconnected(()),
+        })?;
+        self.ready.notify_one();
+        Ok(())
+    }
+}
+
 /// A cached mmap base pointer for a DMA-BUF FD.
 ///
 /// Wrapped so the cache can be shared between the PipeWire main-loop thread
@@ -205,7 +240,7 @@ struct ManagedStream {
     frame_count: u64,
 
     /// Frame channel for sending captured frames
-    frame_tx: std_mpsc::SyncSender<VideoFrame>,
+    frame_tx: FrameSender,
 }
 
 /// PipeWire thread manager
@@ -221,6 +256,9 @@ pub struct PipeWireThreadManager {
 
     /// Frame channel receiver
     frame_rx: std_mpsc::Receiver<VideoFrame>,
+
+    /// Signalled after each frame lands in `frame_rx`; see `frame_notify()`.
+    frame_ready: StdArc<tokio::sync::Notify>,
 
     /// Stream state event receiver (state changes from PipeWire callbacks)
     state_event_rx: std_mpsc::Receiver<StreamStateEvent>,
@@ -267,6 +305,7 @@ impl PipeWireThreadManager {
         // Frame channel: increased from 64 to 256 to handle burst traffic
         // At 60 FPS capture / 30 FPS target = 2:1 ratio needs buffer
         let (frame_tx, frame_rx) = std_mpsc::sync_channel::<VideoFrame>(256);
+        let (frame_tx, frame_ready) = FrameSender::new(frame_tx);
         // State event channel for health monitoring (bounded to prevent unbounded growth)
         let (state_event_tx, state_event_rx) = std_mpsc::sync_channel::<StreamStateEvent>(256);
         let (shutdown_tx, shutdown_rx) = std_mpsc::sync_channel::<()>(1);
@@ -299,6 +338,7 @@ impl PipeWireThreadManager {
             thread_handle: Some(thread_handle),
             command_tx,
             frame_rx,
+            frame_ready,
             state_event_rx,
             shutdown_tx: Some(shutdown_tx),
             direct_shutdown_flag: None,
@@ -317,6 +357,7 @@ impl PipeWireThreadManager {
         use std::time::SystemTime;
 
         let (frame_tx, frame_rx) = std_mpsc::sync_channel::<VideoFrame>(256);
+        let (frame_tx, frame_ready) = FrameSender::new(frame_tx);
         let (state_event_tx, state_event_rx) = std_mpsc::sync_channel::<StreamStateEvent>(256);
         let (command_tx, _command_rx) = std_mpsc::sync_channel::<PipeWireThreadCommand>(1);
         // Dedicated shutdown flag for the direct-frame-adapter thread. The
@@ -428,6 +469,7 @@ impl PipeWireThreadManager {
             thread_handle: Some(thread_handle),
             command_tx,
             frame_rx,
+            frame_ready,
             state_event_rx,
             shutdown_tx: Some(notify_shutdown_tx),
             direct_shutdown_flag: Some(shutdown_flag),
@@ -459,6 +501,14 @@ impl PipeWireThreadManager {
     /// Some(VideoFrame) if a frame is available, None otherwise
     pub fn try_recv_frame(&self) -> Option<VideoFrame> {
         self.frame_rx.try_recv().ok()
+    }
+
+    /// Signalled after each queued frame, so an async consumer can await
+    /// `notified()` once `try_recv_frame()` comes back empty instead of
+    /// polling. The permit is kept when nobody is waiting, so a frame that
+    /// lands between the drain and the await still wakes the consumer.
+    pub fn frame_notify(&self) -> StdArc<tokio::sync::Notify> {
+        StdArc::clone(&self.frame_ready)
     }
 
     /// Total buffers seen with `SPA_CHUNK_FLAG_CORRUPTED` since the manager
@@ -602,7 +652,7 @@ impl Drop for PipeWireThreadManager {
 fn run_pipewire_main_loop(
     fd: RawFd,
     command_rx: std_mpsc::Receiver<PipeWireThreadCommand>,
-    frame_tx: std_mpsc::SyncSender<VideoFrame>,
+    frame_tx: FrameSender,
     state_event_tx: std_mpsc::SyncSender<StreamStateEvent>,
     shutdown_rx: std_mpsc::Receiver<()>,
     corrupted_buffers: StdArc<AtomicU64>,
@@ -817,11 +867,13 @@ fn run_pipewire_main_loop(
             break 'main;
         }
 
-        // Run one iteration of PipeWire main loop
-        // Use non-blocking poll (Timeout::None == 0ms) to avoid frame timing jitter
-        // Then sleep based on expected frame timing for efficiency
+        // Block in the loop until PipeWire has something for us, but come back
+        // within COMMAND_POLL to pick up queued commands and shutdown. A
+        // non-blocking iterate plus a fixed sleep woke this thread 200 times a
+        // second on an idle desktop; waiting in iterate() costs no latency,
+        // since it returns as soon as an event arrives.
         let loop_ref = main_loop.loop_();
-        let events_processed = loop_ref.iterate(Timeout::None);
+        let events_processed = loop_ref.iterate(Timeout::Finite(COMMAND_POLL));
 
         if loop_iterations.is_multiple_of(1000) {
             trace!(
@@ -829,10 +881,6 @@ fn run_pipewire_main_loop(
                 events_processed
             );
         }
-
-        // Sleep briefly to avoid busy-looping while still maintaining low latency
-        // At 60 FPS, frames arrive every ~16ms, so 5ms sleep is safe
-        std::thread::sleep(Duration::from_millis(5));
     }
 
     // Cleanup
@@ -1067,7 +1115,7 @@ fn create_stream_on_thread(
     node_id: u32,
     core: &pipewire::core::Core,
     config: StreamConfig,
-    frame_tx: std_mpsc::SyncSender<VideoFrame>,
+    frame_tx: FrameSender,
     state_event_tx: std_mpsc::SyncSender<StreamStateEvent>,
     dmabuf_cache: DmaBufCache,
     corrupted_buffers: StdArc<AtomicU64>,
@@ -2291,6 +2339,25 @@ fn build_stream_parameters(config: &StreamConfig) -> Result<(Vec<Vec<u8>>, Strin
 mod tests {
     #[allow(unused_imports)]
     use super::*;
+
+    #[tokio::test]
+    async fn frame_sender_leaves_a_wakeup_for_a_consumer_that_waits_late() {
+        let (tx, rx) = std_mpsc::sync_channel(1);
+        let (sender, ready) = FrameSender::new(tx);
+        let frame = || VideoFrame::new(1, 2, 2, 8, PixelFormat::BGRx, 0);
+
+        sender.try_send(frame()).unwrap();
+        tokio::time::timeout(Duration::from_millis(100), ready.notified())
+            .await
+            .expect("the send must leave a permit for a consumer that was not yet waiting");
+        assert!(rx.try_recv().is_ok());
+
+        sender.try_send(frame()).unwrap();
+        assert!(matches!(
+            sender.try_send(frame()),
+            Err(std_mpsc::TrySendError::Full(()))
+        ));
+    }
 
     #[test]
     fn test_thread_manager_creation() {
