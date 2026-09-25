@@ -1464,15 +1464,19 @@ fn create_stream_on_thread(
                     buffer_meta.mappable = mappable;
                     buffer_meta.chunk_empty = chunk_empty;
 
-                    buffer_meta.cursor_only_update = chunk_corrupted
-                        && size == 0
-                        && buffer_meta.cursor.as_ref().is_some_and(|c| c.id != 0);
+                    // A corrupted-flagged buffer that carries a cursor is how
+                    // compositors send a cursor-only update. Mutter zeroes the chunk
+                    // size; KWin keeps it at the full buffer size and flags the
+                    // chunk corrupted meaning "do not read the pixels"
+                    // (kwin screencaststream.cpp). Either way the pixels are not
+                    // content and the cursor metadata is.
+                    buffer_meta.cursor_only_update =
+                        chunk_corrupted && buffer_meta.cursor.as_ref().is_some_and(|c| c.id != 0);
 
                     if buffer_meta.cursor_only_update {
-                        // Mutter's routine marker for a buffer that only moves the
-                        // cursor. Kept out of corrupted_buffer_count() so the
-                        // storm and scanout-freeze detectors downstream count only
-                        // buffers that look like real recording failures.
+                        // Kept out of corrupted_buffer_count() so the storm and
+                        // scanout-freeze detectors downstream count only buffers
+                        // that look like real recording failures.
                         let seen = proc_cursor_only_buffers.fetch_add(1, Ordering::Relaxed) + 1;
                         if seen == 1 || seen.is_multiple_of(100) {
                             debug!(
@@ -2064,6 +2068,19 @@ fn request_buffer_metadata(stream: &pipewire::stream::Stream, stream_id: u32) ->
         },
     )));
 
+    // Damage is an array of spa_meta_region whose length each producer fixes
+    // (Mutter 32, KWin 16). A fixed request only intersects with an identical
+    // offer, so request a range and let each producer's limit win.
+    let region_size = std::mem::size_of::<libspa_sys::spa_meta_region>() as i32;
+    let damage_size = Value::Choice(spa::pod::ChoiceValue::Int(spa::utils::Choice(
+        spa::utils::ChoiceFlags::empty(),
+        spa::utils::ChoiceEnum::Range {
+            default: region_size * crate::meta::MAX_DAMAGE_REGIONS as i32,
+            min: region_size,
+            max: region_size * crate::meta::MAX_DAMAGE_REGIONS as i32,
+        },
+    )));
+
     let meta_requests: &[(u32, usize, &str)] = &[
         (
             libspa_sys::SPA_META_Header,
@@ -2106,6 +2123,8 @@ fn request_buffer_metadata(stream: &pipewire::stream::Stream, stream_id: u32) ->
                     libspa_sys::SPA_PARAM_META_size,
                     if meta_type == libspa_sys::SPA_META_Cursor {
                         cursor_size.clone()
+                    } else if meta_type == libspa_sys::SPA_META_VideoDamage {
+                        damage_size.clone()
                     } else {
                         Value::Int(meta_size as i32)
                     },

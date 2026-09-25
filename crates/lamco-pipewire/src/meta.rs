@@ -273,6 +273,7 @@ pub fn extract_buffer_meta(buffer: &Buffer<'_>) -> BufferMeta {
     meta
 }
 
-/// Maximum number of damage rectangles to request.
-/// 16 is a reasonable upper bound — most compositors report fewer.
-pub const MAX_DAMAGE_REGIONS: usize = 16;
+/// Most damage rectangles requested per buffer. Mutter reports up to 32 before
+/// collapsing to one bounding box, KWin up to 16; requesting a range up to this
+/// lets each producer use its own limit (see `request_buffer_metadata`).
+pub const MAX_DAMAGE_REGIONS: usize = 32;

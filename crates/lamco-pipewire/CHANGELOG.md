@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `try_recv_frame()` comes back empty instead of polling on a timer.
 
 ### Fixed
+- A buffer flagged `SPA_CHUNK_FLAG_CORRUPTED` that carries a cursor update is
+  now classified as cursor-only whatever its chunk size. Mutter zeroes the
+  size on those buffers, but KWin keeps the full size and relies on the flag
+  alone, so KWin cursor-only buffers were treated as ordinary corrupted frames.
+- Damage metadata is requested as a size range of 1 to 32 rectangles instead
+  of a fixed 16. Mutter offers up to 32 and KWin 16; a fixed size only
+  intersects an identical offer, so the range lets each compositor settle on
+  its own maximum. `MAX_DAMAGE_REGIONS` is now 32.
 - Cursor metadata is requested as a size range (bitmaps from 1x1 up to
   1024x1024) instead of a fixed `sizeof(spa_meta_cursor)`. Producers declare
   one fixed size that includes room for the cursor bitmap (Mutter: 384x384),
