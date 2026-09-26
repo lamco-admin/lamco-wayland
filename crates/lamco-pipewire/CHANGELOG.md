@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one fixed size that includes room for the cursor bitmap (Mutter: 384x384),
   so the old request never intersected with it: the meta was dropped and no
   cursor position or shape ever reached the consumer.
+- Audio capture on a host with no PipeWire sink logged `ERROR Audio stream
+  error: no target node available` at every session start. It is now a
+  single warning saying there is no audio output to capture.
 
 ### Changed
 - The PipeWire thread now waits in `loop.iterate()` (up to 20 ms) instead of
