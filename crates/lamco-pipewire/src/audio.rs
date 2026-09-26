@@ -269,6 +269,13 @@ impl AudioCapture {
                 debug!("Audio stream state: {:?} -> {:?}", old, new);
 
                 match new {
+                    // The session manager could not link the capture to a
+                    // sink: the host has no audio output to record, which is
+                    // a setup fact, not a fault in the stream.
+                    pw::stream::StreamState::Error(err) if err.contains("no target node") => {
+                        warn!("No audio output to capture: PipeWire has no sink on this host, so clients get no sound");
+                        stop_signal_for_callback.store(true, Ordering::SeqCst);
+                    }
                     pw::stream::StreamState::Error(err) => {
                         error!("Audio stream error: {}", err);
                         stop_signal_for_callback.store(true, Ordering::SeqCst);
