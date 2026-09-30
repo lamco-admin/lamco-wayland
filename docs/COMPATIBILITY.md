@@ -13,7 +13,8 @@ expose. Pick the line that matches your target environment.
 
 | Line | `lamco-pipewire` | `lamco-wayland` (meta) | `lamco-video` | `lamco-portal` | PipeWire/SPA bindings | Metadata path | System libpipewire floor |
 |---|---|---|---|---|---|---|---|
-| **0.7.x — current** | **0.7.0** | **0.7.0** | **0.3.0** | **0.4.5** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** |
+| **0.8.x — current** | **0.8.0** | **0.8.0** | **0.4.0** | **0.4.5** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** |
+| 0.7.x — superseded, no longer maintained | 0.7.0 | 0.7.1 | 0.3.1 | 0.4.5 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 |
 | 0.5.x — frozen, no longer maintained | 0.5.11 | 0.5.12 | 0.2.0 | 0.4.5 | 0.10 | raw `libspa_sys` FFI | 0.3.33 |
 | 0.4.x — legacy (0.9) | 0.4.5 | 0.4.7 | 0.1.10 | 0.4.1 | 0.9 | raw `libspa_sys` FFI | 0.3.33 |
 
@@ -22,11 +23,11 @@ only requires Rust 1.80; the 1.87 floor comes from the workspace, not the bindin
 
 ## Which line should I use?
 
-- **New code, or any currently-supported distribution → `0.7.x` (0.7.0).**
+- **New code, or any currently-supported distribution → `0.8.x` (0.8.0).**
   This is the maintained head. Metadata extraction runs entirely through
   libspa 0.10's **safe wrappers** (the `meta.rs` module is `unsafe`-free), it
   exposes the **real cursor image** (`CursorMeta::bitmap`), a **virtual
-  microphone source** (`spawn_virtual_microphone`, new in 0.7.0), and it
+  microphone source** (`spawn_virtual_microphone`, new in 0.7.0, streaming correctly since 0.8.0), and it
   tracks the current dependency set (`nix` 0.31; the meta line pulls `ashpd`
   0.13.12 / `zbus` 5.16 through `lamco-portal` 0.4.5). It requires the system
   **libpipewire ≥ 0.3.62** (released 2022 — present on every currently-supported
@@ -35,7 +36,7 @@ only requires Rust 1.80; the 1.87 floor comes from the workspace, not the bindin
 - **`0.5.x` (0.5.11) is frozen.** Same PipeWire 0.10 bindings and the same
   DMA-BUF race fix, with a lower system-library floor (libpipewire ≥ 0.3.33),
   for environments that do not ship 0.3.62. It received fixes in parallel
-  with the modern line for a while; as of the 0.7.x line it no longer does.
+  with the modern line for a while; as of the 0.7.x and later lines it no longer does.
   Existing consumers keep working, but no new fixes or features land here.
 
 - **Still pinned to the PipeWire 0.9 bindings → `0.4.x` (0.4.5).**
@@ -90,11 +91,24 @@ The 0.9 → 0.10 work landed as four steps; each is a published release.
    is also the point at which the `0.5.x` line stops receiving fixes in
    parallel with the modern line — see "Which line should I use?" above.
 
+6. **0.8.0 — breaking: new fields, cursor and damage metadata, awaitable frames.**
+   `RawFrameData::monitor_index` and `BufferMeta::cursor_only_update` are new
+   public fields on structs that are not `#[non_exhaustive]`, so code that builds
+   or exhaustively destructures either must add the field; `MAX_DAMAGE_REGIONS`
+   is now 32. `PipeWireThreadManager::frame_notify()` lets a consumer await the
+   next frame instead of polling. Damage and cursor metadata are requested as
+   size ranges, so Mutter and KWin each settle on their own maximum and the
+   cursor position and shape now reach the consumer on both; KWin cursor-only
+   buffers are classified correctly. The virtual microphone streams real audio
+   without gaps, and a host with no audio sink logs one warning instead of an
+   error. `lamco-video` moves to 0.4.0 in lockstep because `lamco-pipewire` is a
+   public dependency of it.
+
 See [`../CHANGELOG.md`](../CHANGELOG.md) for the complete per-version history.
 
 ## Capability matrix (`lamco-pipewire`)
 
-| Capability | 0.4.x | 0.5.x (frozen) | 0.7.x |
+| Capability | 0.4.x | 0.5.x (frozen) | 0.7.x and 0.8.x |
 |---|---|---|---|
 | PipeWire/SPA 0.10 bindings | — | ✅ | ✅ |
 | DMA-BUF zero-copy (`DRM_FORMAT_MOD_LINEAR` CPU-mmap) | ✅ | ✅ | ✅ |
@@ -105,11 +119,14 @@ See [`../CHANGELOG.md`](../CHANGELOG.md) for the complete per-version history.
 | `unsafe`-free metadata module | — | — | ✅ |
 | DMA-BUF mmap-cache race fix | — | ✅ (0.5.1) | ✅ (0.6.2) |
 | DestroyStream release-ordering fix | — | ✅ (0.5.2) | ✅ (0.6.3) |
-| **Virtual microphone source (`spawn_virtual_microphone`)** | — | — | ✅ (0.7.0) |
+| **Virtual microphone source (`spawn_virtual_microphone`)** | — | — | ✅ (0.7.0, streams from 0.8.0) |
+| **Awaitable frames (`frame_notify`)** | — | — | ✅ (0.8.0) |
+| **Per-output frame identity (`RawFrameData::monitor_index`)** | — | — | ✅ (0.8.0) |
+| **KWin cursor-only buffer classification** | — | — | ✅ (0.8.0) |
 
 ## Dependency floors by line
 
-| Dependency | 0.5.x (frozen) | 0.7.x |
+| Dependency | 0.5.x (frozen) | 0.7.x and 0.8.x |
 |---|---|---|
 | `pipewire` / `pipewire-sys` / `libspa` / `libspa-sys` | 0.10 | 0.10 |
 | libspa feature flag | `v0_3_33` | `v0_3_62` |
@@ -123,16 +140,16 @@ See [`../CHANGELOG.md`](../CHANGELOG.md) for the complete per-version history.
 
 ```toml
 # Current line (recommended for new code)
-lamco-pipewire = "0.7"
+lamco-pipewire = "0.8"
 # or the whole stack:
-lamco-wayland  = "0.7"
+lamco-wayland  = "0.8"
 
 # Frozen low-floor line, for older/minimal libpipewire environments
 lamco-pipewire = "0.5"
 lamco-wayland  = "0.5"
 ```
 
-Cargo's caret ranges keep you on the chosen line: `"0.7"` resolves to the latest
-`0.7.z`, and `"0.5"` resolves to the latest `0.5.z` (frozen at 0.5.13/0.5.12).
+Cargo's caret ranges keep you on the chosen line: `"0.8"` resolves to the latest
+`0.8.z`, and `"0.5"` resolves to the latest `0.5.z` (frozen at 0.5.13/0.5.12).
 The two lines are **not** semver-compatible with each other, so pin to one
 line deliberately.

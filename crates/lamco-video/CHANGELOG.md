@@ -5,6 +5,17 @@ All notable changes to lamco-video will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-09-30
+
+### Changed
+- **Breaking:** requires `lamco-pipewire` 0.8 (was 0.7). `lamco-pipewire` is a
+  public dependency: its frame types appear in this crate's API, so a consumer
+  moves to 0.8 in lockstep or resolves two type-incompatible copies. See
+  lamco-pipewire's changelog for the 0.8.0 changes, notably the new
+  `RawFrameData::monitor_index` and `BufferMeta::cursor_only_update` fields and
+  the fixes for KWin cursor-only buffers and damage and cursor metadata sizing.
+- No source change in this crate.
+
 ## [0.3.1] - 2026-09-11
 
 ### Changed

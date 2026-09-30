@@ -80,7 +80,7 @@ let manager = PipeWireManager::new(config)?;
 
 ```toml
 [dependencies]
-lamco-pipewire = { version = "0.7", features = ["full"] }
+lamco-pipewire = { version = "0.8", features = ["full"] }
 ```
 
 ## Versions & compatibility
@@ -92,16 +92,17 @@ internals:
 
 | Line | Latest | PipeWire/SPA bindings | Metadata internals | libpipewire floor | Cursor bitmap |
 |------|--------|-----------------------|--------------------|-------------------|---------------|
-| **0.7.x** (current) | **0.7.0** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** | ✅ |
+| **0.8.x** (current) | **0.8.0** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** | ✅ |
+| 0.7.x (superseded, no longer maintained) | 0.7.0 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 | ✅ |
 | 0.5.x (frozen, no longer maintained) | 0.5.12 | 0.10 | raw `libspa_sys` FFI | 0.3.33 | — |
 | 0.4.x (legacy) | 0.4.5 | 0.9 | raw `libspa_sys` FFI | 0.3.33 | — |
 
-- **New code → `0.7` (0.7.0):** safe metadata internals, real cursor pixels,
+- **New code → `0.8` (0.8.0):** safe metadata internals, real cursor pixels,
   a virtual microphone source, current deps; needs system
   **libpipewire ≥ 0.3.62** (present on every currently-supported distro).
 - **`0.5` (0.5.12) is frozen.** Same 0.10 bindings and the same DMA-BUF race
   fix, with a lower floor (**libpipewire ≥ 0.3.33**). It received fixes in
-  parallel with the modern line for a while; as of 0.7.0 it no longer does.
+  parallel with the modern line for a while; as of the 0.7 line it no longer does.
 
 Both lines contain the DMA-BUF mmap-cache cross-thread race fix, the
 buffer-removal cache eviction that stops a destroyed buffer's mapping being

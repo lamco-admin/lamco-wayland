@@ -5,6 +5,22 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-09-30
+
+### Changed
+- **Breaking: lamco-pipewire 0.8.0.** `RawFrameData` gained `monitor_index` and
+  `BufferMeta` gained `cursor_only_update`, both public fields on structs that are
+  not `#[non_exhaustive]`, and `MAX_DAMAGE_REGIONS` is now 32. Also new: an
+  awaitable frame notification (`PipeWireThreadManager::frame_notify()`), KWin
+  cursor-only buffers are classified correctly, damage and cursor metadata are
+  requested as size ranges so Mutter and KWin each settle on their own
+  maximum, the virtual microphone now streams real audio without gaps, and a
+  missing audio sink is a warning instead of an error. See lamco-pipewire's own
+  changelog.
+- **Breaking: lamco-video 0.4.0.** Requires `lamco-pipewire` 0.8; no source change
+  in the crate. See lamco-video's own changelog.
+- `lamco-portal` is unaffected and stays at 0.4.5.
+
 ## [0.7.1] - 2026-09-11
 
 ### Changed

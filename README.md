@@ -23,10 +23,10 @@ Rust libraries for Wayland screen capture, XDG Portal integration, and video pro
 ```toml
 [dependencies]
 # Use everything
-lamco-wayland = "0.7"
+lamco-wayland = "0.8"
 
 # Or select what you need
-lamco-wayland = { version = "0.7", default-features = false, features = ["portal"] }
+lamco-wayland = { version = "0.8", default-features = false, features = ["portal"] }
 ```
 
 ## Versions & compatibility
@@ -37,19 +37,20 @@ the line:
 
 | Line | `lamco-wayland` | `lamco-pipewire` | `lamco-portal` | `lamco-video` | PipeWire bindings | libpipewire floor |
 |------|-----------------|------------------|----------------|---------------|-------------------|-------------------|
-| **0.7.x** (current) | **0.7.0** | 0.7.0 | 0.4.5 | 0.3.0 | 0.10 | **0.3.62** |
+| **0.8.x** (current) | **0.8.0** | 0.8.0 | 0.4.5 | 0.4.0 | 0.10 | **0.3.62** |
+| 0.7.x (superseded, no longer maintained) | 0.7.1 | 0.7.0 | 0.4.5 | 0.3.1 | 0.10 | 0.3.62 |
 | 0.5.x (frozen, no longer maintained) | 0.5.13 | 0.5.12 | 0.4.4 | 0.2.0 | 0.10 | 0.3.33 |
 | 0.4.x (legacy) | 0.4.7 | 0.4.5 | 0.4.1 | 0.1.10 | 0.9 | 0.3.33 |
 
-- **New code → `lamco-wayland = "0.7"`** — safe (`unsafe`-free) PipeWire metadata
+- **New code → `lamco-wayland = "0.8"`** — safe (`unsafe`-free) PipeWire metadata
   internals, real cursor pixels, current dependencies; needs system
   **libpipewire ≥ 0.3.62**.
 - **0.5.x is frozen.** It received fixes in parallel with 0.6.x for a while;
   as of the 0.7.0 line it no longer does. Existing consumers on 0.5.x keep
-  working, but new fixes and features land only on 0.7.x going forward.
+  working, but new fixes and features land only on 0.8.x going forward.
 
-MSRV is **Rust 1.87** (edition 2024) on the current line. The 0.5.x and
-0.7.x lines are not semver-compatible with each other — pin to one
+MSRV is **Rust 1.87** (edition 2024) on the current line. The 0.5.x,
+0.7.x and 0.8.x lines are not semver-compatible with each other — pin to one
 deliberately. Full detail: [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
 
 ```rust
