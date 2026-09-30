@@ -5,14 +5,50 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.0] - 2026-09-30
+
+### Breaking
+- `RawFrameData` has a new public field, `monitor_index: Option<u32>`, and
+  `BufferMeta` has a new public field, `cursor_only_update: bool`. Neither struct
+  is `#[non_exhaustive]`, so code that builds either with a struct literal, or
+  destructures it exhaustively, must add the field. Code that only reads fields
+  is unaffected.
+- `MAX_DAMAGE_REGIONS` is now 32 (was 16); see the damage-metadata fix below.
 
 ### Added
+- `RawFrameData::monitor_index`: the real per-output identifier a frame was
+  captured from. `PipeWireThreadManager::new_direct` hardcoded
+  `VideoFrame::monitor_index` to 0 for every frame, which is right for one
+  stream and wrong once a caller multiplexes several monitors through one
+  channel. The adapter uses the field when the caller sets it and falls back
+  to 0 when it does not.
+- `BufferMeta::cursor_only_update`: a best guess that a
+  `SPA_CHUNK_FLAG_CORRUPTED` chunk is a cursor-only update rather than a failed
+  paint. Mutter marks a buffer that only moves the cursor as corrupted with size
+  0, the same signature as a genuine recording failure. Such a buffer is now
+  flagged, logged at debug and kept out of the corrupted count, so storm and
+  scanout-freeze detection see only buffers that look like real failures. A
+  recycled slot can carry stale cursor metadata, so this is a heuristic.
 - `PipeWireThreadManager::frame_notify()`: a `tokio::sync::Notify` signalled
   after every queued frame, so a consumer can await the next frame once
   `try_recv_frame()` comes back empty instead of polling on a timer.
 
 ### Fixed
+- The virtual microphone source never streamed. It negotiated cleanly and
+  appeared to work, but delivered no audio: `ALLOC_BUFFERS` made `start_node()`
+  fail with EINVAL once the adapter negotiated buffers, the missing
+  `AUTOCONNECT` left the stream unlinked, and without `node.always-process` a
+  follower node stays suspended and `process()` is never called.
+- The virtual microphone filled the whole mapped buffer every cycle. PipeWire
+  maps a buffer many quanta long but asks for one quantum per cycle, so the
+  ring drained faster than real time and about 18% of the audio was lost as
+  45 ms gaps every 256 ms. Each cycle now writes the requested number of frames.
+- The rate-limited corrupted-buffer warning reported the manager-wide count for
+  every stream, so a second stream's first warning carried the first stream's
+  total. The line now reports the stream's own count. An empty corrupted buffer
+  carries no pixels and is skipped before a frame is built, so it logs at debug
+  instead of claiming to forward it; it still counts, since an empty buffer is
+  what a scanout freeze produces.
 - A buffer flagged `SPA_CHUNK_FLAG_CORRUPTED` that carries a cursor update is
   now classified as cursor-only whatever its chunk size. Mutter zeroes the
   size on those buffers, but KWin keeps the full size and relies on the flag

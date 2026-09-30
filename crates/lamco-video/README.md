@@ -134,7 +134,7 @@ The converter supports these RDP-compatible output formats:
 
 ```toml
 [dependencies]
-lamco-video = { version = "0.3", features = ["full"] }
+lamco-video = { version = "0.4", features = ["full"] }
 ```
 
 `lamco-video` tracks the `lamco-pipewire` line it re-exports: **0.3.x** pairs with
