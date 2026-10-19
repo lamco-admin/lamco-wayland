@@ -203,6 +203,7 @@ pub mod error;
 pub mod ffi;
 pub mod format;
 pub mod frame;
+pub mod gate;
 pub mod manager;
 pub mod meta;
 mod pw_lifecycle;
@@ -290,6 +291,7 @@ pub use ffi::{
 // Frame types
 pub use format::{PixelFormat, convert_format};
 pub use frame::{DmaBufDescriptor, DmaBufPlane, FrameBuffer, FrameCallback, FrameFlags, FrameStats, VideoFrame};
+pub use gate::{FrameGate, GateSampler};
 // =============================================================================
 // CRATE-LEVEL ITEMS
 // =============================================================================

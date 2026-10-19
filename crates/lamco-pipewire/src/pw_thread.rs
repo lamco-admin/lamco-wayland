@@ -280,6 +280,9 @@ pub struct PipeWireThreadManager {
     corrupted_buffers: StdArc<AtomicU64>,
     /// Tags the producer last published on the stream (`SPA_PARAM_Tag`).
     stream_tags: StdArc<parking_lot::RwLock<crate::tags::StreamTags>>,
+    /// The gate streams created from now on consult before copying a frame;
+    /// see [`PipeWireThreadManager::set_frame_gate`].
+    frame_gate: StdArc<parking_lot::RwLock<Option<crate::gate::FrameGate>>>,
 }
 
 impl PipeWireThreadManager {
@@ -315,6 +318,8 @@ impl PipeWireThreadManager {
         let stream_tags: StdArc<parking_lot::RwLock<crate::tags::StreamTags>> =
             StdArc::new(parking_lot::RwLock::new(crate::tags::StreamTags::default()));
         let tags_for_thread = StdArc::clone(&stream_tags);
+        let frame_gate = StdArc::new(parking_lot::RwLock::new(None));
+        let gate_for_thread = StdArc::clone(&frame_gate);
 
         // Spawn dedicated PipeWire thread
         let thread_handle = thread::Builder::new()
@@ -328,6 +333,7 @@ impl PipeWireThreadManager {
                     shutdown_rx,
                     corrupted_for_thread,
                     tags_for_thread,
+                    gate_for_thread,
                 );
             })
             .map_err(|e| PipeWireError::InitializationFailed(format!("Thread spawn failed: {}", e)))?;
@@ -344,7 +350,14 @@ impl PipeWireThreadManager {
             direct_shutdown_flag: None,
             corrupted_buffers,
             stream_tags,
+            frame_gate,
         })
+    }
+
+    /// Let the consumer decline frames of streams created after this call,
+    /// before their pixels are copied; see [`crate::gate`].
+    pub fn set_frame_gate(&self, gate: crate::gate::FrameGate) {
+        *self.frame_gate.write() = Some(gate);
     }
 
     /// Create a direct-channel frame source (no PipeWire thread).
@@ -353,6 +366,19 @@ impl PipeWireThreadManager {
     /// instead of PipeWire (e.g., portal-generic with in-process screencopy).
     /// The frame receiver is adapted to produce `VideoFrame` objects.
     pub fn new_direct(raw_rx: std_mpsc::Receiver<crate::frame::RawFrameData>, width: u32, height: u32) -> Self {
+        Self::new_direct_gated(raw_rx, width, height, None)
+    }
+
+    /// [`Self::new_direct`], with a gate that declines frames the consumer
+    /// doesn't want before they are queued for it. The source has already
+    /// copied the pixels by then, so this saves the work downstream of the
+    /// channel, not the capture itself.
+    pub fn new_direct_gated(
+        raw_rx: std_mpsc::Receiver<crate::frame::RawFrameData>,
+        width: u32,
+        height: u32,
+        gate: Option<crate::gate::FrameGate>,
+    ) -> Self {
         use std::sync::Arc;
         use std::time::SystemTime;
 
@@ -395,6 +421,7 @@ impl PipeWireThreadManager {
                 // against egress drops in one place.
                 let mut last_rate_log = std::time::Instant::now();
                 let mut frames_in_window: u64 = 0;
+                let gate_sampler = gate.as_ref().map(crate::gate::FrameGate::sampler);
                 loop {
                     if shutdown_flag_thread.load(Ordering::Acquire) {
                         info!("Direct frame adapter received shutdown — exiting loop");
@@ -410,6 +437,9 @@ impl PipeWireThreadManager {
                             break;
                         }
                     };
+                    if gate_sampler.as_ref().is_some_and(|sampler| !sampler.admit(None)) {
+                        continue;
+                    }
                     frame_count += 1;
                     frames_in_window += 1;
                     if last_rate_log.elapsed() >= Duration::from_secs(10) {
@@ -476,6 +506,7 @@ impl PipeWireThreadManager {
             // The direct path never sees SPA chunks, so this stays at zero.
             corrupted_buffers: StdArc::new(AtomicU64::new(0)),
             stream_tags: StdArc::new(parking_lot::RwLock::new(crate::tags::StreamTags::default())),
+            frame_gate: StdArc::new(parking_lot::RwLock::new(None)),
         }
     }
 
@@ -657,6 +688,7 @@ fn run_pipewire_main_loop(
     shutdown_rx: std_mpsc::Receiver<()>,
     corrupted_buffers: StdArc<AtomicU64>,
     stream_tags: StdArc<parking_lot::RwLock<crate::tags::StreamTags>>,
+    frame_gate: StdArc<parking_lot::RwLock<Option<crate::gate::FrameGate>>>,
 ) {
     info!("PipeWire main loop thread started");
 
@@ -753,6 +785,7 @@ fn run_pipewire_main_loop(
                         StdArc::clone(&dmabuf_mmap_cache),
                         StdArc::clone(&corrupted_buffers),
                         StdArc::clone(&stream_tags),
+                        frame_gate.read().clone(),
                     );
 
                     match result {
@@ -896,6 +929,14 @@ fn run_pipewire_main_loop(
     crate::pw_lifecycle::release();
 
     info!("PipeWire thread exited");
+}
+
+/// Pixel format to label a frame with: what the stream negotiated, falling back
+/// to the requested format before negotiation completes or when the negotiated
+/// one has no `PixelFormat` equivalent.
+fn frame_pixel_format(negotiated: &AtomicU32, requested: Option<PixelFormat>) -> PixelFormat {
+    let spa = pipewire::spa::param::video::VideoFormat::from_raw(negotiated.load(Ordering::Acquire));
+    PixelFormat::from_spa(spa).unwrap_or_else(|| requested.unwrap_or(PixelFormat::BGRx))
 }
 
 /// Memory-map a file descriptor to extract buffer data
@@ -1120,6 +1161,7 @@ fn create_stream_on_thread(
     dmabuf_cache: DmaBufCache,
     corrupted_buffers: StdArc<AtomicU64>,
     stream_tags: StdArc<parking_lot::RwLock<crate::tags::StreamTags>>,
+    frame_gate: Option<crate::gate::FrameGate>,
 ) -> Result<ManagedStream> {
     // Built up front (pure function of config, no PipeWire object dependency)
     // so the offered-format summary is available to capture into the
@@ -1164,6 +1206,7 @@ fn create_stream_on_thread(
     // Set up comprehensive stream event listeners
     // Clone frame_tx and dmabuf_cache for use in closures
     let frame_tx_for_process = frame_tx.clone();
+    let gate_sampler = frame_gate.as_ref().map(crate::gate::FrameGate::sampler);
     let stream_id_for_callbacks = stream_id;
     let dmabuf_cache_for_process = StdArc::clone(&dmabuf_cache);
     let dmabuf_cache_for_remove = StdArc::clone(&dmabuf_cache);
@@ -1181,6 +1224,12 @@ fn create_stream_on_thread(
     let negotiated_modifier = StdArc::new(AtomicU64::new(crate::ffi::drm_fourcc::DRM_FORMAT_MOD_LINEAR));
     let param_neg_width = StdArc::clone(&negotiated_width);
     let param_neg_height = StdArc::clone(&negotiated_height);
+    // Negotiated SPA video format (raw id, 0 = not negotiated yet). Frames are
+    // labelled with this rather than the format we asked for: a producer such
+    // as COSMIC's screencast only offers RGBA, and labelling its frames BGRx
+    // swaps red and blue downstream.
+    let negotiated_format = StdArc::new(AtomicU32::new(0));
+    let param_neg_format = StdArc::clone(&negotiated_format);
     let param_neg_modifier = StdArc::clone(&negotiated_modifier);
     let proc_corrupted_buffers = StdArc::clone(&corrupted_buffers);
     let proc_cursor_only_buffers = StdArc::new(AtomicU64::new(0));
@@ -1191,6 +1240,7 @@ fn create_stream_on_thread(
     let proc_neg_width = StdArc::clone(&negotiated_width);
     let proc_neg_height = StdArc::clone(&negotiated_height);
     let proc_neg_modifier = StdArc::clone(&negotiated_modifier);
+    let proc_neg_format = StdArc::clone(&negotiated_format);
 
     let state_tx_for_callback = state_event_tx;
     let offered_formats_summary_for_error = offered_formats_summary.clone();
@@ -1303,12 +1353,19 @@ fn create_stream_on_thread(
             // The MODIFIER flag is what actually distinguishes them.
             let has_modifier = video_info.flags().contains(VideoFlags::MODIFIER);
             let modifier = video_info.modifier();
+            // A 0/1 framerate means the producer sends as it likes, up to max_framerate.
+            let rate = video_info.framerate();
+            let max_rate = video_info.max_framerate();
             info!(
-                "Stream {} negotiated: {}x{} {:?} modifier={}",
+                "Stream {} negotiated: {}x{} {:?} framerate={}/{} max={}/{} modifier={}",
                 stream_id_for_callbacks,
                 size.width,
                 size.height,
                 format,
+                rate.num,
+                rate.denom,
+                max_rate.num,
+                max_rate.denom,
                 if has_modifier {
                     format!("{modifier:#x}")
                 } else {
@@ -1320,6 +1377,7 @@ fn create_stream_on_thread(
             // the actual compositor resolution, not the requested resolution
             param_neg_width.store(size.width, Ordering::Release);
             param_neg_height.store(size.height, Ordering::Release);
+            param_neg_format.store(format.as_raw(), Ordering::Release);
             // Stored so the DmaBuf process path can refuse to CPU-read a
             // buffer whose layout it cannot interpret (anything non-linear)
             param_neg_modifier.store(modifier, Ordering::Release);
@@ -1419,6 +1477,14 @@ fn create_stream_on_thread(
             // buffer immutably and copies into owned fields, so the borrow is
             // released before the data blocks are taken mutably below.
             let mut buffer_meta = crate::meta::extract_buffer_meta(&buffer);
+
+            // The consumer has asked for fewer frames than the compositor
+            // sends: decline this one before its pixels are mapped and copied.
+            // The buffer requeues itself as it drops.
+            let cursor = buffer_meta.cursor.as_ref().map(|c| (c.id, c.position.0, c.position.1));
+            if gate_sampler.as_ref().is_some_and(|sampler| !sampler.admit(cursor)) {
+                return;
+            }
 
             // Access the data blocks as a safe `&mut [Data]` (no raw pointer rebuild).
             let datas_slice = buffer.datas_mut();
@@ -1684,7 +1750,7 @@ fn create_stream_on_thread(
                                                 }],
                                                 // DRM format from negotiated pixel format
                                                 drm_format: crate::ffi::spa_video_format_to_drm_fourcc(
-                                                    config.preferred_format.unwrap_or(PixelFormat::BGRx).to_spa(),
+                                                    frame_pixel_format(&proc_neg_format, config.preferred_format).to_spa(),
                                                 ),
                                                 modifier: negotiated_mod,
                                                 width: proc_neg_width.load(Ordering::Acquire),
@@ -1721,7 +1787,7 @@ fn create_stream_on_thread(
                                                 width: neg_w,
                                                 height: neg_h,
                                                 stride: chunk_stride as u32,
-                                                format: config.preferred_format.unwrap_or(PixelFormat::BGRx),
+                                                format: frame_pixel_format(&proc_neg_format, config.preferred_format),
                                                 // PipeWire node id, same value already used for frame_id
                                                 // above. Consumers that need to relate a frame to a
                                                 // particular monitor's placement/offset should look up a
@@ -1866,7 +1932,7 @@ fn create_stream_on_thread(
                             info!(" Buffer type: {} (1=MemPtr, 2=MemFd, 3=DmaBuf)", data_type.as_raw());
                             info!(
                                 "  Pixel format: {:?}",
-                                config.preferred_format.unwrap_or(PixelFormat::BGRx)
+                                frame_pixel_format(&proc_neg_format, config.preferred_format)
                             );
 
                             // Log first 32 bytes as hex to verify byte order
@@ -1937,7 +2003,7 @@ fn create_stream_on_thread(
                             width: neg_w,
                             height: neg_h,
                             stride: actual_stride,
-                            format: config.preferred_format.unwrap_or(PixelFormat::BGRx),
+                            format: frame_pixel_format(&proc_neg_format, config.preferred_format),
                             // PipeWire node id, same value already used for frame_id above.
                             // See the DMA-BUF branch's identical field for why this isn't a
                             // 0-based array index.
@@ -1991,18 +2057,20 @@ fn create_stream_on_thread(
 
     info!(
         stream_id,
-        node_id, "Connecting stream with flags: AUTOCONNECT | MAP_BUFFERS | DRIVER | RT_PROCESS"
+        node_id, "Connecting stream with flags: AUTOCONNECT | MAP_BUFFERS | RT_PROCESS"
     );
 
-    // DRIVER flag makes this stream drive the graph clock, ensuring frames
-    // are delivered at the negotiated framerate even on a static desktop.
-    // Without DRIVER, ScreenCast portal streams are damage-driven: no screen
-    // change = no frame, causing stalls in the RDP frame delivery pipeline.
+    // Not DRIVER: a DRIVER stream only starts graph cycles when something calls
+    // pw_stream_trigger_process(), and nothing here does. Producers that drive
+    // the graph themselves (Mutter, KWin, portal-wlr) win the driver election,
+    // so the flag was inert there. xdg-desktop-portal-cosmic's stream is a passive
+    // producer (ALLOC_BUFFERS only): with this consumer elected as driver the
+    // graph never cycled and no frame was ever delivered.
     stream
         .connect(
             Direction::Input,
             None, // PW_ID_ANY - let PipeWire use node.target property
-            StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS | StreamFlags::DRIVER | StreamFlags::RT_PROCESS,
+            StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS | StreamFlags::RT_PROCESS,
             &mut params,
         )
         .map_err(|e| PipeWireError::ConnectionFailed(format!("Stream connect failed: {}", e)))?;
@@ -2278,6 +2346,24 @@ fn build_stream_parameters(config: &StreamConfig) -> Result<(Vec<Vec<u8>>, Strin
                 spa::utils::Fraction { num: 0, denom: 1 },
                 spa::utils::Fraction { num: 1000, denom: 1 }
             ),
+            // The ceiling a variable-rate producer may run at. Without it a compositor
+            // that delivers every refresh (COSMIC, wlroots) hands over frames the
+            // pipeline then drops, each one still mapped and copied.
+            spa::pod::property!(
+                spa::param::format::FormatProperties::VideoMaxFramerate,
+                Choice,
+                Range,
+                Fraction,
+                spa::utils::Fraction {
+                    num: config.framerate.max(1),
+                    denom: 1
+                },
+                spa::utils::Fraction { num: 1, denom: 1 },
+                spa::utils::Fraction {
+                    num: config.framerate.max(1),
+                    denom: 1
+                }
+            ),
         );
 
         // Only MOD_LINEAR is advertised: this consumer reads buffers with a
@@ -2363,6 +2449,21 @@ fn build_stream_parameters(config: &StreamConfig) -> Result<(Vec<Vec<u8>>, Strin
             },
             spa::utils::Fraction { num: 0, denom: 1 },
             spa::utils::Fraction { num: 1000, denom: 1 }
+        ),
+        spa::pod::property!(
+            spa::param::format::FormatProperties::VideoMaxFramerate,
+            Choice,
+            Range,
+            Fraction,
+            spa::utils::Fraction {
+                num: config.framerate.max(1),
+                denom: 1
+            },
+            spa::utils::Fraction { num: 1, denom: 1 },
+            spa::utils::Fraction {
+                num: config.framerate.max(1),
+                denom: 1
+            }
         ),
     );
 

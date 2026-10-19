@@ -5,6 +5,16 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-10-19
+
+### Changed
+- **lamco-pipewire 0.8.1:** COSMIC delivers video in the right colours (the stream
+  no longer claims the DRIVER flag, and frames carry the negotiated format), a
+  maximum frame rate is requested so variable-rate producers limit themselves, and a
+  new frame gate lets a consumer decline frames of a still desktop before they are
+  copied. All of it is additive or a fix. See lamco-pipewire's own changelog.
+- `lamco-video` and `lamco-portal` are unchanged and stay at 0.4.0 and 0.4.5.
+
 ## [0.8.0] - 2026-09-30
 
 ### Changed
