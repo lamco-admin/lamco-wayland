@@ -2,7 +2,15 @@
 all-features = true
 
 [advisories]
-ignore = []
+# zbus, zvariant and zbus_names are marked unmaintained (2026-10) after the zbus
+# project moved. They arrive through ashpd, which lamco-portal needs for the XDG
+# portals, and there is no maintained replacement to move to; revisit when ashpd
+# does.
+ignore = [
+    "RUSTSEC-2026-0370",
+    "RUSTSEC-2026-0371",
+    "RUSTSEC-2026-0372",
+]
 
 [licenses]
 # The full all-features graph (ashpd/zbus D-Bus stack, the PipeWire FFI tree,
