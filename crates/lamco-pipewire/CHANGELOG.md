@@ -5,6 +5,30 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-10-19
+
+### Fixed
+- The stream is no longer connected with `StreamFlags::DRIVER`. Nothing in this
+  crate triggers a graph cycle, so a producer that is not itself a driver (COSMIC's
+  screencast node) never ran and delivered no frames.
+- `VideoFrame::format` is the format the stream negotiated, not the one that was
+  requested. A producer that only offers RGBA (COSMIC) had its frames labelled BGRx,
+  which swapped red and blue.
+- Both format offers carry `SPA_FORMAT_VIDEO_maxFramerate` as a range topped by the
+  configured frame rate, so a variable-rate producer can limit itself to what the
+  consumer will use. Without it COSMIC streamed every refresh (47 fps) to a consumer
+  that dropped 96% of the frames after mapping and copying them.
+
+### Added
+- `FrameGate` and `GateSampler` (`gate` module). A consumer that has seen a run of
+  unchanged frames from a source that keeps sending to a still desktop asks for one
+  frame per interval; the capture then declines the others before mapping and copying
+  their pixels. A frame whose cursor changed is always taken, and `FrameGate::open`
+  returns to every frame at once.
+- `PipeWireThreadManager::set_frame_gate` attaches a gate to the streams created
+  after the call, and `PipeWireThreadManager::new_direct_gated` takes one for the
+  direct-channel source. Nothing changes for a consumer that doesn't call them.
+
 ## [0.8.0] - 2026-09-30
 
 ### Breaking
