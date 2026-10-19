@@ -1,0 +1,5 @@
+# A fresh resolve (CI has no lock file) picks the newest dependency versions that
+# build on the crates' minimum Rust version, so a dependency that raises its own
+# minimum doesn't break the MSRV job.
+[resolver]
+incompatible-rust-versions = "fallback"
