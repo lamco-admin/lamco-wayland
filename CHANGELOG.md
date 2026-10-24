@@ -5,6 +5,20 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] - 2026-10-24
+
+### Added
+- **lamco-pipewire 0.8.2:** `AudioHost`, `AudioHostConfig` and `spawn_audio_host`
+  run a sink, its captures and virtual microphones on one PipeWire connection
+  handed in as a connected socket, for a process that can't reach the user's
+  PipeWire socket itself. Additive, behind the `audio` feature. See
+  lamco-pipewire's own changelog.
+
+### Changed
+- Every license file in the workspace names Lamco Development LLC and 2026, so
+  `lamco-portal` 0.4.6 and `lamco-video` 0.4.1 are republished with no source
+  change. The requirements on all three move to the new versions.
+
 ## [0.8.1] - 2026-10-19
 
 ### Changed
