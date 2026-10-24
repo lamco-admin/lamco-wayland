@@ -189,3 +189,7 @@ nix = { version = ">=0.30, <0.32", features = ["mman"] }
 [dev-dependencies]
 tokio = { version = "1", features = ["sync", "rt", "time", "macros", "rt-multi-thread"] }
 tracing-subscriber = "0.3"
+
+[[example]]
+name = "audio_host"
+required-features = ["audio"]

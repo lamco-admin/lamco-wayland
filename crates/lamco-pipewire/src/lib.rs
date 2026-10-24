@@ -254,8 +254,9 @@ pub mod bitrate;
 // Manager (primary entry point)
 #[cfg(feature = "audio")]
 pub use audio::{
-    AudioCapture, AudioCaptureHandle, AudioFormat, AudioSamples, CaptureConfig, PlaybackConfig, VirtualMicrophone,
-    VirtualMicrophoneHandle, spawn_audio_capture, spawn_virtual_microphone,
+    AudioCapture, AudioCaptureHandle, AudioFormat, AudioHost, AudioHostConfig, AudioSamples, CaptureConfig,
+    PlaybackConfig, VirtualMicrophone, VirtualMicrophoneHandle, spawn_audio_capture, spawn_audio_host,
+    spawn_virtual_microphone,
 };
 #[cfg(feature = "adaptive")]
 pub use bitrate::{BitrateController, BitrateStats};
