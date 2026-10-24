@@ -44,6 +44,9 @@ use pw::spa::pod::Pod;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, trace, warn};
 
+mod host;
+pub use host::{AudioHost, AudioHostConfig, spawn_audio_host};
+
 /// Audio sample format
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AudioFormat {
@@ -235,247 +238,14 @@ impl AudioCapture {
             pw::context::ContextBox::new(mainloop.loop_(), None).context("Failed to create PipeWire Context")?;
         let core = context.connect(None).context("Failed to connect to PipeWire daemon")?;
 
-        let mut props = pw::properties::properties! {
-            *pw::keys::MEDIA_TYPE => "Audio",
-            *pw::keys::MEDIA_CATEGORY => "Capture",
-            *pw::keys::MEDIA_ROLE => "Screen",
-            *pw::keys::NODE_NAME => "lamco-audio-capture",
-            *pw::keys::APP_NAME => "lamco-pipewire",
-        };
-
-        if let Some(id) = node_id {
-            props.insert("target.object", id.to_string());
-        }
-
-        props.insert("stream.capture.sink", "true");
-
-        let stream = pw::stream::StreamBox::new(&core, "lamco-audio-capture", props)
-            .context("Failed to create PipeWire stream")?;
-
-        let user_data = CaptureUserData {
-            format: spa::param::audio::AudioInfoRaw::default(),
-            output_format: self.config.format,
-            sender: self.sender.clone(),
-            stop_signal: Arc::clone(&self.stop_signal),
-            samples_captured: 0,
-            samples_dropped: 0,
-        };
-
-        let stop_signal_for_callback = Arc::clone(&self.stop_signal);
-
-        let _listener = stream
-            .add_local_listener_with_user_data(user_data)
-            .state_changed(move |_stream, _user_data, old, new| {
-                debug!("Audio stream state: {:?} -> {:?}", old, new);
-
-                match new {
-                    // The session manager could not link the capture to a
-                    // sink: the host has no audio output to record, which is
-                    // a setup fact, not a fault in the stream.
-                    pw::stream::StreamState::Error(err) if err.contains("no target node") => {
-                        warn!("No audio output to capture: PipeWire has no sink on this host, so clients get no sound");
-                        stop_signal_for_callback.store(true, Ordering::SeqCst);
-                    }
-                    pw::stream::StreamState::Error(err) => {
-                        error!("Audio stream error: {}", err);
-                        stop_signal_for_callback.store(true, Ordering::SeqCst);
-                    }
-                    pw::stream::StreamState::Streaming => {
-                        info!("Audio capture streaming started");
-                    }
-                    pw::stream::StreamState::Paused => {
-                        debug!("Audio stream paused");
-                    }
-                    _ => {}
-                }
-            })
-            .param_changed(|_stream, user_data, id, param| {
-                let Some(param) = param else {
-                    return;
-                };
-
-                if id != spa::param::ParamType::Format.as_raw() {
-                    return;
-                }
-
-                let (media_type, media_subtype) = match format_utils::parse_format(param) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        warn!("Failed to parse audio format: {:?}", e);
-                        return;
-                    }
-                };
-
-                if media_type != MediaType::Audio || media_subtype != MediaSubtype::Raw {
-                    debug!("Ignoring non-raw audio format: {:?}/{:?}", media_type, media_subtype);
-                    return;
-                }
-
-                if let Err(e) = user_data.format.parse(param) {
-                    warn!("Failed to parse audio info: {:?}", e);
-                    return;
-                }
-
-                info!(
-                    "Audio format negotiated: rate={}, channels={}, format={:?}",
-                    user_data.format.rate(),
-                    user_data.format.channels(),
-                    user_data.format.format()
-                );
-            })
-            .process(|stream, user_data| {
-                if user_data.stop_signal.load(Ordering::Relaxed) {
-                    return;
-                }
-
-                let Some(mut buffer) = stream.dequeue_buffer() else {
-                    trace!("No buffer available");
-                    return;
-                };
-
-                let datas = buffer.datas_mut();
-                if datas.is_empty() {
-                    return;
-                }
-
-                let data = &mut datas[0];
-                let chunk = data.chunk();
-                let size = chunk.size() as usize;
-
-                if size == 0 {
-                    return;
-                }
-
-                let Some(slice) = data.data() else {
-                    return;
-                };
-
-                let n_channels = user_data.format.channels() as usize;
-                if n_channels == 0 {
-                    return;
-                }
-
-                let samples = match user_data.format.format() {
-                    spa::param::audio::AudioFormat::F32LE | spa::param::audio::AudioFormat::F32BE => {
-                        let byte_count = size.min(slice.len());
-                        let sample_count = byte_count / mem::size_of::<f32>();
-                        let mut f32_samples = Vec::with_capacity(sample_count);
-
-                        for i in 0..sample_count {
-                            let start = i * mem::size_of::<f32>();
-                            let end = start + mem::size_of::<f32>();
-                            if end <= slice.len() {
-                                let bytes: [u8; 4] = slice[start..end].try_into().unwrap_or([0; 4]);
-                                let sample = if user_data.format.format() == spa::param::audio::AudioFormat::F32LE {
-                                    f32::from_le_bytes(bytes)
-                                } else {
-                                    f32::from_be_bytes(bytes)
-                                };
-                                f32_samples.push(sample);
-                            }
-                        }
-
-                        match user_data.output_format {
-                            AudioFormat::F32 => AudioSamples::F32(f32_samples),
-                            AudioFormat::I16 => {
-                                let i16_samples: Vec<i16> = f32_samples
-                                    .iter()
-                                    .map(|&s| (s.clamp(-1.0, 1.0) * 32767.0) as i16)
-                                    .collect();
-                                AudioSamples::I16(i16_samples)
-                            }
-                        }
-                    }
-                    spa::param::audio::AudioFormat::S16LE | spa::param::audio::AudioFormat::S16BE => {
-                        let byte_count = size.min(slice.len());
-                        let sample_count = byte_count / mem::size_of::<i16>();
-                        let mut i16_samples = Vec::with_capacity(sample_count);
-
-                        for i in 0..sample_count {
-                            let start = i * mem::size_of::<i16>();
-                            let end = start + mem::size_of::<i16>();
-                            if end <= slice.len() {
-                                let bytes: [u8; 2] = slice[start..end].try_into().unwrap_or([0; 2]);
-                                let sample = if user_data.format.format() == spa::param::audio::AudioFormat::S16LE {
-                                    i16::from_le_bytes(bytes)
-                                } else {
-                                    i16::from_be_bytes(bytes)
-                                };
-                                i16_samples.push(sample);
-                            }
-                        }
-
-                        match user_data.output_format {
-                            AudioFormat::I16 => AudioSamples::I16(i16_samples),
-                            AudioFormat::F32 => {
-                                let f32_samples: Vec<f32> = i16_samples.iter().map(|&s| s as f32 / 32768.0).collect();
-                                AudioSamples::F32(f32_samples)
-                            }
-                        }
-                    }
-                    other => {
-                        trace!("Unsupported audio format: {:?}", other);
-                        return;
-                    }
-                };
-
-                let sample_count = samples.len();
-
-                // Non-blocking send to maintain realtime performance
-                match user_data.sender.try_send(samples) {
-                    Ok(()) => {
-                        user_data.samples_captured += sample_count as u64;
-                        trace!("Captured {} samples", sample_count);
-                    }
-                    Err(mpsc::error::TrySendError::Full(_)) => {
-                        user_data.samples_dropped += sample_count as u64;
-                        trace!("Dropped {} samples (channel full)", sample_count);
-                    }
-                    Err(mpsc::error::TrySendError::Closed(_)) => {
-                        user_data.stop_signal.store(true, Ordering::SeqCst);
-                        debug!("Audio sample channel closed");
-                    }
-                }
-            })
-            .register()
-            .context("Failed to register stream listener")?;
-
-        // Build format parameters for negotiation. Pin the rate and channel
-        // count as well as the format: leaving them unset advertises "any", so
-        // PipeWire delivers its graph-native rate (typically 48 kHz) and ignores
-        // the requested sample_rate entirely. Setting the rate makes PipeWire
-        // insert a resampler, so a consumer asking for 44.1 kHz actually receives
-        // 44.1 kHz (needed for RDP clients whose endpoints resample poorly).
-        let mut audio_info = spa::param::audio::AudioInfoRaw::new();
-        audio_info.set_format(self.config.format.to_spa_format());
-        audio_info.set_rate(self.config.sample_rate);
-        audio_info.set_channels(self.config.channels);
-
-        let obj = spa::pod::Object {
-            type_: spa::utils::SpaTypes::ObjectParamFormat.as_raw(),
-            id: spa::param::ParamType::EnumFormat.as_raw(),
-            properties: audio_info.into(),
-        };
-
-        let pod_bytes: Vec<u8> = spa::pod::serialize::PodSerializer::serialize(
-            std::io::Cursor::new(Vec::new()),
-            &spa::pod::Value::Object(obj),
-        )
-        .context("Failed to serialize audio format pod")?
-        .0
-        .into_inner();
-
-        let pod = Pod::from_bytes(&pod_bytes).context("Failed to create pod from bytes")?;
-
-        let mut params = [pod];
-
-        let flags = pw::stream::StreamFlags::AUTOCONNECT
-            | pw::stream::StreamFlags::MAP_BUFFERS
-            | pw::stream::StreamFlags::RT_PROCESS;
-
-        stream
-            .connect(spa::utils::Direction::Input, node_id, flags, &mut params)
-            .context("Failed to connect PipeWire stream")?;
+        let (_stream, _listener) = connect_capture_stream(
+            &core,
+            &self.config,
+            node_id,
+            None,
+            self.sender.clone(),
+            &self.stop_signal,
+        )?;
 
         info!("Audio capture stream connected, starting main loop");
 
@@ -492,6 +262,264 @@ impl AudioCapture {
     pub fn stop(&self) {
         self.stop_signal.store(true, Ordering::SeqCst);
     }
+}
+
+/// Creates and connects a capture stream on `core`, recording a sink's monitor.
+///
+/// The sink is the node `node_id`, else the node named `target_name`, else the
+/// default sink. Samples go to `sender` until `stop_signal` is set; the stream
+/// and its listener live as long as the returned values.
+fn connect_capture_stream<'c>(
+    core: &'c pw::core::Core,
+    config: &CaptureConfig,
+    node_id: Option<u32>,
+    target_name: Option<&str>,
+    sender: mpsc::Sender<AudioSamples>,
+    stop_signal: &Arc<AtomicBool>,
+) -> Result<(pw::stream::StreamBox<'c>, pw::stream::StreamListener<CaptureUserData>)> {
+    let mut props = pw::properties::properties! {
+        *pw::keys::MEDIA_TYPE => "Audio",
+        *pw::keys::MEDIA_CATEGORY => "Capture",
+        *pw::keys::MEDIA_ROLE => "Screen",
+        *pw::keys::NODE_NAME => "lamco-audio-capture",
+        *pw::keys::APP_NAME => "lamco-pipewire",
+    };
+
+    if let Some(id) = node_id {
+        props.insert("target.object", id.to_string());
+    } else if let Some(name) = target_name {
+        props.insert("target.object", name);
+    }
+
+    props.insert("stream.capture.sink", "true");
+
+    let stream =
+        pw::stream::StreamBox::new(core, "lamco-audio-capture", props).context("Failed to create PipeWire stream")?;
+
+    let user_data = CaptureUserData {
+        format: spa::param::audio::AudioInfoRaw::default(),
+        output_format: config.format,
+        sender,
+        stop_signal: Arc::clone(stop_signal),
+        samples_captured: 0,
+        samples_dropped: 0,
+    };
+
+    let stop_signal_for_callback = Arc::clone(stop_signal);
+
+    let listener = stream
+        .add_local_listener_with_user_data(user_data)
+        .state_changed(move |_stream, _user_data, old, new| {
+            debug!("Audio stream state: {:?} -> {:?}", old, new);
+
+            match new {
+                // The session manager could not link the capture to a
+                // sink: the host has no audio output to record, which is
+                // a setup fact, not a fault in the stream.
+                pw::stream::StreamState::Error(err) if err.contains("no target node") => {
+                    warn!("No audio output to capture: PipeWire has no sink on this host, so clients get no sound");
+                    stop_signal_for_callback.store(true, Ordering::SeqCst);
+                }
+                pw::stream::StreamState::Error(err) => {
+                    error!("Audio stream error: {}", err);
+                    stop_signal_for_callback.store(true, Ordering::SeqCst);
+                }
+                pw::stream::StreamState::Streaming => {
+                    info!("Audio capture streaming started");
+                }
+                pw::stream::StreamState::Paused => {
+                    debug!("Audio stream paused");
+                }
+                _ => {}
+            }
+        })
+        .param_changed(|_stream, user_data, id, param| {
+            let Some(param) = param else {
+                return;
+            };
+
+            if id != spa::param::ParamType::Format.as_raw() {
+                return;
+            }
+
+            let (media_type, media_subtype) = match format_utils::parse_format(param) {
+                Ok(v) => v,
+                Err(e) => {
+                    warn!("Failed to parse audio format: {:?}", e);
+                    return;
+                }
+            };
+
+            if media_type != MediaType::Audio || media_subtype != MediaSubtype::Raw {
+                debug!("Ignoring non-raw audio format: {:?}/{:?}", media_type, media_subtype);
+                return;
+            }
+
+            if let Err(e) = user_data.format.parse(param) {
+                warn!("Failed to parse audio info: {:?}", e);
+                return;
+            }
+
+            info!(
+                "Audio format negotiated: rate={}, channels={}, format={:?}",
+                user_data.format.rate(),
+                user_data.format.channels(),
+                user_data.format.format()
+            );
+        })
+        .process(|stream, user_data| {
+            if user_data.stop_signal.load(Ordering::Relaxed) {
+                return;
+            }
+
+            let Some(mut buffer) = stream.dequeue_buffer() else {
+                trace!("No buffer available");
+                return;
+            };
+
+            let datas = buffer.datas_mut();
+            if datas.is_empty() {
+                return;
+            }
+
+            let data = &mut datas[0];
+            let chunk = data.chunk();
+            let size = chunk.size() as usize;
+
+            if size == 0 {
+                return;
+            }
+
+            let Some(slice) = data.data() else {
+                return;
+            };
+
+            let n_channels = user_data.format.channels() as usize;
+            if n_channels == 0 {
+                return;
+            }
+
+            let samples = match user_data.format.format() {
+                spa::param::audio::AudioFormat::F32LE | spa::param::audio::AudioFormat::F32BE => {
+                    let byte_count = size.min(slice.len());
+                    let sample_count = byte_count / mem::size_of::<f32>();
+                    let mut f32_samples = Vec::with_capacity(sample_count);
+
+                    for i in 0..sample_count {
+                        let start = i * mem::size_of::<f32>();
+                        let end = start + mem::size_of::<f32>();
+                        if end <= slice.len() {
+                            let bytes: [u8; 4] = slice[start..end].try_into().unwrap_or([0; 4]);
+                            let sample = if user_data.format.format() == spa::param::audio::AudioFormat::F32LE {
+                                f32::from_le_bytes(bytes)
+                            } else {
+                                f32::from_be_bytes(bytes)
+                            };
+                            f32_samples.push(sample);
+                        }
+                    }
+
+                    match user_data.output_format {
+                        AudioFormat::F32 => AudioSamples::F32(f32_samples),
+                        AudioFormat::I16 => {
+                            let i16_samples: Vec<i16> = f32_samples
+                                .iter()
+                                .map(|&s| (s.clamp(-1.0, 1.0) * 32767.0) as i16)
+                                .collect();
+                            AudioSamples::I16(i16_samples)
+                        }
+                    }
+                }
+                spa::param::audio::AudioFormat::S16LE | spa::param::audio::AudioFormat::S16BE => {
+                    let byte_count = size.min(slice.len());
+                    let sample_count = byte_count / mem::size_of::<i16>();
+                    let mut i16_samples = Vec::with_capacity(sample_count);
+
+                    for i in 0..sample_count {
+                        let start = i * mem::size_of::<i16>();
+                        let end = start + mem::size_of::<i16>();
+                        if end <= slice.len() {
+                            let bytes: [u8; 2] = slice[start..end].try_into().unwrap_or([0; 2]);
+                            let sample = if user_data.format.format() == spa::param::audio::AudioFormat::S16LE {
+                                i16::from_le_bytes(bytes)
+                            } else {
+                                i16::from_be_bytes(bytes)
+                            };
+                            i16_samples.push(sample);
+                        }
+                    }
+
+                    match user_data.output_format {
+                        AudioFormat::I16 => AudioSamples::I16(i16_samples),
+                        AudioFormat::F32 => {
+                            let f32_samples: Vec<f32> = i16_samples.iter().map(|&s| s as f32 / 32768.0).collect();
+                            AudioSamples::F32(f32_samples)
+                        }
+                    }
+                }
+                other => {
+                    trace!("Unsupported audio format: {:?}", other);
+                    return;
+                }
+            };
+
+            let sample_count = samples.len();
+
+            // Non-blocking send to maintain realtime performance
+            match user_data.sender.try_send(samples) {
+                Ok(()) => {
+                    user_data.samples_captured += sample_count as u64;
+                    trace!("Captured {} samples", sample_count);
+                }
+                Err(mpsc::error::TrySendError::Full(_)) => {
+                    user_data.samples_dropped += sample_count as u64;
+                    trace!("Dropped {} samples (channel full)", sample_count);
+                }
+                Err(mpsc::error::TrySendError::Closed(_)) => {
+                    user_data.stop_signal.store(true, Ordering::SeqCst);
+                    debug!("Audio sample channel closed");
+                }
+            }
+        })
+        .register()
+        .context("Failed to register stream listener")?;
+
+    // Build format parameters for negotiation. Pin the rate and channel
+    // count as well as the format: leaving them unset advertises "any", so
+    // PipeWire delivers its graph-native rate (typically 48 kHz) and ignores
+    // the requested sample_rate entirely. Setting the rate makes PipeWire
+    // insert a resampler, so a consumer asking for 44.1 kHz actually receives
+    // 44.1 kHz (needed for RDP clients whose endpoints resample poorly).
+    let mut audio_info = spa::param::audio::AudioInfoRaw::new();
+    audio_info.set_format(config.format.to_spa_format());
+    audio_info.set_rate(config.sample_rate);
+    audio_info.set_channels(config.channels);
+
+    let obj = spa::pod::Object {
+        type_: spa::utils::SpaTypes::ObjectParamFormat.as_raw(),
+        id: spa::param::ParamType::EnumFormat.as_raw(),
+        properties: audio_info.into(),
+    };
+
+    let pod_bytes: Vec<u8> =
+        spa::pod::serialize::PodSerializer::serialize(std::io::Cursor::new(Vec::new()), &spa::pod::Value::Object(obj))
+            .context("Failed to serialize audio format pod")?
+            .0
+            .into_inner();
+
+    let pod = Pod::from_bytes(&pod_bytes).context("Failed to create pod from bytes")?;
+
+    let mut params = [pod];
+
+    let flags = pw::stream::StreamFlags::AUTOCONNECT
+        | pw::stream::StreamFlags::MAP_BUFFERS
+        | pw::stream::StreamFlags::RT_PROCESS;
+
+    stream
+        .connect(spa::utils::Direction::Input, node_id, flags, &mut params)
+        .context("Failed to connect PipeWire stream")?;
+
+    Ok((stream, listener))
 }
 
 /// Spawn audio capture on a dedicated thread
@@ -654,206 +682,8 @@ impl VirtualMicrophone {
             pw::context::ContextBox::new(mainloop.loop_(), None).context("Failed to create PipeWire Context")?;
         let core = context.connect(None).context("Failed to connect to PipeWire daemon")?;
 
-        let description = node_label.unwrap_or("Lamco Virtual Microphone");
-
-        let props = pw::properties::properties! {
-            *pw::keys::MEDIA_TYPE => "Audio",
-            // "Capture" describes what CONSUMERS do with this node (they
-            // capture from it, as they would a hardware microphone), not
-            // the local `pw_stream` direction below -- this is the same
-            // convention lamco's own xdg-desktop-portal-generic uses for
-            // its Video/Source screen-capture node.
-            *pw::keys::MEDIA_CATEGORY => "Capture",
-            *pw::keys::MEDIA_CLASS => "Audio/Source",
-            *pw::keys::MEDIA_ROLE => "Communication",
-            *pw::keys::NODE_NAME => "lamco-rdp-microphone",
-            *pw::keys::NODE_DESCRIPTION => description,
-            *pw::keys::APP_NAME => "lamco-pipewire",
-            "stream.is-live" => "true",
-            // Root cause of a confirmed live bug: a follower node not
-            // linked to a driver stays "suspended" and its `process()`
-            // callback is never invoked (PipeWire's own docs, "Streams" --
-            // this is the documented default since 0.3.51), even once a
-            // real consumer links to it (verified via `pw-dump`: an active
-            // Link to a running client, node still `suspended`, `process()`
-            // never called). This node must always produce data --
-            // including silence when nothing has been pushed yet, per
-            // `spawn_virtual_microphone`'s own doc comment -- regardless of
-            // whether anything is currently listening, so opt out of the
-            // link-gated default entirely.
-            *pw::keys::NODE_ALWAYS_PROCESS => "true",
-        };
-
-        let stream = pw::stream::StreamBox::new(&core, "lamco-rdp-microphone", props)
-            .context("Failed to create PipeWire stream")?;
-
-        let bytes_per_frame = self.config.channels as usize * self.config.format.bytes_per_sample();
-        let max_buffered_bytes = (self.config.sample_rate as usize * bytes_per_frame * MAX_BUFFERED_MS as usize) / 1000;
-
-        let user_data = PlaybackUserData {
-            receiver: self.receiver,
-            format: self.config.format,
-            bytes_per_frame,
-            max_buffered_bytes,
-            ring: VecDeque::with_capacity(max_buffered_bytes),
-            stop_signal: Arc::clone(&self.stop_signal),
-            frames_written: 0,
-            frames_silenced: 0,
-        };
-
-        let stop_signal_for_callback = Arc::clone(&self.stop_signal);
-
-        let _listener = stream
-            .add_local_listener_with_user_data(user_data)
-            .state_changed(move |_stream, _user_data, old, new| {
-                debug!("Virtual microphone stream state: {:?} -> {:?}", old, new);
-
-                match new {
-                    pw::stream::StreamState::Error(err) => {
-                        error!("Virtual microphone stream error: {}", err);
-                        stop_signal_for_callback.store(true, Ordering::SeqCst);
-                    }
-                    pw::stream::StreamState::Streaming => {
-                        info!("Virtual microphone streaming started");
-                    }
-                    pw::stream::StreamState::Paused => {
-                        debug!("Virtual microphone stream paused");
-                    }
-                    _ => {}
-                }
-            })
-            .param_changed(|_stream, _user_data, id, param| {
-                let Some(param) = param else {
-                    return;
-                };
-
-                if id != spa::param::ParamType::Format.as_raw() {
-                    return;
-                }
-
-                let (media_type, media_subtype) = match format_utils::parse_format(param) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        warn!("Failed to parse virtual microphone format: {:?}", e);
-                        return;
-                    }
-                };
-
-                if media_type != MediaType::Audio || media_subtype != MediaSubtype::Raw {
-                    debug!("Ignoring non-raw audio format: {:?}/{:?}", media_type, media_subtype);
-                    return;
-                }
-
-                let mut info = spa::param::audio::AudioInfoRaw::default();
-                if let Err(e) = info.parse(param) {
-                    warn!("Failed to parse virtual microphone audio info: {:?}", e);
-                    return;
-                }
-
-                info!(
-                    "Virtual microphone format negotiated: rate={}, channels={}, format={:?}",
-                    info.rate(),
-                    info.channels(),
-                    info.format()
-                );
-            })
-            .process(|stream, user_data| {
-                if user_data.stop_signal.load(Ordering::Relaxed) {
-                    return;
-                }
-
-                // Drain everything currently queued from the producer without
-                // blocking. PipeWire calls process() on the graph's own
-                // cadence, not the producer's, so samples arrive in bursts
-                // (e.g. a batch of decoded AUDIN Data PDUs) and must be
-                // buffered here rather than dropped.
-                while let Ok(samples) = user_data.receiver.try_recv() {
-                    let bytes: Vec<u8> = match user_data.format {
-                        AudioFormat::F32 => samples.to_f32().iter().flat_map(|s| s.to_le_bytes()).collect(),
-                        AudioFormat::I16 => samples.to_i16().iter().flat_map(|s| s.to_le_bytes()).collect(),
-                    };
-                    user_data.ring.extend(bytes);
-                }
-
-                while user_data.ring.len() > user_data.max_buffered_bytes {
-                    user_data.ring.pop_front();
-                }
-
-                let Some(mut buffer) = stream.dequeue_buffer() else {
-                    trace!("No buffer available");
-                    return;
-                };
-                let requested_frames = buffer.requested();
-
-                let datas = buffer.datas_mut();
-                if datas.is_empty() {
-                    return;
-                }
-
-                let data = &mut datas[0];
-                let Some(dest) = data.data() else {
-                    return;
-                };
-
-                let bytes_per_frame = user_data.bytes_per_frame.max(1);
-                let (available, chunk_len) = fill_cycle(&mut user_data.ring, dest, requested_frames, bytes_per_frame);
-                user_data.frames_silenced += ((chunk_len - available) / bytes_per_frame) as u64;
-                user_data.frames_written += (available / bytes_per_frame) as u64;
-
-                let chunk = data.chunk_mut();
-                *chunk.offset_mut() = 0;
-                *chunk.stride_mut() = user_data.bytes_per_frame as i32;
-                *chunk.size_mut() = chunk_len as u32;
-            })
-            .register()
-            .context("Failed to register stream listener")?;
-
-        let mut audio_info = spa::param::audio::AudioInfoRaw::new();
-        audio_info.set_format(self.config.format.to_spa_format());
-        audio_info.set_rate(self.config.sample_rate);
-        audio_info.set_channels(self.config.channels);
-
-        let obj = spa::pod::Object {
-            type_: spa::utils::SpaTypes::ObjectParamFormat.as_raw(),
-            id: spa::param::ParamType::EnumFormat.as_raw(),
-            properties: audio_info.into(),
-        };
-
-        let pod_bytes: Vec<u8> = spa::pod::serialize::PodSerializer::serialize(
-            std::io::Cursor::new(Vec::new()),
-            &spa::pod::Value::Object(obj),
-        )
-        .context("Failed to serialize audio format pod")?
-        .0
-        .into_inner();
-
-        let pod = Pod::from_bytes(&pod_bytes).context("Failed to create pod from bytes")?;
-
-        let mut params = [pod];
-
-        // AUTOCONNECT: without it, this stream is registered but never
-        // linked into the graph. DRIVER was also tried here and rejected --
-        // PipeWire returned Error("Start error: Invalid argument") for this
-        // stream shape, so it is not a viable fix for this node.
-        //
-        // No ALLOC_BUFFERS: native PipeWire trace (PIPEWIRE_DEBUG=3) showed
-        // the real failure underneath that same "Invalid argument" --
-        // `pw.stream impl_port_use_buffers(): invalid buffer mem` followed
-        // by `pw.node start_node(): start node error -22`, right after the
-        // spa.audioadapter (auto-inserted for our S16LE-mono -> graph-native
-        // format conversion) negotiated buffers. ALLOC_BUFFERS asks this
-        // stream to own the buffer memory itself, which the adapter
-        // apparently cannot accept for this node shape. The proven-working
-        // capture-direction sibling in this same file (`AudioCapture`,
-        // above) uses AUTOCONNECT | MAP_BUFFERS | RT_PROCESS with no
-        // ALLOC_BUFFERS -- match it.
-        let flags = pw::stream::StreamFlags::AUTOCONNECT
-            | pw::stream::StreamFlags::MAP_BUFFERS
-            | pw::stream::StreamFlags::RT_PROCESS;
-
-        stream
-            .connect(spa::utils::Direction::Output, None, flags, &mut params)
-            .context("Failed to connect PipeWire stream")?;
+        let (_stream, _listener) =
+            connect_microphone_stream(&core, &self.config, node_label, self.receiver, &self.stop_signal)?;
 
         info!("Virtual microphone stream connected, starting main loop");
 
@@ -870,6 +700,221 @@ impl VirtualMicrophone {
     pub fn stop(&self) {
         self.stop_signal.store(true, Ordering::SeqCst);
     }
+}
+
+/// Creates and connects the virtual microphone's `Audio/Source` stream on
+/// `core`, fed from `receiver` until `stop_signal` is set.
+///
+/// `node_label` sets `node.description`; defaults to "Lamco Virtual
+/// Microphone" when `None`. The stream and its listener live as long as the
+/// returned values.
+fn connect_microphone_stream<'c>(
+    core: &'c pw::core::Core,
+    config: &PlaybackConfig,
+    node_label: Option<&str>,
+    receiver: mpsc::Receiver<AudioSamples>,
+    stop_signal: &Arc<AtomicBool>,
+) -> Result<(pw::stream::StreamBox<'c>, pw::stream::StreamListener<PlaybackUserData>)> {
+    let description = node_label.unwrap_or("Lamco Virtual Microphone");
+
+    let props = pw::properties::properties! {
+        *pw::keys::MEDIA_TYPE => "Audio",
+        // "Capture" describes what CONSUMERS do with this node (they
+        // capture from it, as they would a hardware microphone), not
+        // the local `pw_stream` direction below -- this is the same
+        // convention lamco's own xdg-desktop-portal-generic uses for
+        // its Video/Source screen-capture node.
+        *pw::keys::MEDIA_CATEGORY => "Capture",
+        *pw::keys::MEDIA_CLASS => "Audio/Source",
+        *pw::keys::MEDIA_ROLE => "Communication",
+        *pw::keys::NODE_NAME => "lamco-rdp-microphone",
+        *pw::keys::NODE_DESCRIPTION => description,
+        *pw::keys::APP_NAME => "lamco-pipewire",
+        "stream.is-live" => "true",
+        // Root cause of a confirmed live bug: a follower node not
+        // linked to a driver stays "suspended" and its `process()`
+        // callback is never invoked (PipeWire's own docs, "Streams" --
+        // this is the documented default since 0.3.51), even once a
+        // real consumer links to it (verified via `pw-dump`: an active
+        // Link to a running client, node still `suspended`, `process()`
+        // never called). This node must always produce data --
+        // including silence when nothing has been pushed yet, per
+        // `spawn_virtual_microphone`'s own doc comment -- regardless of
+        // whether anything is currently listening, so opt out of the
+        // link-gated default entirely.
+        *pw::keys::NODE_ALWAYS_PROCESS => "true",
+    };
+
+    let stream =
+        pw::stream::StreamBox::new(core, "lamco-rdp-microphone", props).context("Failed to create PipeWire stream")?;
+
+    let bytes_per_frame = config.channels as usize * config.format.bytes_per_sample();
+    let max_buffered_bytes = (config.sample_rate as usize * bytes_per_frame * MAX_BUFFERED_MS as usize) / 1000;
+
+    let user_data = PlaybackUserData {
+        receiver,
+        format: config.format,
+        bytes_per_frame,
+        max_buffered_bytes,
+        ring: VecDeque::with_capacity(max_buffered_bytes),
+        stop_signal: Arc::clone(stop_signal),
+        frames_written: 0,
+        frames_silenced: 0,
+    };
+
+    let stop_signal_for_callback = Arc::clone(stop_signal);
+
+    let listener = stream
+        .add_local_listener_with_user_data(user_data)
+        .state_changed(move |_stream, _user_data, old, new| {
+            debug!("Virtual microphone stream state: {:?} -> {:?}", old, new);
+
+            match new {
+                pw::stream::StreamState::Error(err) => {
+                    error!("Virtual microphone stream error: {}", err);
+                    stop_signal_for_callback.store(true, Ordering::SeqCst);
+                }
+                pw::stream::StreamState::Streaming => {
+                    info!("Virtual microphone streaming started");
+                }
+                pw::stream::StreamState::Paused => {
+                    debug!("Virtual microphone stream paused");
+                }
+                _ => {}
+            }
+        })
+        .param_changed(|_stream, _user_data, id, param| {
+            let Some(param) = param else {
+                return;
+            };
+
+            if id != spa::param::ParamType::Format.as_raw() {
+                return;
+            }
+
+            let (media_type, media_subtype) = match format_utils::parse_format(param) {
+                Ok(v) => v,
+                Err(e) => {
+                    warn!("Failed to parse virtual microphone format: {:?}", e);
+                    return;
+                }
+            };
+
+            if media_type != MediaType::Audio || media_subtype != MediaSubtype::Raw {
+                debug!("Ignoring non-raw audio format: {:?}/{:?}", media_type, media_subtype);
+                return;
+            }
+
+            let mut info = spa::param::audio::AudioInfoRaw::default();
+            if let Err(e) = info.parse(param) {
+                warn!("Failed to parse virtual microphone audio info: {:?}", e);
+                return;
+            }
+
+            info!(
+                "Virtual microphone format negotiated: rate={}, channels={}, format={:?}",
+                info.rate(),
+                info.channels(),
+                info.format()
+            );
+        })
+        .process(|stream, user_data| {
+            if user_data.stop_signal.load(Ordering::Relaxed) {
+                return;
+            }
+
+            // Drain everything currently queued from the producer without
+            // blocking. PipeWire calls process() on the graph's own
+            // cadence, not the producer's, so samples arrive in bursts
+            // (e.g. a batch of decoded AUDIN Data PDUs) and must be
+            // buffered here rather than dropped.
+            while let Ok(samples) = user_data.receiver.try_recv() {
+                let bytes: Vec<u8> = match user_data.format {
+                    AudioFormat::F32 => samples.to_f32().iter().flat_map(|s| s.to_le_bytes()).collect(),
+                    AudioFormat::I16 => samples.to_i16().iter().flat_map(|s| s.to_le_bytes()).collect(),
+                };
+                user_data.ring.extend(bytes);
+            }
+
+            while user_data.ring.len() > user_data.max_buffered_bytes {
+                user_data.ring.pop_front();
+            }
+
+            let Some(mut buffer) = stream.dequeue_buffer() else {
+                trace!("No buffer available");
+                return;
+            };
+            let requested_frames = buffer.requested();
+
+            let datas = buffer.datas_mut();
+            if datas.is_empty() {
+                return;
+            }
+
+            let data = &mut datas[0];
+            let Some(dest) = data.data() else {
+                return;
+            };
+
+            let bytes_per_frame = user_data.bytes_per_frame.max(1);
+            let (available, chunk_len) = fill_cycle(&mut user_data.ring, dest, requested_frames, bytes_per_frame);
+            user_data.frames_silenced += ((chunk_len - available) / bytes_per_frame) as u64;
+            user_data.frames_written += (available / bytes_per_frame) as u64;
+
+            let chunk = data.chunk_mut();
+            *chunk.offset_mut() = 0;
+            *chunk.stride_mut() = user_data.bytes_per_frame as i32;
+            *chunk.size_mut() = chunk_len as u32;
+        })
+        .register()
+        .context("Failed to register stream listener")?;
+
+    let mut audio_info = spa::param::audio::AudioInfoRaw::new();
+    audio_info.set_format(config.format.to_spa_format());
+    audio_info.set_rate(config.sample_rate);
+    audio_info.set_channels(config.channels);
+
+    let obj = spa::pod::Object {
+        type_: spa::utils::SpaTypes::ObjectParamFormat.as_raw(),
+        id: spa::param::ParamType::EnumFormat.as_raw(),
+        properties: audio_info.into(),
+    };
+
+    let pod_bytes: Vec<u8> =
+        spa::pod::serialize::PodSerializer::serialize(std::io::Cursor::new(Vec::new()), &spa::pod::Value::Object(obj))
+            .context("Failed to serialize audio format pod")?
+            .0
+            .into_inner();
+
+    let pod = Pod::from_bytes(&pod_bytes).context("Failed to create pod from bytes")?;
+
+    let mut params = [pod];
+
+    // AUTOCONNECT: without it, this stream is registered but never
+    // linked into the graph. DRIVER was also tried here and rejected --
+    // PipeWire returned Error("Start error: Invalid argument") for this
+    // stream shape, so it is not a viable fix for this node.
+    //
+    // No ALLOC_BUFFERS: native PipeWire trace (PIPEWIRE_DEBUG=3) showed
+    // the real failure underneath that same "Invalid argument" --
+    // `pw.stream impl_port_use_buffers(): invalid buffer mem` followed
+    // by `pw.node start_node(): start node error -22`, right after the
+    // spa.audioadapter (auto-inserted for our S16LE-mono -> graph-native
+    // format conversion) negotiated buffers. ALLOC_BUFFERS asks this
+    // stream to own the buffer memory itself, which the adapter
+    // apparently cannot accept for this node shape. The proven-working
+    // capture-direction sibling in this same file (`AudioCapture`,
+    // above) uses AUTOCONNECT | MAP_BUFFERS | RT_PROCESS with no
+    // ALLOC_BUFFERS -- match it.
+    let flags = pw::stream::StreamFlags::AUTOCONNECT
+        | pw::stream::StreamFlags::MAP_BUFFERS
+        | pw::stream::StreamFlags::RT_PROCESS;
+
+    stream
+        .connect(spa::utils::Direction::Output, None, flags, &mut params)
+        .context("Failed to connect PipeWire stream")?;
+
+    Ok((stream, listener))
 }
 
 /// Spawn a virtual microphone source on a dedicated thread

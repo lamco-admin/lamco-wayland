@@ -5,6 +5,22 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `AudioHost`, `AudioHostConfig` and `spawn_audio_host`: One thread owning a PipeWire
+  connection handed in as a connected socket, with a sink created on it for
+  applications to play into, and captures of that sink and virtual microphones
+  started and stopped on the same connection. For a process that can't reach the
+  user's PipeWire socket itself, such as a VDI session running as another user.
+  The sink takes the user's default by priority and goes with the connection.
+- The `audio_host` example runs one on a connection to this user's PipeWire.
+
+### Changed
+- The capture and virtual microphone streams are built by functions that take the
+  connection, so both the spawn functions and the audio host use them. No change
+  to what `spawn_audio_capture` or `spawn_virtual_microphone` do.
+
 ## [0.8.1] - 2026-10-19
 
 ### Fixed
