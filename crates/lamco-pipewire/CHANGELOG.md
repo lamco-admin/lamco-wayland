@@ -5,7 +5,7 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.2] - 2026-10-24
 
 ### Added
 - `AudioHost`, `AudioHostConfig` and `spawn_audio_host`: One thread owning a PipeWire
@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The capture and virtual microphone streams are built by functions that take the
   connection, so both the spawn functions and the audio host use them. No change
   to what `spawn_audio_capture` or `spawn_virtual_microphone` do.
+- The license files name Lamco Development LLC and 2026. They said
+  "Copyright 2025 Lamco".
 
 ## [0.8.1] - 2026-10-19
 
