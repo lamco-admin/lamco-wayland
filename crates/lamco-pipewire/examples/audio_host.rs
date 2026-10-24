@@ -54,6 +54,9 @@ fn main() -> anyhow::Result<()> {
             Err(_) => std::thread::sleep(Duration::from_millis(10)),
         }
     }
-    println!("captured {samples} samples, peak {peak}, host alive {}", host.is_alive());
+    println!(
+        "captured {samples} samples, peak {peak}, host alive {}",
+        host.is_alive()
+    );
     Ok(())
 }
