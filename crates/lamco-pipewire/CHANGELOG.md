@@ -5,7 +5,7 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.4] - 2026-10-25
 
 ### Added
 - `spawn_ranked_virtual_microphone`, `VirtualMicrophone::with_session_priority` and
@@ -13,8 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   session manager can make it the default source. `DEFAULT_SOURCE_PRIORITY` (3000) ranks
   it above every device WirePlumber 0.5 ranks (ALSA capture up to 2500, Bluetooth
   sources 2010) for as long as it exists, after which the previous default returns; a
-  default the user chose explicitly still wins. For a remote desktop's microphone, which
-  applications recording the default source otherwise never hear.
+  default the user chose explicitly still wins. It's meant for a remote desktop's
+  microphone, which applications recording the default source otherwise never hear.
   `spawn_virtual_microphone` is unchanged and sets no priority.
 
 ## [0.8.3] - 2026-10-25
