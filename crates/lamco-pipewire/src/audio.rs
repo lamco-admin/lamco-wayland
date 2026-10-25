@@ -634,6 +634,20 @@ struct PlaybackUserData {
     frames_silenced: u64,
 }
 
+/// A `priority.session` that ranks a source above every device, so the session
+/// manager makes it the default source for as long as it exists and falls back
+/// to the previous default when it goes. WirePlumber 0.5 (its
+/// `monitors/alsa.lua` and `monitors/bluez.lua`) ranks the first ALSA capture
+/// device 2009 with an analog profile and 2500 with a pro-audio one, later
+/// devices lower, and Bluetooth sources 2010. A default the user chose
+/// explicitly still wins: WirePlumber raises a configured or selected node by
+/// 20000 or more.
+pub const DEFAULT_SOURCE_PRIORITY: u32 = 3000;
+
+// Above WirePlumber 0.5's highest device source, ALSA capture on device 0
+// with a pro-audio profile (1000 + 1000 + 500).
+const _: () = assert!(DEFAULT_SOURCE_PRIORITY > 2500);
+
 /// PipeWire virtual microphone source
 ///
 /// Creates an `Audio/Source` node that other applications can select as an
@@ -643,6 +657,7 @@ pub struct VirtualMicrophone {
     config: PlaybackConfig,
     receiver: mpsc::Receiver<AudioSamples>,
     stop_signal: Arc<AtomicBool>,
+    session_priority: Option<u32>,
 }
 
 impl VirtualMicrophone {
@@ -655,11 +670,21 @@ impl VirtualMicrophone {
             config,
             receiver,
             stop_signal: Arc::clone(&stop_signal),
+            session_priority: None,
         };
 
         let handle = VirtualMicrophoneHandle { sender, stop_signal };
 
         (mic, handle)
+    }
+
+    /// Ranks the node as `priority` (`priority.session`) among sources, for
+    /// the session manager's choice of the default source. Without it the node
+    /// has no priority and is the default only when nothing else is.
+    #[must_use]
+    pub fn with_session_priority(mut self, priority: u32) -> Self {
+        self.session_priority = Some(priority);
+        self
     }
 
     /// Run the PipeWire main loop for the virtual microphone (blocking).
@@ -682,8 +707,14 @@ impl VirtualMicrophone {
             pw::context::ContextBox::new(mainloop.loop_(), None).context("Failed to create PipeWire Context")?;
         let core = context.connect(None).context("Failed to connect to PipeWire daemon")?;
 
-        let (_stream, _listener) =
-            connect_microphone_stream(&core, &self.config, node_label, None, self.receiver, &self.stop_signal)?;
+        let (_stream, _listener) = connect_microphone_stream(
+            &core,
+            &self.config,
+            node_label,
+            self.session_priority,
+            self.receiver,
+            &self.stop_signal,
+        )?;
 
         info!("Virtual microphone stream connected, starting main loop");
 
@@ -964,9 +995,49 @@ pub fn spawn_virtual_microphone(
     Ok(handle)
 }
 
+/// [`spawn_virtual_microphone`], with the node ranked as `session_priority`
+/// among sources ([`VirtualMicrophone::with_session_priority`]).
+/// [`DEFAULT_SOURCE_PRIORITY`] makes it the default source while it exists, so
+/// applications that record the default microphone hear it.
+pub fn spawn_ranked_virtual_microphone(
+    config: PlaybackConfig,
+    node_label: Option<String>,
+    session_priority: u32,
+    channel_size: usize,
+) -> Result<VirtualMicrophoneHandle> {
+    let (mic, handle) = VirtualMicrophone::new(config, channel_size);
+    let mic = mic.with_session_priority(session_priority);
+
+    std::thread::Builder::new()
+        .name("pipewire-mic".into())
+        .spawn(move || {
+            // Shared, reference-counted acquire -- see crate::pw_lifecycle.
+            crate::pw_lifecycle::acquire();
+
+            if let Err(e) = mic.start_playback(node_label.as_deref()) {
+                error!("Virtual microphone error: {:#}", e);
+            }
+
+            crate::pw_lifecycle::release();
+        })
+        .context("Failed to spawn virtual microphone thread")?;
+
+    Ok(handle)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_microphone_takes_the_priority_it_is_given() {
+        let (mic, _handle) = VirtualMicrophone::new(PlaybackConfig::default(), 4);
+        assert_eq!(mic.session_priority, None);
+        assert_eq!(
+            mic.with_session_priority(DEFAULT_SOURCE_PRIORITY).session_priority,
+            Some(DEFAULT_SOURCE_PRIORITY)
+        );
+    }
 
     #[test]
     fn microphone_session_priority_is_set_only_when_given() {
