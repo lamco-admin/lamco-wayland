@@ -5,6 +5,16 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.4] - 2026-10-25
+
+### Added
+- **lamco-pipewire 0.8.4:** `spawn_ranked_virtual_microphone`,
+  `VirtualMicrophone::with_session_priority` and `DEFAULT_SOURCE_PRIORITY` give a
+  virtual microphone a `priority.session`, so the session manager makes it the default
+  source while it exists. A remote desktop's microphone is then what applications
+  recording the default source hear. Additive. See lamco-pipewire's own changelog. The
+  requirement on lamco-pipewire moves to 0.8.4.
+
 ## [0.8.3] - 2026-10-25
 
 ### Fixed
