@@ -94,7 +94,15 @@ impl AudioHost {
     }
 
     /// Creates a virtual microphone on the host's connection, as
-    /// [`spawn_virtual_microphone`](super::spawn_virtual_microphone) does on its own.
+    /// [`spawn_virtual_microphone`](super::spawn_virtual_microphone) does on its own,
+    /// ranked one above the host's sink.
+    ///
+    /// A session manager can offer a sink's monitor as the default source:
+    /// WirePlumber 0.5 counts `Audio/Sink` nodes among the candidates and ranks
+    /// them all by `priority.session`. The host's sink has a high one so that it
+    /// becomes the default sink, and a microphone without one loses to it, so
+    /// applications recording the default source would record what they play.
+    /// This microphone's `priority.session` is the sink's plus one.
     pub fn start_microphone(
         &self,
         config: PlaybackConfig,
@@ -184,6 +192,13 @@ pub fn spawn_audio_host(connection: OwnedFd, config: AudioHostConfig) -> Result<
     }
 }
 
+/// `priority.session` of a microphone started on a host with `config`'s sink:
+/// one above the sink's, so the session manager prefers the microphone to the
+/// sink's monitor as the default source.
+fn microphone_priority(config: &AudioHostConfig) -> u32 {
+    config.sink_priority.saturating_add(1)
+}
+
 fn run_host(
     connection: OwnedFd,
     config: &AudioHostConfig,
@@ -266,6 +281,7 @@ fn run_host(
                     &core,
                     &playback_config,
                     node_label.as_deref(),
+                    Some(microphone_priority(config)),
                     receiver,
                     &stop_signal,
                 ) {
@@ -296,4 +312,20 @@ fn run_host(
     }
     info!("Audio host stopped");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_microphone_outranks_its_hosts_sink() {
+        let config = AudioHostConfig::default();
+        assert_eq!(microphone_priority(&config), config.sink_priority + 1);
+        let highest = AudioHostConfig {
+            sink_priority: u32::MAX,
+            ..AudioHostConfig::default()
+        };
+        assert_eq!(microphone_priority(&highest), u32::MAX);
+    }
 }

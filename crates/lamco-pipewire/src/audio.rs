@@ -683,7 +683,7 @@ impl VirtualMicrophone {
         let core = context.connect(None).context("Failed to connect to PipeWire daemon")?;
 
         let (_stream, _listener) =
-            connect_microphone_stream(&core, &self.config, node_label, self.receiver, &self.stop_signal)?;
+            connect_microphone_stream(&core, &self.config, node_label, None, self.receiver, &self.stop_signal)?;
 
         info!("Virtual microphone stream connected, starting main loop");
 
@@ -702,22 +702,14 @@ impl VirtualMicrophone {
     }
 }
 
-/// Creates and connects the virtual microphone's `Audio/Source` stream on
-/// `core`, fed from `receiver` until `stop_signal` is set.
-///
-/// `node_label` sets `node.description`; defaults to "Lamco Virtual
-/// Microphone" when `None`. The stream and its listener live as long as the
-/// returned values.
-fn connect_microphone_stream<'c>(
-    core: &'c pw::core::Core,
-    config: &PlaybackConfig,
-    node_label: Option<&str>,
-    receiver: mpsc::Receiver<AudioSamples>,
-    stop_signal: &Arc<AtomicBool>,
-) -> Result<(pw::stream::StreamBox<'c>, pw::stream::StreamListener<PlaybackUserData>)> {
+/// The virtual microphone node's properties. `node_label` sets
+/// `node.description`; defaults to "Lamco Virtual Microphone" when `None`.
+/// `session_priority` sets `priority.session`, which the session manager ranks
+/// default-source candidates by; without it the node has none.
+fn microphone_properties(node_label: Option<&str>, session_priority: Option<u32>) -> pw::properties::PropertiesBox {
     let description = node_label.unwrap_or("Lamco Virtual Microphone");
 
-    let props = pw::properties::properties! {
+    let mut props = pw::properties::properties! {
         *pw::keys::MEDIA_TYPE => "Audio",
         // "Capture" describes what CONSUMERS do with this node (they
         // capture from it, as they would a hardware microphone), not
@@ -744,6 +736,26 @@ fn connect_microphone_stream<'c>(
         // link-gated default entirely.
         *pw::keys::NODE_ALWAYS_PROCESS => "true",
     };
+    if let Some(priority) = session_priority {
+        props.insert("priority.session", priority.to_string());
+    }
+    props
+}
+
+/// Creates and connects the virtual microphone's `Audio/Source` stream on
+/// `core`, fed from `receiver` until `stop_signal` is set.
+///
+/// `node_label` and `session_priority` are [`microphone_properties`]'s. The
+/// stream and its listener live as long as the returned values.
+fn connect_microphone_stream<'c>(
+    core: &'c pw::core::Core,
+    config: &PlaybackConfig,
+    node_label: Option<&str>,
+    session_priority: Option<u32>,
+    receiver: mpsc::Receiver<AudioSamples>,
+    stop_signal: &Arc<AtomicBool>,
+) -> Result<(pw::stream::StreamBox<'c>, pw::stream::StreamListener<PlaybackUserData>)> {
+    let props = microphone_properties(node_label, session_priority);
 
     let stream =
         pw::stream::StreamBox::new(core, "lamco-rdp-microphone", props).context("Failed to create PipeWire stream")?;
@@ -955,6 +967,14 @@ pub fn spawn_virtual_microphone(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn microphone_session_priority_is_set_only_when_given() {
+        let ranked = microphone_properties(None, Some(2001));
+        assert_eq!(ranked.get("priority.session"), Some("2001"));
+        assert_eq!(ranked.get("media.class"), Some("Audio/Source"));
+        assert_eq!(microphone_properties(None, None).get("priority.session"), None);
+    }
 
     #[test]
     fn test_capture_config_default() {
