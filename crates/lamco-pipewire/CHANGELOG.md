@@ -5,13 +5,13 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.3] - 2026-10-25
 
 ### Fixed
 - A microphone started on an `AudioHost` is ranked one above the host's sink
   (`priority.session`). WirePlumber 0.5 offers sinks' monitors as default-source
   candidates and ranks every candidate by that priority, so the sink, which has a
-  high one to become the default sink, beat the microphone, which had none:
+  high one to become the default sink, beat the microphone, which had none, and
   applications recording the default source recorded what they played.
   `spawn_virtual_microphone` is unchanged and still sets no priority.
 
