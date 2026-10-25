@@ -5,6 +5,15 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.3] - 2026-10-25
+
+### Fixed
+- **lamco-pipewire 0.8.3:** A microphone started on an `AudioHost` is ranked one
+  above the host's sink, so WirePlumber 0.5 makes it the default source instead
+  of the sink's monitor. Applications recording the default source got what the
+  session played. See lamco-pipewire's own changelog. The requirement on
+  lamco-pipewire moves to 0.8.3.
+
 ## [0.8.2] - 2026-10-24
 
 ### Added

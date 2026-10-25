@@ -13,7 +13,7 @@ expose. Pick the line that matches your target environment.
 
 | Line | `lamco-pipewire` | `lamco-wayland` (meta) | `lamco-video` | `lamco-portal` | PipeWire/SPA bindings | Metadata path | System libpipewire floor |
 |---|---|---|---|---|---|---|---|
-| **0.8.x — current** | **0.8.2** | **0.8.2** | **0.4.1** | **0.4.6** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** |
+| **0.8.x — current** | **0.8.3** | **0.8.3** | **0.4.1** | **0.4.6** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** |
 | 0.7.x — superseded, no longer maintained | 0.7.0 | 0.7.1 | 0.3.1 | 0.4.5 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 |
 | 0.5.x — frozen, no longer maintained | 0.5.11 | 0.5.12 | 0.2.0 | 0.4.5 | 0.10 | raw `libspa_sys` FFI | 0.3.33 |
 | 0.4.x — legacy (0.9) | 0.4.5 | 0.4.7 | 0.1.10 | 0.4.1 | 0.9 | raw `libspa_sys` FFI | 0.3.33 |
@@ -23,7 +23,7 @@ only requires Rust 1.80; the 1.87 floor comes from the workspace, not the bindin
 
 ## Which line should I use?
 
-- **New code, or any currently-supported distribution → `0.8.x` (0.8.2).**
+- **New code, or any currently-supported distribution → `0.8.x` (0.8.3).**
   This is the maintained head. Metadata extraction runs entirely through
   libspa 0.10's **safe wrappers** (the `meta.rs` module is `unsafe`-free), it
   exposes the **real cursor image** (`CursorMeta::bitmap`), a **virtual
