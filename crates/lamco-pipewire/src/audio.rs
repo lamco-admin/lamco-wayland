@@ -315,9 +315,10 @@ fn connect_capture_stream<'c>(
             match new {
                 // The session manager could not link the capture to a
                 // sink: the host has no audio output to record, which is
-                // a setup fact, not a fault in the stream.
+                // a setup fact, not a fault in the stream. What follows is
+                // the caller's to say; lamco-rdp-server makes its own sink.
                 pw::stream::StreamState::Error(err) if err.contains("no target node") => {
-                    warn!("No audio output to capture: PipeWire has no sink on this host, so clients get no sound");
+                    info!("Audio capture ended: PipeWire has no sink on this host to capture");
                     stop_signal_for_callback.store(true, Ordering::SeqCst);
                 }
                 pw::stream::StreamState::Error(err) => {

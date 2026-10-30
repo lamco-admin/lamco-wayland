@@ -5,6 +5,14 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- An audio capture that finds no sink to link to now logs "Audio capture ended: PipeWire
+  has no sink on this host to capture" at INFO, instead of a WARN saying clients get no
+  sound. What follows is the caller's to decide, and lamco-rdp-server makes its own sink
+  then, so the WARN contradicted the next line of its log.
+
 ## [0.8.4] - 2026-10-25
 
 ### Added
