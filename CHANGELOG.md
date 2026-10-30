@@ -5,6 +5,16 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.5] - 2026-10-30
+
+### Fixed
+- **lamco-portal 0.4.7:** A permission dialog answered with Cancel makes `create_session`
+  return `PortalError::PermissionDenied`, as that variant documents, instead of a
+  `SessionCreation` message, so a caller can tell the user's answer from a fault.
+- **lamco-pipewire 0.8.5:** An audio capture that finds no sink logs that it ended at
+  INFO, instead of a WARN saying clients get no sound; what follows is the caller's to
+  decide. The requirements move to lamco-portal 0.4.7 and lamco-pipewire 0.8.5.
+
 ## [0.8.4] - 2026-10-25
 
 ### Added
