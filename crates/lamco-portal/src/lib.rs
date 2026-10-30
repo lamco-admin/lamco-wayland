@@ -414,7 +414,7 @@ impl PortalManager {
                 Err(e) => {
                     warn!("Session start failed, closing session: {}", e);
                     let _ = remote_desktop_session.close().await;
-                    return Err(PortalError::session_creation(format!("Session start: {}", e)));
+                    return Err(session_start_error(e));
                 }
             };
 
@@ -512,9 +512,34 @@ impl PortalManager {
     }
 }
 
+/// What a failed Start becomes. The permission dialog answered with Cancel is
+/// the user's answer, so it stays [`PortalError::PermissionDenied`] for the
+/// caller to honour; flattened into a message, a caller couldn't tell it from
+/// a fault and would try another way, asking again.
+fn session_start_error(error: PortalError) -> PortalError {
+    match error {
+        PortalError::PortalRequest(ashpd::Error::Response(ashpd::desktop::ResponseError::Cancelled)) => {
+            PortalError::PermissionDenied
+        }
+        other => PortalError::session_creation(format!("Session start: {other}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cancelled_dialog_is_a_denied_permission() {
+        let cancelled = PortalError::PortalRequest(ashpd::Error::Response(ashpd::desktop::ResponseError::Cancelled));
+        assert!(matches!(session_start_error(cancelled), PortalError::PermissionDenied));
+
+        let other = PortalError::PortalRequest(ashpd::Error::Response(ashpd::desktop::ResponseError::Other));
+        assert!(matches!(
+            session_start_error(other),
+            PortalError::SessionCreation(message) if message.starts_with("Session start: ")
+        ));
+    }
 
     #[tokio::test]
     #[ignore] // Requires Wayland session
