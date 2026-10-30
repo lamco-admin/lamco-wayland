@@ -5,6 +5,15 @@ All notable changes to lamco-portal will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- A permission dialog answered with Cancel now makes `create_session` return
+  `PortalError::PermissionDenied`, as that variant documents. It was folded into
+  `PortalError::SessionCreation("Session start: ...")`, so a caller couldn't tell the
+  user's answer from a fault; lamco-rdp-server took it for a failure and asked again
+  for a view-only screen share.
+
 ## [0.4.6] - 2026-10-24
 
 ### Changed
