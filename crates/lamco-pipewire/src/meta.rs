@@ -139,7 +139,10 @@ pub struct DamageRect {
 /// Cursor metadata from SPA_META_Cursor.
 #[derive(Debug, Clone)]
 pub struct CursorMeta {
-    /// Cursor ID (0 = invalid/no cursor)
+    /// Cursor ID. 0 is SPA's invalid id, "no new cursor data", and comes
+    /// through as written with every other field zero. Mutter, KWin and the
+    /// COSMIC portal write it when the pointer isn't on the stream; what it
+    /// means for another producer is the consumer's call.
     pub id: u32,
     /// Position on screen
     pub position: (i32, i32),
@@ -157,6 +160,10 @@ pub struct CursorMeta {
 }
 
 /// A cursor image attached to SPA_META_Cursor.
+///
+/// A bitmap the producer marks as having no image data (SPA's data offset 0,
+/// "invisible") comes through with zero size and no pixels. One with SPA's
+/// invalid format 0, "no new bitmap information", doesn't come through.
 #[derive(Debug, Clone)]
 pub struct CursorBitmap {
     /// Raw SPA video format id of the pixels (e.g. BGRA).
@@ -238,11 +245,34 @@ pub fn extract_buffer_meta(buffer: &Buffer<'_>) -> BufferMeta {
     }
 
     if let Some(cursor) = buffer.find_meta::<MetaCursor>() {
-        // id == 0 means there is no new cursor data this frame.
-        if cursor.id() != 0 {
+        // id 0 is SPA's "no new cursor data". It goes on as written rather than being
+        // dropped, which hid it from consumers: Mutter, KWin and the COSMIC portal write
+        // it, and nothing else, when the pointer isn't on the stream.
+        if cursor.id() == 0 {
+            trace!("SPA_META_Cursor: id=0 (no new cursor data)");
+            meta.cursor = Some(CursorMeta {
+                id: 0,
+                position: (0, 0),
+                hotspot: (0, 0),
+                bitmap_offset: 0,
+                bitmap: None,
+            });
+        } else {
             let position = cursor.position();
             let hotspot = cursor.hotspot();
-            let bitmap = cursor.bitmap().and_then(|bitmap| {
+            // SPA: A bitmap with format 0 carries no new bitmap information, and one with
+            // data offset 0 has "no image data (invisible)". The latter goes on as an
+            // empty bitmap, since no bitmap at all means "shape unchanged".
+            let bitmap = cursor.bitmap().filter(|bitmap| bitmap.is_valid()).and_then(|bitmap| {
+                if bitmap.offset() == 0 {
+                    return Some(CursorBitmap {
+                        format: bitmap.format().as_raw(),
+                        width: 0,
+                        height: 0,
+                        stride: 0,
+                        pixels: Vec::new(),
+                    });
+                }
                 bitmap.bitmap_data().map(|pixels| {
                     let size = bitmap.size();
                     CursorBitmap {

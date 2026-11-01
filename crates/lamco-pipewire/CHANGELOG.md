@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changed. The frame is flagged corrupted, so `is_valid()` is false for it; a consumer
   that applies only its cursor, as for KWin's full-size cursor-only buffers, needs no
   change.
+- Cursor metadata with SPA's invalid id 0, "no new cursor data", comes through as a
+  `CursorMeta` with `id` 0 and every other field zero, instead of as no cursor at all, and
+  a corrupted buffer that carries it is a cursor-only update. Mutter, KWin and the COSMIC
+  portal write id 0 when the pointer isn't on the stream, so a consumer that knows its
+  producer can now tell. The crate doesn't read anything more into it: a consumer that
+  uses a `CursorMeta`'s position should skip id 0.
+- A cursor bitmap with data offset 0, SPA's "no image data (invisible)", comes through as
+  a bitmap with zero size and no pixels, instead of as no bitmap, which reads as "shape
+  unchanged". One with SPA's invalid format 0 still doesn't come through.
 
 ## [0.8.5] - 2026-10-30
 

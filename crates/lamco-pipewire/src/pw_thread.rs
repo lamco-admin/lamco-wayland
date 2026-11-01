@@ -1535,9 +1535,10 @@ fn create_stream_on_thread(
                     // size; KWin keeps it at the full buffer size and flags the
                     // chunk corrupted meaning "do not read the pixels"
                     // (kwin screencaststream.cpp). Either way the pixels are not
-                    // content and the cursor metadata is.
-                    buffer_meta.cursor_only_update =
-                        chunk_corrupted && buffer_meta.cursor.as_ref().is_some_and(|c| c.id != 0);
+                    // content and the cursor metadata is. That includes id 0, SPA's
+                    // "no new cursor data", which Mutter sends this way when the
+                    // pointer leaves the stream's monitor while the screen is still.
+                    buffer_meta.cursor_only_update = chunk_corrupted && buffer_meta.cursor.is_some();
 
                     if buffer_meta.cursor_only_update {
                         // Kept out of corrupted_buffer_count() so the storm and
