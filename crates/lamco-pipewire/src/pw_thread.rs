@@ -1550,6 +1550,36 @@ fn create_stream_on_thread(
                                 stream_id_for_callbacks, seen
                             );
                         }
+                        // Mutter's has no pixels at all, and every path below skips a
+                        // zero-size buffer, so its cursor change would be lost: A new
+                        // shape, a hidden pointer or a move over a still screen never
+                        // reaching the consumer. Send it on as a frame with no pixels,
+                        // which consumers tell apart by cursor_only_update. KWin's keeps
+                        // its full size and goes the usual way.
+                        if size == 0 {
+                            let mut flags = FrameFlags::new();
+                            flags.set_corrupted();
+                            let frame = VideoFrame {
+                                frame_id: stream_id_for_callbacks as u64,
+                                pts: stream_time.as_ref().map_or(0, |t| t.now_nsec as u64),
+                                dts: 0,
+                                duration: 16_666_667,
+                                width: proc_neg_width.load(Ordering::Acquire),
+                                height: proc_neg_height.load(Ordering::Acquire),
+                                stride: 0,
+                                format: frame_pixel_format(&proc_neg_format, config.preferred_format),
+                                monitor_index: stream_id_for_callbacks,
+                                buffer: crate::frame::FrameBuffer::Memory(StdArc::new(Vec::new())),
+                                capture_time: SystemTime::now(),
+                                damage_regions: Vec::new(),
+                                meta: buffer_meta.clone(),
+                                flags,
+                            };
+                            if let Err(e) = frame_tx_for_process.try_send(frame) {
+                                warn!("Failed to send cursor-only frame: {} (channel full, backpressure)", e);
+                            }
+                            return;
+                        }
                     } else if chunk_corrupted {
                         // Producer marked this chunk corrupted (SPA_CHUNK_FLAG_CORRUPTED).
                         // Any other metadata on it, notably SPA_META_VideoDamage, may be

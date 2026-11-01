@@ -74,6 +74,10 @@ pub struct BufferMeta {
     /// clears the header flags on both paths). The only tell is a valid
     /// SPA_META_Cursor on the buffer, and a recycled slot can carry a stale
     /// one, so this is a heuristic, not a classification.
+    ///
+    /// Such a buffer always reaches the consumer, so the cursor change isn't
+    /// lost. Mutter's has no pixels, so its frame comes with an empty buffer,
+    /// and `VideoFrame::is_valid()` is false for it as for any corrupted frame.
     pub cursor_only_update: bool,
 }
 

@@ -5,6 +5,17 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- A cursor-only buffer with no pixels, which is how Mutter sends a change of the pointer
+  alone, reaches the consumer as a frame with an empty buffer and `cursor_only_update`
+  set, instead of being dropped with its cursor metadata. On GNOME a new pointer shape,
+  a hidden pointer or a move over a still screen used to be lost until the screen
+  changed. The frame is flagged corrupted, so `is_valid()` is false for it; a consumer
+  that applies only its cursor, as for KWin's full-size cursor-only buffers, needs no
+  change.
+
 ## [0.8.5] - 2026-10-30
 
 ### Changed
