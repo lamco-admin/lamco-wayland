@@ -5,6 +5,15 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.6] - 2026-11-01
+
+### Fixed
+- **lamco-pipewire 0.8.6:** A cursor-only buffer with no pixels, Mutter's way of sending
+  a change of the pointer alone, reaches the consumer as a frame with an empty buffer and
+  `cursor_only_update` set, instead of being dropped with its cursor metadata. On GNOME a
+  new pointer shape, a hidden pointer or a move over a still screen is no longer lost
+  until the screen changes. The requirement moves to lamco-pipewire 0.8.6.
+
 ## [0.8.5] - 2026-10-30
 
 ### Fixed
