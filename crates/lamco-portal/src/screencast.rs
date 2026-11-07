@@ -73,6 +73,7 @@ impl ScreenCastManager {
                     ),
                     source_type: super::session::SourceType::Monitor,
                     mapping_id: stream.mapping_id().map(str::to_owned),
+                    pipewire_serial: stream.pipewire_serial(),
                 }
             })
             .collect();

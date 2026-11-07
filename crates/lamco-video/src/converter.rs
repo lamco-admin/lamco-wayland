@@ -174,15 +174,16 @@ impl BufferPool {
     fn acquire(&mut self, size: usize) -> Vec<u8> {
         // Try to find a suitable buffer in the pool
         for (idx, buffer_opt) in self.buffers.iter_mut().enumerate() {
-            if let Some(buffer) = buffer_opt {
-                if buffer.capacity >= size && self.free_indices.contains(&idx) {
-                    self.free_indices.retain(|&i| i != idx);
-                    buffer.last_used = Instant::now();
-                    let mut data = std::mem::take(&mut buffer.data);
-                    data.clear();
-                    data.resize(size, 0);
-                    return data;
-                }
+            if let Some(buffer) = buffer_opt
+                && buffer.capacity >= size
+                && self.free_indices.contains(&idx)
+            {
+                self.free_indices.retain(|&i| i != idx);
+                buffer.last_used = Instant::now();
+                let mut data = std::mem::take(&mut buffer.data);
+                data.clear();
+                data.resize(size, 0);
+                return data;
             }
         }
 
@@ -211,11 +212,11 @@ impl BufferPool {
             let mut oldest_time = Instant::now();
 
             for (idx, buffer_opt) in self.buffers.iter().enumerate() {
-                if let Some(buf) = buffer_opt {
-                    if buf.last_used < oldest_time {
-                        oldest_time = buf.last_used;
-                        oldest_idx = idx;
-                    }
+                if let Some(buf) = buffer_opt
+                    && buf.last_used < oldest_time
+                {
+                    oldest_time = buf.last_used;
+                    oldest_idx = idx;
                 }
             }
 

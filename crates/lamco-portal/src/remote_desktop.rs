@@ -8,7 +8,6 @@ use ashpd::desktop::remote_desktop::{
     DeviceType, KeyState, NotifyKeyboardKeycodeOptions, NotifyPointerAxisOptions, NotifyPointerButtonOptions,
     NotifyPointerMotionAbsoluteOptions, NotifyPointerMotionOptions, RemoteDesktop, SelectDevicesOptions, StartOptions,
 };
-use enumflags2::BitFlags;
 use tracing::{debug, info};
 
 use super::session::StreamInfo;
@@ -59,7 +58,7 @@ impl RemoteDesktopManager {
     pub async fn select_devices(
         &self,
         session: &ashpd::desktop::Session<RemoteDesktop>,
-        devices: BitFlags<DeviceType>,
+        devices: DeviceType,
     ) -> Result<()> {
         info!("Selecting devices: {:?}", devices);
 
@@ -143,6 +142,7 @@ impl RemoteDesktopManager {
                     ),
                     source_type: super::session::SourceType::Monitor,
                     mapping_id,
+                    pipewire_serial: stream.pipewire_serial(),
                 }
             })
             .collect();

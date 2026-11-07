@@ -657,11 +657,11 @@ impl PipeWireThreadManager {
         }
 
         // Wait for thread to finish (with timeout)
-        if let Some(handle) = self.thread_handle.take() {
-            if handle.join().is_err() {
-                error!("PipeWire thread panicked during shutdown");
-                return Err(PipeWireError::ThreadPanic("Thread panicked".to_string()));
-            }
+        if let Some(handle) = self.thread_handle.take()
+            && handle.join().is_err()
+        {
+            error!("PipeWire thread panicked during shutdown");
+            return Err(PipeWireError::ThreadPanic("Thread panicked".to_string()));
         }
 
         info!("PipeWire thread shut down successfully");

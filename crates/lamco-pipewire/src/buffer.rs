@@ -166,14 +166,14 @@ impl ManagedBuffer {
 impl Drop for ManagedBuffer {
     fn drop(&mut self) {
         // Unmap memory if mapped
-        if let Some(send_ptr) = self.mapped.take() {
-            if self.mapped_size > 0 {
-                // SAFETY: The pointer was obtained from a successful mmap call
-                // and mapped_size was recorded at that time. The .take() ensures
-                // we only unmap once.
-                unsafe {
-                    libc::munmap(send_ptr.as_ptr() as *mut libc::c_void, self.mapped_size);
-                }
+        if let Some(send_ptr) = self.mapped.take()
+            && self.mapped_size > 0
+        {
+            // SAFETY: The pointer was obtained from a successful mmap call
+            // and mapped_size was recorded at that time. The .take() ensures
+            // we only unmap once.
+            unsafe {
+                libc::munmap(send_ptr.as_ptr() as *mut libc::c_void, self.mapped_size);
             }
         }
 
@@ -237,35 +237,35 @@ impl BufferManager {
         buffer.modifier = modifier;
 
         // Try to map memory if needed
-        if let Some(fd) = fd {
-            if buffer_type != BufferType::DmaBuf {
-                // SAFETY: mmap is safe to call with:
-                // - NULL hint address (kernel chooses location)
-                // - Size validated as > 0 before this point
-                // - Valid fd from PipeWire buffer allocation
-                // - MAP_SHARED for shared memory access
-                // We check for MAP_FAILED and propagate error appropriately.
-                buffer.mapped = Some(unsafe {
-                    let ptr = libc::mmap(
-                        std::ptr::null_mut(),
-                        size,
-                        libc::PROT_READ | libc::PROT_WRITE,
-                        libc::MAP_SHARED,
-                        fd,
-                        0,
-                    );
+        if let Some(fd) = fd
+            && buffer_type != BufferType::DmaBuf
+        {
+            // SAFETY: mmap is safe to call with:
+            // - NULL hint address (kernel chooses location)
+            // - Size validated as > 0 before this point
+            // - Valid fd from PipeWire buffer allocation
+            // - MAP_SHARED for shared memory access
+            // We check for MAP_FAILED and propagate error appropriately.
+            buffer.mapped = Some(unsafe {
+                let ptr = libc::mmap(
+                    std::ptr::null_mut(),
+                    size,
+                    libc::PROT_READ | libc::PROT_WRITE,
+                    libc::MAP_SHARED,
+                    fd,
+                    0,
+                );
 
-                    if ptr == libc::MAP_FAILED {
-                        return Err(PipeWireError::BufferAllocationFailed(format!(
-                            "Failed to mmap buffer: {}",
-                            std::io::Error::last_os_error()
-                        )));
-                    }
+                if ptr == libc::MAP_FAILED {
+                    return Err(PipeWireError::BufferAllocationFailed(format!(
+                        "Failed to mmap buffer: {}",
+                        std::io::Error::last_os_error()
+                    )));
+                }
 
-                    SendPtr::new(ptr as *mut u8)
-                });
-                buffer.mapped_size = size;
-            }
+                SendPtr::new(ptr as *mut u8)
+            });
+            buffer.mapped_size = size;
         }
 
         self.buffers.insert(id, buffer);
@@ -277,13 +277,13 @@ impl BufferManager {
 
     /// Acquire a buffer for use
     pub fn acquire_buffer(&mut self) -> Option<u32> {
-        if let Some(id) = self.free_buffers.pop_front() {
-            if let Some(buffer) = self.buffers.get_mut(&id) {
-                buffer.acquire();
-                self.in_use_buffers.insert(id);
-                self.stats.acquisitions += 1;
-                return Some(id);
-            }
+        if let Some(id) = self.free_buffers.pop_front()
+            && let Some(buffer) = self.buffers.get_mut(&id)
+        {
+            buffer.acquire();
+            self.in_use_buffers.insert(id);
+            self.stats.acquisitions += 1;
+            return Some(id);
         }
         self.stats.acquisition_failures += 1;
         None

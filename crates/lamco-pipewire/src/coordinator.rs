@@ -274,10 +274,10 @@ impl MultiStreamCoordinator {
 
         if let Some(mut handle) = streams.remove(&monitor_id) {
             // Stop monitoring task
-            if let Some(task) = handle.task.take() {
-                if let Ok(task) = Arc::try_unwrap(task) {
-                    task.abort();
-                }
+            if let Some(task) = handle.task.take()
+                && let Ok(task) = Arc::try_unwrap(task)
+            {
+                task.abort();
             }
 
             // Stop the stream

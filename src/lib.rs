@@ -14,16 +14,16 @@
 //!
 //! ```toml
 //! # Use everything (default)
-//! lamco-wayland = "0.1"
+//! lamco-wayland = "0.9"
 //!
 //! # Portal only
-//! lamco-wayland = { version = "0.1", default-features = false, features = ["portal"] }
+//! lamco-wayland = { version = "0.9", default-features = false, features = ["portal"] }
 //!
 //! # Portal + PipeWire
-//! lamco-wayland = { version = "0.1", default-features = false, features = ["portal", "pipewire"] }
+//! lamco-wayland = { version = "0.9", default-features = false, features = ["portal", "pipewire"] }
 //!
 //! # All features including sub-crate features
-//! lamco-wayland = { version = "0.1", features = ["full"] }
+//! lamco-wayland = { version = "0.9", features = ["full"] }
 //! ```
 //!
 //! | Feature | Default | Description |

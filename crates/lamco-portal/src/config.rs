@@ -6,7 +6,6 @@
 use ashpd::desktop::PersistMode;
 use ashpd::desktop::remote_desktop::DeviceType;
 use ashpd::desktop::screencast::{CursorMode, SourceType};
-use enumflags2::BitFlags;
 
 /// Configuration for Portal session behavior
 ///
@@ -26,7 +25,7 @@ use enumflags2::BitFlags;
 /// # use lamco_portal::{PortalConfig};
 /// # use ashpd::desktop::screencast::CursorMode;
 /// let config = PortalConfig {
-///     cursor_mode: CursorMode::Embedded,
+///     cursor_mode: CursorMode::EMBEDDED,
 ///     ..Default::default()
 /// };
 /// ```
@@ -37,7 +36,7 @@ use enumflags2::BitFlags;
 /// # use ashpd::desktop::screencast::CursorMode;
 /// # use ashpd::desktop::PersistMode;
 /// let config = PortalConfig::builder()
-///     .cursor_mode(CursorMode::Embedded)
+///     .cursor_mode(CursorMode::EMBEDDED)
 ///     .persist_mode(PersistMode::Application)
 ///     .build();
 /// ```
@@ -59,19 +58,19 @@ pub struct PortalConfig {
 
     /// What types of sources can be captured
     ///
-    /// Can be combined: `SourceType::Monitor | SourceType::Window`
-    /// - `Monitor`: Physical monitors
-    /// - `Window`: Individual windows
-    /// - `Virtual`: Virtual sources (uncommon)
-    pub source_type: BitFlags<SourceType>,
+    /// Can be combined: `SourceType::MONITOR | SourceType::WINDOW`
+    /// - `MONITOR`: Physical monitors
+    /// - `WINDOW`: Individual windows
+    /// - `VIRTUAL`: Virtual sources (uncommon)
+    pub source_type: SourceType,
 
     /// What input devices to enable for injection
     ///
-    /// Can be combined: `DeviceType::Keyboard | DeviceType::Pointer`
-    /// - `Keyboard`: Keyboard input injection
-    /// - `Pointer`: Mouse/pointer input injection
-    /// - `Touchscreen`: Touch input injection (less common)
-    pub devices: BitFlags<DeviceType>,
+    /// Can be combined: `DeviceType::KEYBOARD | DeviceType::POINTER`
+    /// - `KEYBOARD`: Keyboard input injection
+    /// - `POINTER`: Mouse/pointer input injection
+    /// - `TOUCHSCREEN`: Touch input injection (less common)
+    pub devices: DeviceType,
 
     /// Allow selecting multiple sources (monitors/windows)
     ///
@@ -96,10 +95,10 @@ impl Default for PortalConfig {
     /// - No restore token (will be obtained after first grant)
     fn default() -> Self {
         Self {
-            cursor_mode: CursorMode::Metadata,
+            cursor_mode: CursorMode::METADATA,
             persist_mode: PersistMode::ExplicitlyRevoked, // Mode 2 - persist indefinitely
-            source_type: SourceType::Monitor | SourceType::Window,
-            devices: DeviceType::Keyboard | DeviceType::Pointer,
+            source_type: SourceType::MONITOR | SourceType::WINDOW,
+            devices: DeviceType::KEYBOARD | DeviceType::POINTER,
             allow_multiple: true,
             restore_token: None,
         }
@@ -115,7 +114,7 @@ impl PortalConfig {
     /// # use lamco_portal::PortalConfig;
     /// # use ashpd::desktop::screencast::CursorMode;
     /// let config = PortalConfig::builder()
-    ///     .cursor_mode(CursorMode::Hidden)
+    ///     .cursor_mode(CursorMode::HIDDEN)
     ///     .build();
     /// ```
     pub fn builder() -> PortalConfigBuilder {
@@ -136,10 +135,10 @@ impl PortalConfig {
 /// # use ashpd::desktop::PersistMode;
 /// # use ashpd::desktop::remote_desktop::DeviceType;
 /// let config = PortalConfig::builder()
-///     .cursor_mode(CursorMode::Embedded)
+///     .cursor_mode(CursorMode::EMBEDDED)
 ///     .persist_mode(PersistMode::Application)
-///     .source_type(SourceType::Monitor.into())
-///     .devices(DeviceType::Keyboard.into())
+///     .source_type(SourceType::MONITOR)
+///     .devices(DeviceType::KEYBOARD)
 ///     .allow_multiple(false)
 ///     .build();
 /// ```
@@ -147,8 +146,8 @@ impl PortalConfig {
 pub struct PortalConfigBuilder {
     cursor_mode: Option<CursorMode>,
     persist_mode: Option<PersistMode>,
-    source_type: Option<BitFlags<SourceType>>,
-    devices: Option<BitFlags<DeviceType>>,
+    source_type: Option<SourceType>,
+    devices: Option<DeviceType>,
     allow_multiple: Option<bool>,
     restore_token: Option<String>,
 }
@@ -156,7 +155,7 @@ pub struct PortalConfigBuilder {
 impl PortalConfigBuilder {
     /// Set cursor mode for screen capture
     ///
-    /// Default: `CursorMode::Metadata`
+    /// Default: `CursorMode::METADATA`
     pub fn cursor_mode(mut self, mode: CursorMode) -> Self {
         self.cursor_mode = Some(mode);
         self
@@ -172,16 +171,16 @@ impl PortalConfigBuilder {
 
     /// Set source types that can be captured
     ///
-    /// Default: `SourceType::Monitor | SourceType::Window`
-    pub fn source_type(mut self, types: BitFlags<SourceType>) -> Self {
+    /// Default: `SourceType::MONITOR | SourceType::WINDOW`
+    pub fn source_type(mut self, types: SourceType) -> Self {
         self.source_type = Some(types);
         self
     }
 
     /// Set input device types to enable
     ///
-    /// Default: `DeviceType::Keyboard | DeviceType::Pointer`
-    pub fn devices(mut self, devices: BitFlags<DeviceType>) -> Self {
+    /// Default: `DeviceType::KEYBOARD | DeviceType::POINTER`
+    pub fn devices(mut self, devices: DeviceType) -> Self {
         self.devices = Some(devices);
         self
     }
@@ -225,7 +224,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = PortalConfig::default();
-        assert!(matches!(config.cursor_mode, CursorMode::Metadata));
+        assert!(matches!(config.cursor_mode, CursorMode::METADATA));
         assert!(matches!(config.persist_mode, PersistMode::ExplicitlyRevoked));
         assert!(config.allow_multiple);
         assert!(config.restore_token.is_none());
@@ -234,20 +233,20 @@ mod tests {
     #[test]
     fn test_builder_with_defaults() {
         let config = PortalConfig::builder().build();
-        assert!(matches!(config.cursor_mode, CursorMode::Metadata));
+        assert!(matches!(config.cursor_mode, CursorMode::METADATA));
         assert!(matches!(config.persist_mode, PersistMode::ExplicitlyRevoked));
     }
 
     #[test]
     fn test_builder_with_custom_values() {
         let config = PortalConfig::builder()
-            .cursor_mode(CursorMode::Embedded)
+            .cursor_mode(CursorMode::EMBEDDED)
             .persist_mode(PersistMode::Application)
             .allow_multiple(false)
             .restore_token("test-token".to_string())
             .build();
 
-        assert!(matches!(config.cursor_mode, CursorMode::Embedded));
+        assert!(matches!(config.cursor_mode, CursorMode::EMBEDDED));
         assert!(matches!(config.persist_mode, PersistMode::Application));
         assert!(!config.allow_multiple);
         assert_eq!(config.restore_token, Some("test-token".to_string()));
@@ -256,11 +255,11 @@ mod tests {
     #[test]
     fn test_struct_literal_with_defaults() {
         let config = PortalConfig {
-            cursor_mode: CursorMode::Hidden,
+            cursor_mode: CursorMode::HIDDEN,
             ..Default::default()
         };
 
-        assert!(matches!(config.cursor_mode, CursorMode::Hidden));
+        assert!(matches!(config.cursor_mode, CursorMode::HIDDEN));
         assert!(matches!(config.persist_mode, PersistMode::ExplicitlyRevoked)); // Still default
     }
 }

@@ -5,6 +5,22 @@ All notable changes to lamco-portal will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-11-06
+
+### Changed
+- Moves to ashpd 0.14 and zbus 6, since zbus 5 is no longer maintained (RUSTSEC-2026-0370,
+  RUSTSEC-2026-0371 and RUSTSEC-2026-0372 flag its `zbus_names`, `zvariant` and
+  `zvariant_derive`). This is a breaking release: `PortalConfig::source_type` and `devices`,
+  `PortalConfigBuilder::source_type` and `devices`, and `RemoteDesktopManager::select_devices`
+  take ashpd's `SourceType` and `DeviceType` flag types instead of `BitFlags<…>`. ashpd's
+  values are now constants: `SourceType::MONITOR | SourceType::WINDOW`, `DeviceType::KEYBOARD`,
+  `CursorMode::EMBEDDED`. `enumflags2` is no longer a dependency.
+- MSRV 1.89, which zbus 6 and ashpd 0.14 require.
+
+### Added
+- `StreamInfo::pipewire_serial`, the stream's PipeWire serial from ScreenCast portal version 6
+  on. Unlike the node id it's never reused. It's `None` from a backend that doesn't provide it.
+
 ## [0.4.7] - 2026-10-30
 
 ### Fixed

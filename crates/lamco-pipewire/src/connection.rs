@@ -268,10 +268,10 @@ impl PipeWireConnection {
         }
 
         // Wait for thread to finish
-        if let Some(handle) = self.thread_handle.take() {
-            if handle.join().is_err() {
-                error!("PipeWire thread panicked during shutdown");
-            }
+        if let Some(handle) = self.thread_handle.take()
+            && handle.join().is_err()
+        {
+            error!("PipeWire thread panicked during shutdown");
         }
 
         if let Some(ref tx) = self.event_tx {
@@ -418,10 +418,10 @@ impl Drop for PipeWireConnection {
         }
 
         // Wait for thread to finish with timeout
-        if let Some(handle) = self.thread_handle.take() {
-            if handle.join().is_err() {
-                error!("PipeWire thread panicked during cleanup");
-            }
+        if let Some(handle) = self.thread_handle.take()
+            && handle.join().is_err()
+        {
+            error!("PipeWire thread panicked during cleanup");
         }
     }
 }

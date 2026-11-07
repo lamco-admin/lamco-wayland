@@ -39,7 +39,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-lamco-portal = "0.4"
+lamco-portal = "0.5"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -81,13 +81,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```toml
 [dependencies]
 # Default - basic portal functionality
-lamco-portal = "0.4"
+lamco-portal = "0.5"
 
 # With D-Bus clipboard bridge for GNOME (SelectionOwnerChanged workaround)
-lamco-portal = { version = "0.4", features = ["dbus-clipboard"] }
+lamco-portal = { version = "0.5", features = ["dbus-clipboard"] }
 
 # With ClipboardSink trait for lamco-clipboard-core integration
-lamco-portal = { version = "0.4", features = ["clipboard-sink"] }
+lamco-portal = { version = "0.5", features = ["clipboard-sink"] }
 ```
 
 | Feature | Description |
@@ -105,7 +105,7 @@ use ashpd::desktop::screencast::CursorMode;
 use ashpd::desktop::PersistMode;
 
 let config = PortalConfig::builder()
-    .cursor_mode(CursorMode::Embedded)  // Embed cursor in video
+    .cursor_mode(CursorMode::EMBEDDED)  // Embed cursor in video
     .persist_mode(PersistMode::Application)  // Remember permission
     .build();
 

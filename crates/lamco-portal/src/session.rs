@@ -27,6 +27,10 @@ pub struct StreamInfo {
     /// monitor in a multi-monitor RemoteDesktop session; `None` on backends
     /// that don't provide it.
     pub mapping_id: Option<String>,
+
+    /// The PipeWire serial, which unlike the node id is never reused (ScreenCast
+    /// portal interface >= 6). `None` from backends that don't provide it.
+    pub pipewire_serial: Option<u64>,
 }
 
 /// Source type for streams
@@ -196,6 +200,7 @@ mod tests {
             size: (1920, 1080),
             source_type: SourceType::Monitor,
             mapping_id: None,
+            pipewire_serial: None,
         };
 
         assert_eq!(stream.node_id, 42);

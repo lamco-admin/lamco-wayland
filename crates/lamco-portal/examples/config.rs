@@ -29,9 +29,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Example 2: Using builder pattern
     println!("2. Creating manager with builder pattern:");
     let config2 = PortalConfig::builder()
-        .cursor_mode(CursorMode::Embedded) // Embed cursor in video stream
+        .cursor_mode(CursorMode::EMBEDDED) // Embed cursor in video stream
         .persist_mode(PersistMode::Application) // Remember permission
-        .source_type(SourceType::Monitor.into()) // Only monitors (no windows)
+        .source_type(SourceType::MONITOR) // Only monitors (no windows)
         .allow_multiple(false) // Single monitor only
         .build();
 
@@ -42,10 +42,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Example 3: Using struct literal
     println!("3. Creating manager with struct literal:");
     let config3 = PortalConfig {
-        cursor_mode: CursorMode::Hidden,              // No cursor in stream
+        cursor_mode: CursorMode::HIDDEN,              // No cursor in stream
         persist_mode: PersistMode::ExplicitlyRevoked, // Remember until revoked
-        source_type: SourceType::Window.into(),       // Only windows (no monitors)
-        devices: DeviceType::Keyboard.into(),         // Keyboard only, no pointer
+        source_type: SourceType::WINDOW,              // Only windows (no monitors)
+        devices: DeviceType::KEYBOARD,                // Keyboard only, no pointer
         allow_multiple: true,
         restore_token: None,
     };
@@ -57,8 +57,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Example 4: Monitor-only capture with embedded cursor
     println!("4. Creating session with embedded cursor (monitor-only):");
     let config4 = PortalConfig::builder()
-        .cursor_mode(CursorMode::Embedded)
-        .source_type(SourceType::Monitor.into())
+        .cursor_mode(CursorMode::EMBEDDED)
+        .source_type(SourceType::MONITOR)
         .build();
 
     let manager4 = PortalManager::new(config4).await?;

@@ -3,7 +3,7 @@
 # PACKAGE IDENTITY
 # ============================================================================
 name = "lamco-wayland"
-version = "0.8.6"
+version = "0.9.0"
 
 # ============================================================================
 # PACKAGE CONFIGURATION (inherited from workspace)
@@ -92,7 +92,7 @@ workspace = true
 # ============================================================================
 # NOTE: For local development, use path dependencies. For publishing, switch to version only.
 [dependencies]
-lamco-portal = { version = "0.4.7", path = "crates/lamco-portal", optional = true }
+lamco-portal = { version = "0.5.0", path = "crates/lamco-portal", optional = true }
 lamco-pipewire = { version = "0.8.6", path = "crates/lamco-pipewire", optional = true }
 lamco-video = { version = "0.4.1", path = "crates/lamco-video", optional = true }
 
@@ -113,8 +113,8 @@ resolver = "2"
 # Rust edition 2024 (stabilized in Rust 1.85)
 edition = "2024"
 
-# Minimum Supported Rust Version
-rust-version = "1.87"
+# Minimum Supported Rust Version (1.89: zbus 6 and ashpd 0.14 require it)
+rust-version = "1.89"
 
 # Dual license (permissive, industry standard)
 license = "MIT OR Apache-2.0"

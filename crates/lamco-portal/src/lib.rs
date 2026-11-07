@@ -58,7 +58,7 @@
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = PortalConfig::builder()
-//!     .cursor_mode(CursorMode::Embedded)  // Embed cursor in video
+//!     .cursor_mode(CursorMode::EMBEDDED)  // Embed cursor in video
 //!     .persist_mode(PersistMode::Application)  // Remember permission
 //!     .build();
 //!
@@ -223,7 +223,7 @@ impl PortalManager {
     /// # use ashpd::desktop::screencast::CursorMode;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = PortalConfig {
-    ///     cursor_mode: CursorMode::Embedded,
+    ///     cursor_mode: CursorMode::EMBEDDED,
     ///     ..Default::default()
     /// };
     /// let manager = PortalManager::new(config).await?;

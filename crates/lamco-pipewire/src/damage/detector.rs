@@ -186,7 +186,7 @@ impl DamageDetectorStats {
 fn count_different_pixels_scalar(prev: &[u8], curr: &[u8], threshold: u8) -> u32 {
     let mut count = 0u32;
 
-    for (p, c) in prev.chunks_exact(4).zip(curr.chunks_exact(4)) {
+    for (p, c) in prev.as_chunks::<4>().0.iter().zip(curr.as_chunks::<4>().0) {
         let diff_b = (p[0] as i16 - c[0] as i16).unsigned_abs() as u8;
         let diff_g = (p[1] as i16 - c[1] as i16).unsigned_abs() as u8;
         let diff_r = (p[2] as i16 - c[2] as i16).unsigned_abs() as u8;
@@ -622,7 +622,7 @@ mod tests {
 
     fn create_solid_frame(width: usize, height: usize, color: [u8; 4]) -> Vec<u8> {
         let mut data = vec![0u8; width * height * 4];
-        for pixel in data.chunks_exact_mut(4) {
+        for pixel in data.as_chunks_mut::<4>().0 {
             pixel.copy_from_slice(&color);
         }
         data
