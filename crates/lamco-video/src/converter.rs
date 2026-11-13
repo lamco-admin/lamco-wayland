@@ -741,4 +741,31 @@ mod tests {
         let stats = converter.get_statistics();
         assert_eq!(stats.frames_converted, 0);
     }
+
+    /// A 16x1 frame in each 32-bit format a capture can deliver converts to one BGRx rectangle.
+    /// BGRA and RGBA were refused before lamco-pipewire took BGRx as a conversion target,
+    /// so a client on the bitmap path got no picture from a compositor that delivers them.
+    #[test]
+    fn test_convert_frame_takes_every_32_bit_capture_format() {
+        let blue_first = [10u8, 20, 30, 40];
+        let red_first = [30u8, 20, 10, 40];
+        for (format, pixel) in [
+            (PixelFormat::BGRx, blue_first),
+            (PixelFormat::BGRA, blue_first),
+            (PixelFormat::RGBx, red_first),
+            (PixelFormat::RGBA, red_first),
+        ] {
+            let frame = VideoFrame::with_data(1, 16, 1, 64, format, 0, pixel.repeat(16));
+            let update = BitmapConverter::new(16, 1).convert_frame(&frame);
+            assert!(update.is_ok(), "{format:?} frame refused: {:?}", update.as_ref().err());
+            let rectangles = update.map(|update| update.rectangles).unwrap_or_default();
+            assert_eq!(rectangles.len(), 1, "{format:?}");
+            assert_eq!(rectangles[0].format, RdpPixelFormat::BgrX32, "{format:?}");
+            assert_eq!(
+                rectangles[0].data[0..3],
+                [10, 20, 30],
+                "{format:?} came out in the wrong byte order"
+            );
+        }
+    }
 }

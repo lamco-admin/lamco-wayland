@@ -79,6 +79,11 @@ impl PixelFormat {
 }
 
 /// Convert pixel data from one format to another
+///
+/// The target is `BGRA` or `BGRx`. The two share a byte layout and differ only in what the fourth byte means,
+/// so every conversion that writes one writes the other: a source without alpha gets an opaque fourth byte,
+/// and a source with alpha keeps its own. `BGRA` and `BGRx` also convert to each other, and to themselves
+/// when only the stride differs.
 pub fn convert_format(
     src: &[u8],
     dst: &mut [u8],
@@ -107,30 +112,73 @@ pub fn convert_format(
     }
 
     // Conversion needed
-    match (src_format, dst_format) {
-        // RGB to BGRA
-        (PixelFormat::RGB, PixelFormat::BGRA) => convert_rgb_to_bgra(src, dst, width, height, src_stride, dst_stride),
+    if !matches!(dst_format, PixelFormat::BGRA | PixelFormat::BGRx) {
+        return Err(PipeWireError::FormatConversionFailed(format!(
+            "Unsupported conversion: {:?} -> {:?}",
+            src_format, dst_format
+        )));
+    }
 
-        // RGBA to BGRA
-        (PixelFormat::RGBA, PixelFormat::BGRA) => convert_rgba_to_bgra(src, dst, width, height, src_stride, dst_stride),
+    match src_format {
+        // A capture that delivers BGRA feeds a consumer that asked for BGRx (Hyprland's ext capture does).
+        // The fourth byte is carried: BGRx gives it no meaning.
+        PixelFormat::BGRA => copy_bgr32_rows(src, dst, width, height, src_stride, dst_stride, false),
 
-        // BGR to BGRA
-        (PixelFormat::BGR, PixelFormat::BGRA) => convert_bgr_to_bgra(src, dst, width, height, src_stride, dst_stride),
+        // BGRx leaves its fourth byte undefined, so as alpha it has to be written.
+        PixelFormat::BGRx => copy_bgr32_rows(
+            src,
+            dst,
+            width,
+            height,
+            src_stride,
+            dst_stride,
+            dst_format == PixelFormat::BGRA,
+        ),
 
-        // NV12 to BGRA
-        (PixelFormat::NV12, PixelFormat::BGRA) => convert_nv12_to_bgra(src, dst, width, height),
+        PixelFormat::RGB => convert_rgb_to_bgra(src, dst, width, height, src_stride, dst_stride),
 
-        // YUY2 to BGRA
-        (PixelFormat::YUY2, PixelFormat::BGRA) => convert_yuy2_to_bgra(src, dst, width, height, src_stride, dst_stride),
+        PixelFormat::RGBA => convert_rgba_to_bgra(src, dst, width, height, src_stride, dst_stride, false),
 
-        // I420 to BGRA
-        (PixelFormat::I420, PixelFormat::BGRA) => convert_i420_to_bgra(src, dst, width, height),
+        PixelFormat::RGBx => convert_rgba_to_bgra(src, dst, width, height, src_stride, dst_stride, true),
 
-        _ => Err(PipeWireError::FormatConversionFailed(format!(
+        PixelFormat::BGR => convert_bgr_to_bgra(src, dst, width, height, src_stride, dst_stride),
+
+        PixelFormat::NV12 => convert_nv12_to_bgra(src, dst, width, height),
+
+        PixelFormat::YUY2 => convert_yuy2_to_bgra(src, dst, width, height, src_stride, dst_stride),
+
+        PixelFormat::I420 => convert_i420_to_bgra(src, dst, width, height),
+
+        PixelFormat::GRAY8 => Err(PipeWireError::FormatConversionFailed(format!(
             "Unsupported conversion: {:?} -> {:?}",
             src_format, dst_format
         ))),
     }
+}
+
+/// Copy BGRA or BGRx rows between buffers whose strides may differ, writing an opaque fourth byte when asked
+fn copy_bgr32_rows(
+    src: &[u8],
+    dst: &mut [u8],
+    width: u32,
+    height: u32,
+    src_stride: u32,
+    dst_stride: u32,
+    opaque: bool,
+) -> Result<()> {
+    let row_bytes = width as usize * 4;
+    for y in 0..height {
+        let src_offset = (y * src_stride) as usize;
+        let dst_offset = (y * dst_stride) as usize;
+        let dst_row = &mut dst[dst_offset..dst_offset + row_bytes];
+        dst_row.copy_from_slice(&src[src_offset..src_offset + row_bytes]);
+        if opaque {
+            for alpha in dst_row.iter_mut().skip(3).step_by(4) {
+                *alpha = 255;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Convert RGB to BGRA
@@ -159,7 +207,9 @@ fn convert_rgb_to_bgra(
     Ok(())
 }
 
-/// Convert RGBA to BGRA
+/// Convert RGBA or RGBx to BGRA
+///
+/// `opaque` writes 255 as the fourth byte in place of the source's, for RGBx, which leaves it undefined.
 fn convert_rgba_to_bgra(
     src: &[u8],
     dst: &mut [u8],
@@ -167,6 +217,7 @@ fn convert_rgba_to_bgra(
     height: u32,
     src_stride: u32,
     dst_stride: u32,
+    opaque: bool,
 ) -> Result<()> {
     for y in 0..height {
         let src_row = &src[(y * src_stride) as usize..];
@@ -179,7 +230,7 @@ fn convert_rgba_to_bgra(
             dst_row[dst_idx] = src_row[src_idx + 2]; // B
             dst_row[dst_idx + 1] = src_row[src_idx + 1]; // G
             dst_row[dst_idx + 2] = src_row[src_idx]; // R
-            dst_row[dst_idx + 3] = src_row[src_idx + 3]; // A
+            dst_row[dst_idx + 3] = if opaque { 255 } else { src_row[src_idx + 3] }; // A
         }
     }
     Ok(())
@@ -390,6 +441,79 @@ mod tests {
         assert_eq!(dst[9], 0); // G
         assert_eq!(dst[10], 0); // R
         assert_eq!(dst[11], 255); // A
+    }
+
+    /// Two pixels a row, two rows, with one pixel of padding after each row on both sides.
+    /// The padding holds 0xEE in the source and must come out untouched (0x11) in the target.
+    fn convert_2x2(src_format: PixelFormat, dst_format: PixelFormat, pixels: [[u8; 4]; 4]) -> Vec<u8> {
+        let mut src = Vec::new();
+        for row in pixels.chunks(2) {
+            src.extend_from_slice(&row[0]);
+            src.extend_from_slice(&row[1]);
+            src.extend_from_slice(&[0xEE; 4]);
+        }
+        let mut dst = vec![0x11u8; 24];
+        convert_format(&src, &mut dst, src_format, dst_format, 2, 2, 12, 12).unwrap();
+        assert_eq!(dst[8..12], [0x11; 4], "row padding was written");
+        assert_eq!(dst[20..24], [0x11; 4], "row padding was written");
+        [&dst[0..8], &dst[12..20]].concat()
+    }
+
+    const PIXELS: [[u8; 4]; 4] = [[1, 2, 3, 0], [4, 5, 6, 7], [8, 9, 10, 0], [11, 12, 13, 200]];
+
+    #[test]
+    fn test_bgra_to_bgrx_carries_every_byte() {
+        let out = convert_2x2(PixelFormat::BGRA, PixelFormat::BGRx, PIXELS);
+        assert_eq!(out, PIXELS.concat());
+    }
+
+    #[test]
+    fn test_bgrx_to_bgra_writes_opaque_alpha() {
+        let out = convert_2x2(PixelFormat::BGRx, PixelFormat::BGRA, PIXELS);
+        assert_eq!(out, [1, 2, 3, 255, 4, 5, 6, 255, 8, 9, 10, 255, 11, 12, 13, 255]);
+    }
+
+    #[test]
+    fn test_rgba_to_bgrx_swaps_red_and_blue() {
+        let out = convert_2x2(PixelFormat::RGBA, PixelFormat::BGRx, PIXELS);
+        assert_eq!(out, [3, 2, 1, 0, 6, 5, 4, 7, 10, 9, 8, 0, 13, 12, 11, 200]);
+    }
+
+    #[test]
+    fn test_rgbx_to_bgra_swaps_and_writes_opaque_alpha() {
+        let out = convert_2x2(PixelFormat::RGBx, PixelFormat::BGRA, PIXELS);
+        assert_eq!(out, [3, 2, 1, 255, 6, 5, 4, 255, 10, 9, 8, 255, 13, 12, 11, 255]);
+    }
+
+    #[test]
+    fn test_same_format_with_a_different_stride_copies_rows() {
+        let src = [1, 2, 3, 4, 0xEE, 0xEE, 0xEE, 0xEE, 5, 6, 7, 8, 0xEE, 0xEE, 0xEE, 0xEE];
+        let mut dst = vec![0x11u8; 8];
+        convert_format(&src, &mut dst, PixelFormat::BGRx, PixelFormat::BGRx, 1, 2, 8, 4).unwrap();
+        assert_eq!(dst, [1, 2, 3, 4, 5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn test_rgb_to_bgrx_through_convert_format() {
+        let src = [255, 0, 0, 0, 255, 0];
+        let mut dst = vec![0u8; 8];
+        convert_format(&src, &mut dst, PixelFormat::RGB, PixelFormat::BGRx, 2, 1, 6, 8).unwrap();
+        assert_eq!(dst, [0, 0, 255, 255, 0, 255, 0, 255]);
+    }
+
+    #[test]
+    fn test_targets_other_than_bgra_and_bgrx_are_refused() {
+        let src = [0u8; 8];
+        let mut dst = vec![0u8; 8];
+        for dst_format in [
+            PixelFormat::RGBA,
+            PixelFormat::RGBx,
+            PixelFormat::BGR,
+            PixelFormat::NV12,
+        ] {
+            assert!(convert_format(&src, &mut dst, PixelFormat::BGRA, dst_format, 2, 1, 8, 8).is_err());
+        }
+        assert!(convert_format(&src, &mut dst, PixelFormat::GRAY8, PixelFormat::BGRA, 2, 1, 8, 8).is_err());
     }
 
     #[test]
