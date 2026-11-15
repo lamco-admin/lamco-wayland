@@ -5,6 +5,15 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-11-15
+
+### Added
+- **lamco-pipewire 0.8.7:** `convert_format` takes `BGRx` as a target wherever it took
+  `BGRA`, converts `BGRA` and `BGRx` to each other and accepts `RGBx` as a source. A
+  consumer that asks for `BGRx`, as lamco-video's bitmap converter does, can now take a
+  `BGRA` or `RGBA` frame; before, a compositor whose capture delivers `BGRA` (Hyprland)
+  gave such a consumer no picture. The requirement moves to lamco-pipewire 0.8.7.
+
 ## [0.9.0] - 2026-11-06
 
 ### Changed

@@ -5,6 +5,21 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.7] - 2026-11-15
+
+### Added
+- `convert_format` takes `BGRx` as a target wherever it took `BGRA`. The two share a byte
+  layout and differ only in what the fourth byte means, so every conversion that writes
+  one now writes the other. `BGRA` and `BGRx` convert to each other, `RGBx` is accepted as
+  a source, and a source without alpha gets an opaque fourth byte. Before this a consumer
+  that asked for `BGRx` was refused every source except `BGRx` itself, so lamco-video's
+  bitmap converter couldn't take a `BGRA` frame, which is what Hyprland's capture
+  delivers.
+
+### Fixed
+- A `BGRA` or `BGRx` buffer converts to the same format when only the stride differs. It
+  was refused as an unsupported conversion.
+
 ## [0.8.6] - 2026-11-01
 
 ### Fixed

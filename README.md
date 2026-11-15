@@ -37,7 +37,7 @@ the line:
 
 | Line | `lamco-wayland` | `lamco-pipewire` | `lamco-portal` | `lamco-video` | PipeWire bindings | libpipewire floor |
 |------|-----------------|------------------|----------------|---------------|-------------------|-------------------|
-| **0.9.x** (current) | **0.9.0** | 0.8.6 | 0.5.0 | 0.4.1 | 0.10 | **0.3.62** |
+| **0.9.x** (current) | **0.9.1** | 0.8.7 | 0.5.0 | 0.4.1 | 0.10 | **0.3.62** |
 | 0.8.x (superseded: zbus 5, ashpd 0.13) | 0.8.6 | 0.8.6 | 0.4.7 | 0.4.1 | 0.10 | 0.3.62 |
 | 0.7.x (superseded, no longer maintained) | 0.7.1 | 0.7.0 | 0.4.5 | 0.3.1 | 0.10 | 0.3.62 |
 | 0.5.x (frozen, no longer maintained) | 0.5.13 | 0.5.12 | 0.4.4 | 0.2.0 | 0.10 | 0.3.33 |
