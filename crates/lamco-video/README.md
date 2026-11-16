@@ -134,11 +134,12 @@ The converter supports these RDP-compatible output formats:
 
 ```toml
 [dependencies]
-lamco-video = { version = "0.4", features = ["full"] }
+lamco-video = { version = "0.5", features = ["full"] }
 ```
 
-`lamco-video` tracks the `lamco-pipewire` line it re-exports: **0.3.x** pairs with
-the modern `lamco-pipewire` 0.6.x head, **0.2.x** with the low-floor 0.5.x line.
+`lamco-video` tracks the `lamco-pipewire` line it re-exports: **0.5.x** pairs with
+the current `lamco-pipewire` 0.9.x line, **0.4.x** with 0.8.x, and **0.2.x** with the
+frozen low-floor 0.5.x line.
 See [`docs/COMPATIBILITY.md`](https://github.com/lamco-admin/lamco-wayland/blob/master/docs/COMPATIBILITY.md).
 
 ## Performance

@@ -5,6 +5,23 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-11-16
+
+### Added
+- **lamco-pipewire 0.9.0:** `PipeWireThreadManager::set_frame_buffer_reuse` lets a consumer's
+  streams reuse their captured frames' pixel buffers instead of allocating one per frame, so
+  in steady state capture allocates nothing per frame. It's off by default. With it on, a
+  frame's buffer is shared with its stream, so `Arc::try_unwrap` and `Arc::get_mut` on it
+  fail and `Arc::make_mut` copies.
+
+### Changed
+- **lamco-video 0.5.0** requires lamco-pipewire 0.9. The metacrate moves to both.
+
+### Fixed
+- **lamco-video 0.5.0:** `BitmapConverter` reuses its output buffer. Its pool never handed
+  a released buffer back, so every converted frame allocated a new frame-sized buffer while
+  up to eight old ones sat unused (32.8 MB at 1280x800, 66.4 MB at 1920x1080).
+
 ## [0.9.1] - 2026-11-15
 
 ### Added

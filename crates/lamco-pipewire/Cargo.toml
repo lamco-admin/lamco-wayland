@@ -3,7 +3,7 @@
 # PACKAGE IDENTITY
 # ============================================================================
 name = "lamco-pipewire"
-version = "0.8.7"
+version = "0.9.0"
 
 # ============================================================================
 # PACKAGE CONFIGURATION (inherited from workspace)

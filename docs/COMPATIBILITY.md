@@ -13,7 +13,8 @@ expose. Pick the line that matches your target environment.
 
 | Line | `lamco-pipewire` | `lamco-wayland` (meta) | `lamco-video` | `lamco-portal` | PipeWire/SPA bindings | Metadata path | System libpipewire floor |
 |---|---|---|---|---|---|---|---|
-| **0.9.x (current)** | **0.8.7** | **0.9.1** | **0.4.1** | **0.5.0** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** |
+| **0.10.x (current)** | **0.9.0** | **0.10.0** | **0.5.0** | **0.5.0** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** |
+| 0.9.x (superseded) | 0.8.7 | 0.9.1 | 0.4.1 | 0.5.0 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 |
 | 0.8.x (superseded: zbus 5, ashpd 0.13) | 0.8.6 | 0.8.6 | 0.4.1 | 0.4.7 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 |
 | 0.7.x — superseded, no longer maintained | 0.7.0 | 0.7.1 | 0.3.1 | 0.4.5 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 |
 | 0.5.x — frozen, no longer maintained | 0.5.11 | 0.5.12 | 0.2.0 | 0.4.5 | 0.10 | raw `libspa_sys` FFI | 0.3.33 |
@@ -25,7 +26,7 @@ only requires Rust 1.80; the 1.89 floor comes from zbus 6 and ashpd 0.14, which
 
 ## Which line should I use?
 
-- **New code, or any currently-supported distribution → `0.9.x` (0.9.1).**
+- **New code, or any currently-supported distribution → `0.10.x` (0.10.0).**
   This is the maintained head. Metadata extraction runs entirely through
   libspa 0.10's **safe wrappers** (the `meta.rs` module is `unsafe`-free), it
   exposes the **real cursor image** (`CursorMeta::bitmap`), a **virtual
@@ -110,7 +111,7 @@ See [`../CHANGELOG.md`](../CHANGELOG.md) for the complete per-version history.
 
 ## Capability matrix (`lamco-pipewire`)
 
-| Capability | 0.4.x | 0.5.x (frozen) | 0.7.x and 0.8.x |
+| Capability | 0.4.x | 0.5.x (frozen) | 0.7.x to 0.9.x |
 |---|---|---|---|
 | PipeWire/SPA 0.10 bindings | — | ✅ | ✅ |
 | DMA-BUF zero-copy (`DRM_FORMAT_MOD_LINEAR` CPU-mmap) | ✅ | ✅ | ✅ |
@@ -125,10 +126,11 @@ See [`../CHANGELOG.md`](../CHANGELOG.md) for the complete per-version history.
 | **Awaitable frames (`frame_notify`)** | — | — | ✅ (0.8.0) |
 | **Per-output frame identity (`RawFrameData::monitor_index`)** | — | — | ✅ (0.8.0) |
 | **KWin cursor-only buffer classification** | — | — | ✅ (0.8.0) |
+| **Frame buffer reuse (`set_frame_buffer_reuse`, opt-in)** | — | — | ✅ (0.9.0) |
 
 ## Dependency floors by line
 
-| Dependency | 0.5.x (frozen) | 0.7.x and 0.8.x | 0.9.x |
+| Dependency | 0.5.x (frozen) | 0.7.x and 0.8.x | 0.9.x and 0.10.x |
 |---|---|---|---|
 | `pipewire` / `pipewire-sys` / `libspa` / `libspa-sys` | 0.10 | 0.10 | 0.10 |
 | libspa feature flag | `v0_3_33` | `v0_3_62` | `v0_3_62` |
@@ -142,17 +144,17 @@ See [`../CHANGELOG.md`](../CHANGELOG.md) for the complete per-version history.
 
 ```toml
 # Current line (recommended for new code)
-lamco-pipewire = "0.8"
+lamco-pipewire = "0.9"
 # or the whole stack:
-lamco-wayland  = "0.9"
+lamco-wayland  = "0.10"
 
 # Frozen low-floor line, for older/minimal libpipewire environments
 lamco-pipewire = "0.5"
 lamco-wayland  = "0.5"
 ```
 
-Cargo's caret ranges keep you on the chosen line: `lamco-pipewire = "0.8"` resolves to
-the latest `0.8.z`, `lamco-wayland = "0.9"` to the latest `0.9.z`, and `"0.5"` to the
+Cargo's caret ranges keep you on the chosen line: `lamco-pipewire = "0.9"` resolves to
+the latest `0.9.z`, `lamco-wayland = "0.10"` to the latest `0.10.z`, and `"0.5"` to the
 latest `0.5.z` (frozen at 0.5.13/0.5.12).
 The two lines are **not** semver-compatible with each other, so pin to one
 line deliberately.

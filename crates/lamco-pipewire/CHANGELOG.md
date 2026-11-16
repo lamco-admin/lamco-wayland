@@ -5,7 +5,7 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.0] - 2026-11-16
 
 ### Added
 - `PipeWireThreadManager::set_frame_buffer_reuse` lets the streams a manager creates reuse their
