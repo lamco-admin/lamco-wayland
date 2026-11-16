@@ -143,88 +143,38 @@ pub struct BitmapUpdate {
     pub rectangles: Vec<BitmapData>,
 }
 
-/// Pooled buffer for reuse
-#[derive(Clone)]
-struct PooledBuffer {
-    data: Vec<u8>,
-    capacity: usize,
-    last_used: Instant,
-}
-
-/// Buffer pool for memory efficiency
+/// Output buffers kept between conversions, so a frame reuses one instead of allocating.
+///
+/// A conversion acquires its buffer and releases it before returning, so in steady state one
+/// buffer serves every frame.
 struct BufferPool {
-    buffers: Vec<Option<PooledBuffer>>,
-    free_indices: Vec<usize>,
+    free: Vec<Vec<u8>>,
+    max_free: usize,
 }
 
 impl BufferPool {
-    fn new(size: usize) -> Self {
-        let mut buffers = Vec::with_capacity(size);
-        let mut free_indices = Vec::with_capacity(size);
-
-        for i in 0..size {
-            buffers.push(None);
-            free_indices.push(i);
+    fn new(max_free: usize) -> Self {
+        Self {
+            free: Vec::with_capacity(max_free),
+            max_free,
         }
-
-        Self { buffers, free_indices }
     }
 
-    /// Acquire a buffer from the pool
+    /// Returns a zeroed buffer of `size` bytes, reusing the most recently released one if any.
     fn acquire(&mut self, size: usize) -> Vec<u8> {
-        // Try to find a suitable buffer in the pool
-        for (idx, buffer_opt) in self.buffers.iter_mut().enumerate() {
-            if let Some(buffer) = buffer_opt
-                && buffer.capacity >= size
-                && self.free_indices.contains(&idx)
-            {
-                self.free_indices.retain(|&i| i != idx);
-                buffer.last_used = Instant::now();
-                let mut data = std::mem::take(&mut buffer.data);
-                data.clear();
-                data.resize(size, 0);
-                return data;
-            }
-        }
-
-        // Allocate new buffer with alignment
-        let aligned_size = align_to_boundary(size, RDP_BITMAP_ALIGNMENT);
-        let mut buffer = Vec::with_capacity(aligned_size);
+        let mut buffer = self
+            .free
+            .pop()
+            .unwrap_or_else(|| Vec::with_capacity(align_to_boundary(size, RDP_BITMAP_ALIGNMENT)));
+        buffer.clear();
         buffer.resize(size, 0);
         buffer
     }
 
-    /// Release a buffer back to the pool
-    fn release(&mut self, mut buffer: Vec<u8>) {
-        let capacity = buffer.capacity();
-        buffer.clear();
-
-        // Find a free slot or evict oldest
-        if let Some(idx) = self.free_indices.pop() {
-            self.buffers[idx] = Some(PooledBuffer {
-                data: buffer,
-                capacity,
-                last_used: Instant::now(),
-            });
-        } else {
-            // Evict oldest buffer
-            let mut oldest_idx = 0;
-            let mut oldest_time = Instant::now();
-
-            for (idx, buffer_opt) in self.buffers.iter().enumerate() {
-                if let Some(buf) = buffer_opt
-                    && buf.last_used < oldest_time
-                {
-                    oldest_time = buf.last_used;
-                    oldest_idx = idx;
-                }
-            }
-
-            self.buffers[oldest_idx] = Some(PooledBuffer {
-                data: buffer,
-                capacity,
-                last_used: Instant::now(),
-            });
+    /// Keeps `buffer` for a later conversion, or drops it when the pool already keeps enough.
+    fn release(&mut self, buffer: Vec<u8>) {
+        if self.free.len() < self.max_free {
+            self.free.push(buffer);
         }
     }
 }
@@ -641,9 +591,7 @@ pub enum ConversionError {
 unsafe impl Send for BitmapConverter {}
 
 // SAFETY: BufferPool is Send because all its fields are Send:
-// - Vec<Option<PooledBuffer>> is Send when PooledBuffer is Send
-// - PooledBuffer contains Vec<u8>, usize, Instant - all Send
-// - Vec<usize> is Send
+// - Vec<Vec<u8>> and usize are Send
 #[allow(unsafe_code)]
 unsafe impl Send for BufferPool {}
 
@@ -690,19 +638,57 @@ mod tests {
         assert_eq!(tracker.regions.len(), 0);
     }
 
+    // oracle: regression lamco-video 0.4.1 BufferPool, whose acquire never returned a released buffer
     #[test]
-    fn test_buffer_pool() {
+    fn a_released_buffer_serves_the_next_frame() {
         let mut pool = BufferPool::new(4);
+        let first = pool.acquire(1024);
+        let first_address = first.as_ptr();
+        pool.release(first);
 
-        let buf1 = pool.acquire(1024);
-        assert_eq!(buf1.len(), 1024);
+        let second = pool.acquire(1024);
 
-        let buf2 = pool.acquire(2048);
-        assert_eq!(buf2.len(), 2048);
+        assert_eq!(second.as_ptr(), first_address);
+        assert!(pool.free.is_empty());
+    }
 
-        pool.release(buf1);
-        let buf3 = pool.acquire(1024);
-        assert_eq!(buf3.len(), 1024);
+    // oracle: mutant a pool that hands a reused buffer back with the last frame's bytes or length
+    #[test]
+    fn a_reused_buffer_is_zeroed_at_the_size_asked_for() {
+        let mut pool = BufferPool::new(4);
+        let mut used = pool.acquire(8);
+        used.fill(0xAB);
+        pool.release(used);
+
+        let smaller = pool.acquire(4);
+
+        assert_eq!(smaller, [0; 4]);
+    }
+
+    // oracle: mutant a pool that keeps every buffer released to it
+    #[test]
+    fn a_pool_keeps_no_more_than_its_limit() {
+        let mut pool = BufferPool::new(2);
+        let buffers: Vec<_> = (0..5).map(|_| pool.acquire(16)).collect();
+
+        for buffer in buffers {
+            pool.release(buffer);
+        }
+
+        assert_eq!(pool.free.len(), 2);
+    }
+
+    // oracle: regression lamco-video 0.4.1 BufferPool, which retained up to eight frames it never reused
+    #[test]
+    fn converting_frames_one_after_another_keeps_one_output_buffer() {
+        let mut converter = BitmapConverter::new(4, 2);
+        for shade in [10, 200] {
+            let frame = VideoFrame::with_data(1, 4, 2, 16, PixelFormat::BGRx, 0, vec![shade; 32]);
+            let update = converter.convert_frame(&frame);
+            assert!(update.is_ok(), "{:?}", update.err());
+        }
+
+        assert_eq!(converter.buffer_pool.read().free.len(), 1);
     }
 
     #[test]
