@@ -283,6 +283,9 @@ pub struct PipeWireThreadManager {
     /// The gate streams created from now on consult before copying a frame;
     /// see [`PipeWireThreadManager::set_frame_gate`].
     frame_gate: StdArc<parking_lot::RwLock<Option<crate::gate::FrameGate>>>,
+    /// Whether streams created from now on reuse their frames' pixel buffers;
+    /// see [`PipeWireThreadManager::set_frame_buffer_reuse`].
+    frame_buffer_reuse: StdArc<AtomicBool>,
 }
 
 impl PipeWireThreadManager {
@@ -320,6 +323,8 @@ impl PipeWireThreadManager {
         let tags_for_thread = StdArc::clone(&stream_tags);
         let frame_gate = StdArc::new(parking_lot::RwLock::new(None));
         let gate_for_thread = StdArc::clone(&frame_gate);
+        let frame_buffer_reuse = StdArc::new(AtomicBool::new(false));
+        let reuse_for_thread = StdArc::clone(&frame_buffer_reuse);
 
         // Spawn dedicated PipeWire thread
         let thread_handle = thread::Builder::new()
@@ -334,6 +339,7 @@ impl PipeWireThreadManager {
                     corrupted_for_thread,
                     tags_for_thread,
                     gate_for_thread,
+                    reuse_for_thread,
                 );
             })
             .map_err(|e| PipeWireError::InitializationFailed(format!("Thread spawn failed: {}", e)))?;
@@ -351,6 +357,7 @@ impl PipeWireThreadManager {
             corrupted_buffers,
             stream_tags,
             frame_gate,
+            frame_buffer_reuse,
         })
     }
 
@@ -358,6 +365,27 @@ impl PipeWireThreadManager {
     /// before their pixels are copied; see [`crate::gate`].
     pub fn set_frame_gate(&self, gate: crate::gate::FrameGate) {
         *self.frame_gate.write() = Some(gate);
+    }
+
+    /// Choose whether streams created after this call reuse their frames' pixel buffers.
+    ///
+    /// Off by default: each CPU-copied frame then gets a newly allocated buffer that belongs to
+    /// the consumer alone.
+    /// When on, a stream keeps the last few buffers it handed out (four) and copies the next
+    /// frame into one no frame still holds, so in steady state capture allocates nothing per
+    /// frame.
+    /// That matters on glibc, which keeps a buffer freed on another thread in the allocating
+    /// thread's arena, so a long session's resident memory otherwise keeps its freed frames.
+    ///
+    /// With reuse on, a frame's [`FrameBuffer::Memory`](crate::frame::FrameBuffer::Memory) `Arc`
+    /// is shared with the stream that captured it.
+    /// `Arc::try_unwrap` and `Arc::get_mut` on it fail, `Arc::make_mut` copies the frame, and the
+    /// stream holds up to four frame-sized buffers for as long as it runs.
+    /// A consumer that keeps frames alive longer than it needs them makes the stream allocate,
+    /// as it would with reuse off.
+    /// DMA-BUF frames passed through without a copy are unaffected.
+    pub fn set_frame_buffer_reuse(&self, enabled: bool) {
+        self.frame_buffer_reuse.store(enabled, Ordering::Release);
     }
 
     /// Create a direct-channel frame source (no PipeWire thread).
@@ -507,6 +535,8 @@ impl PipeWireThreadManager {
             corrupted_buffers: StdArc::new(AtomicU64::new(0)),
             stream_tags: StdArc::new(parking_lot::RwLock::new(crate::tags::StreamTags::default())),
             frame_gate: StdArc::new(parking_lot::RwLock::new(None)),
+            // The direct path copies no frames, so there is nothing to reuse.
+            frame_buffer_reuse: StdArc::new(AtomicBool::new(false)),
         }
     }
 
@@ -689,6 +719,7 @@ fn run_pipewire_main_loop(
     corrupted_buffers: StdArc<AtomicU64>,
     stream_tags: StdArc<parking_lot::RwLock<crate::tags::StreamTags>>,
     frame_gate: StdArc<parking_lot::RwLock<Option<crate::gate::FrameGate>>>,
+    frame_buffer_reuse: StdArc<AtomicBool>,
 ) {
     info!("PipeWire main loop thread started");
 
@@ -786,6 +817,11 @@ fn run_pipewire_main_loop(
                         StdArc::clone(&corrupted_buffers),
                         StdArc::clone(&stream_tags),
                         frame_gate.read().clone(),
+                        if frame_buffer_reuse.load(Ordering::Acquire) {
+                            crate::frame_pool::FRAME_POOL_CAPACITY
+                        } else {
+                            0
+                        },
                     );
 
                     match result {
@@ -951,7 +987,7 @@ fn frame_pixel_format(negotiated: &AtomicU32, requested: Option<PixelFormat>) ->
 ///
 /// # Returns
 ///
-/// Vec<u8> containing the pixel data, or error if mmap fails
+/// Nothing; the pixel data is appended to `out`, or an error is returned if mmap fails
 ///
 /// # Safety
 ///
@@ -959,7 +995,7 @@ fn frame_pixel_format(negotiated: &AtomicU32, requested: Option<PixelFormat>) ->
 /// - We immediately copy data and unmap
 /// - FD is owned by PipeWire buffer (valid during callback)
 /// - No pointer aliasing (we copy, not reference)
-fn mmap_fd_buffer(fd: std::os::fd::RawFd, size: usize, offset: usize) -> Result<Vec<u8>> {
+fn mmap_fd_buffer(fd: std::os::fd::RawFd, size: usize, offset: usize, out: &mut Vec<u8>) -> Result<()> {
     use std::os::fd::BorrowedFd;
 
     use nix::sys::mman::{MapFlags, ProtFlags, mmap, munmap};
@@ -996,18 +1032,13 @@ fn mmap_fd_buffer(fd: std::os::fd::RawFd, size: usize, offset: usize) -> Result<
     };
 
     // Copy data from mapped region
-    // SAFETY: addr is valid NonNull from successful mmap above, and:
-    // - data_offset_in_map + size <= map_size (calculated correctly above)
-    // - Vec has sufficient capacity allocated
-    // - copy_nonoverlapping is safe with non-overlapping src/dst
-    // - set_len is safe because we just wrote exactly size bytes
-    let result = unsafe {
+    // SAFETY: addr is valid NonNull from successful mmap above, and
+    // data_offset_in_map + size <= map_size (calculated correctly above),
+    // so the slice covers mapped, readable memory that lives until the munmap below.
+    unsafe {
         let src_ptr = (addr.as_ptr() as *const u8).add(data_offset_in_map);
-        let mut vec = Vec::with_capacity(size);
-        std::ptr::copy_nonoverlapping(src_ptr, vec.as_mut_ptr(), size);
-        vec.set_len(size);
-        vec
-    };
+        out.extend_from_slice(std::slice::from_raw_parts(src_ptr, size));
+    }
 
     // Unmap immediately after copying (no dangling pointers)
     // SAFETY: addr and map_size are from the successful mmap above.
@@ -1016,15 +1047,21 @@ fn mmap_fd_buffer(fd: std::os::fd::RawFd, size: usize, offset: usize) -> Result<
         munmap(addr, map_size).map_err(|e| warn!("munmap warning: {}", e)).ok();
     }
 
-    trace!("mmap successful: extracted {} bytes", result.len());
-    Ok(result)
+    trace!("mmap successful: extracted {} bytes", size);
+    Ok(())
 }
 
 /// DMA-BUF mmap with caching for the standard (non-passthrough) path.
 ///
 /// Uses the per-stream DmaBuf mmap cache to avoid repeated mmap syscalls
-/// for the same FD. Returns the copied pixel data as Vec<u8>.
-fn mmap_dmabuf_to_vec(fd: std::os::fd::RawFd, size: usize, offset: usize, cache: &DmaBufCache) -> Option<Vec<u8>> {
+/// for the same FD. Appends the copied pixel data to `out` and returns whether it could.
+fn mmap_dmabuf_into(
+    fd: std::os::fd::RawFd,
+    size: usize,
+    offset: usize,
+    cache: &DmaBufCache,
+    out: &mut Vec<u8>,
+) -> bool {
     use std::os::fd::BorrowedFd;
 
     use nix::sys::mman::{MapFlags, ProtFlags, mmap, munmap};
@@ -1121,15 +1158,12 @@ fn mmap_dmabuf_to_vec(fd: std::os::fd::RawFd, size: usize, offset: usize, cache:
             libc::ioctl(fd, DMA_BUF_IOCTL_SYNC, &sync_start);
         }
 
-        // SAFETY: mapped_ptr is valid from successful mmap or cache.
-        // Vec capacity is allocated before writing.
-        let result = unsafe {
+        // SAFETY: mapped_ptr is valid from successful mmap or cache, and the
+        // mapping covers offset + size (the cache check above remaps a short one).
+        unsafe {
             let src_ptr = (mapped_ptr.0.as_ptr() as *const u8).add(offset);
-            let mut vec = Vec::with_capacity(size);
-            std::ptr::copy_nonoverlapping(src_ptr, vec.as_mut_ptr(), size);
-            vec.set_len(size);
-            vec
-        };
+            out.extend_from_slice(std::slice::from_raw_parts(src_ptr, size));
+        }
 
         let sync_end = DmaBufSync {
             flags: DMA_BUF_SYNC_END | DMA_BUF_SYNC_READ,
@@ -1139,11 +1173,11 @@ fn mmap_dmabuf_to_vec(fd: std::os::fd::RawFd, size: usize, offset: usize, cache:
             libc::ioctl(fd, DMA_BUF_IOCTL_SYNC, &sync_end);
         }
 
-        trace!("DMA-BUF: extracted {} bytes from mapping", result.len());
-        Some(result)
+        trace!("DMA-BUF: extracted {} bytes from mapping", size);
+        true
     } else {
         warn!("Failed to get DMA-BUF mapping for FD={}", fd);
-        None
+        false
     }
 }
 
@@ -1162,6 +1196,7 @@ fn create_stream_on_thread(
     corrupted_buffers: StdArc<AtomicU64>,
     stream_tags: StdArc<parking_lot::RwLock<crate::tags::StreamTags>>,
     frame_gate: Option<crate::gate::FrameGate>,
+    frame_pool_capacity: usize,
 ) -> Result<ManagedStream> {
     // Built up front (pure function of config, no PipeWire object dependency)
     // so the offered-format summary is available to capture into the
@@ -1210,6 +1245,9 @@ fn create_stream_on_thread(
     let stream_id_for_callbacks = stream_id;
     let dmabuf_cache_for_process = StdArc::clone(&dmabuf_cache);
     let dmabuf_cache_for_remove = StdArc::clone(&dmabuf_cache);
+    // Only the process callback uses it, always on this thread.
+    // With no capacity (reuse off) it allocates every frame and keeps nothing.
+    let frame_pool = std::cell::RefCell::new(crate::frame_pool::FramePool::new(frame_pool_capacity));
 
     info!(
         " Registering stream {} callbacks (state_changed, param_changed, remove_buffer, process)",
@@ -1639,13 +1677,17 @@ fn create_stream_on_thread(
                         chunk_stride
                     );
 
-                    let pixel_data: Option<Vec<u8>> = match data_type {
+                    // Each copy goes into a buffer from the stream's pool (see frame_pool).
+                    let pixel_data: Option<StdArc<Vec<u8>>> = match data_type {
                         // MemPtr: Direct memory access via data.data()
                         libspa::buffer::DataType::MemPtr => {
                             if let Some(mapped_data) = data.data() {
                                 if offset + size <= mapped_data.len() {
                                     trace!("MemPtr buffer: copying {} bytes (offset={})", size, offset);
-                                    Some(mapped_data[offset..offset + size].to_vec())
+                                    frame_pool.borrow_mut().filled(|out| {
+                                        out.extend_from_slice(&mapped_data[offset..offset + size]);
+                                        true
+                                    })
                                 } else {
                                     warn!(
                                         "MemPtr buffer bounds invalid: offset={}, size={}, len={}",
@@ -1689,13 +1731,13 @@ fn create_stream_on_thread(
                                         }
                                     }
                                     trace!("MemFd buffer: manual mmap (FD={}, size={}, offset={})", fd, size, offset);
-                                    match mmap_fd_buffer(fd, size, offset) {
-                                        Ok(data) => Some(data),
+                                    frame_pool.borrow_mut().filled(|out| match mmap_fd_buffer(fd, size, offset, out) {
+                                        Ok(()) => true,
                                         Err(e) => {
                                             warn!("Failed to mmap MemFd buffer: {}", e);
-                                            None
+                                            false
                                         }
-                                    }
+                                    })
                                 }
                             } else {
                                 debug!("MemFd buffer but no valid FD (fd={})", fd);
@@ -1711,7 +1753,7 @@ fn create_stream_on_thread(
                             // buffers. Negotiation pins MOD_LINEAR, but if a producer
                             // fixates anything else, a linear copy would deliver
                             // garbage (tiled) or zeros (host-resident) — skip instead.
-                            let mmap_linear_dmabuf = || -> Option<Vec<u8>> {
+                            let mmap_linear_dmabuf = || -> Option<StdArc<Vec<u8>>> {
                                 if negotiated_mod != crate::ffi::drm_fourcc::DRM_FORMAT_MOD_LINEAR {
                                     static NONLINEAR_SKIPS: AtomicU64 = AtomicU64::new(0);
                                     let skips = NONLINEAR_SKIPS.fetch_add(1, Ordering::Relaxed);
@@ -1745,7 +1787,9 @@ fn create_stream_on_thread(
                                         );
                                     }
                                 }
-                                mmap_dmabuf_to_vec(fd, size, offset, &dmabuf_cache_for_process)
+                                frame_pool
+                                    .borrow_mut()
+                                    .filled(|out| mmap_dmabuf_into(fd, size, offset, &dmabuf_cache_for_process, out))
                             };
                             if fd >= 0 {
                                 if size == 0 {
@@ -1869,7 +1913,10 @@ fn create_stream_on_thread(
                                         data_type.as_raw(),
                                         size
                                     );
-                                    Some(mapped_data[offset..offset + size].to_vec())
+                                    frame_pool.borrow_mut().filled(|out| {
+                                        out.extend_from_slice(&mapped_data[offset..offset + size]);
+                                        true
+                                    })
                                 } else {
                                     warn!(
                                         "Buffer type unknown (raw={}), mapped data bounds invalid: offset={}, size={}, len={}",
@@ -2039,7 +2086,7 @@ fn create_stream_on_thread(
                             // See the DMA-BUF branch's identical field for why this isn't a
                             // 0-based array index.
                             monitor_index: stream_id_for_callbacks,
-                            buffer: crate::frame::FrameBuffer::Memory(StdArc::new(pixel_data)),
+                            buffer: crate::frame::FrameBuffer::Memory(pixel_data),
                             capture_time: SystemTime::now(),
                             damage_regions,
                             meta: buffer_meta.clone(),

@@ -5,6 +5,21 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `PipeWireThreadManager::set_frame_buffer_reuse` lets the streams a manager creates reuse their
+  captured frames' pixel buffers instead of allocating one for every frame. It's off by default,
+  so nothing changes for a consumer that doesn't call it. A stream with reuse on keeps the last
+  four buffers it handed out and copies the next frame into one no frame still holds, so in
+  steady state capture allocates nothing per frame, and a frame that is copied and then dropped
+  (empty, undersized, or with the channel full) costs no allocation either. Each copy is a
+  frame-sized `Vec` (4 MB at 1280x800, 8.3 MB at 1920x1080) allocated on PipeWire's thread and
+  usually freed on another, which glibc keeps in that thread's arena, so without reuse a long
+  session's resident memory keeps the freed frames. With reuse on, a frame's
+  `FrameBuffer::Memory` `Arc` is shared with its stream: `Arc::try_unwrap` and `Arc::get_mut` on
+  it fail, `Arc::make_mut` copies it, and each stream holds up to four frame-sized buffers.
+
 ## [0.8.7] - 2026-11-15
 
 ### Added

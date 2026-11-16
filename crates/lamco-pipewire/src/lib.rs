@@ -203,6 +203,7 @@ pub mod error;
 pub mod ffi;
 pub mod format;
 pub mod frame;
+mod frame_pool;
 pub mod gate;
 pub mod manager;
 pub mod meta;

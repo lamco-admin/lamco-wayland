@@ -20,7 +20,13 @@ use crate::meta::BufferMeta;
 /// variant avoids copying pixels through the CPU entirely.
 #[derive(Debug)]
 pub enum FrameBuffer {
-    /// CPU-resident pixel data (shared via Arc for cheap cloning)
+    /// CPU-resident pixel data (shared via Arc for cheap cloning).
+    ///
+    /// When the consumer turned on
+    /// [`PipeWireThreadManager::set_frame_buffer_reuse`](crate::pw_thread::PipeWireThreadManager::set_frame_buffer_reuse),
+    /// a captured frame's buffer is also held by the stream that captured it, which refills it for
+    /// a later frame once every other reference is gone.
+    /// Then `Arc::get_mut` on it returns `None` and `Arc::make_mut` copies it.
     Memory(Arc<Vec<u8>>),
 
     /// GPU DMA-BUF descriptor — file descriptors referencing GPU memory.
