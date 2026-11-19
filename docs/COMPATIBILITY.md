@@ -13,7 +13,7 @@ expose. Pick the line that matches your target environment.
 
 | Line | `lamco-pipewire` | `lamco-wayland` (meta) | `lamco-video` | `lamco-portal` | PipeWire/SPA bindings | Metadata path | System libpipewire floor |
 |---|---|---|---|---|---|---|---|
-| **0.10.x (current)** | **0.9.0** | **0.10.1** | **0.5.0** | **0.5.1** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** |
+| **0.10.x (current)** | **0.9.0** | **0.10.2** | **0.5.0** | **0.5.2** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** |
 | 0.9.x (superseded) | 0.8.7 | 0.9.1 | 0.4.1 | 0.5.0 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 |
 | 0.8.x (superseded: zbus 5, ashpd 0.13) | 0.8.6 | 0.8.6 | 0.4.1 | 0.4.7 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 |
 | 0.7.x — superseded, no longer maintained | 0.7.0 | 0.7.1 | 0.3.1 | 0.4.5 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 |

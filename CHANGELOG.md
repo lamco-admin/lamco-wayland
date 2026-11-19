@@ -5,6 +5,17 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.2] - 2026-11-19
+
+### Added
+- **lamco-portal 0.5.2:** `RemoteDesktopManager::start()` returns a `StartedSession` that also says whether the portal
+  granted clipboard access (the Start response's `clipboard_enabled`), and
+  `PortalSessionHandle::clipboard_enabled()` reports it for a session from
+  `PortalManager::create_session`, which warns when it asked for the clipboard and didn't get it.
+  The Clipboard portal refuses every call on a session without clipboard access, which happens
+  when the user turns the clipboard off in the dialog or a session is restored from a grant made
+  without it. `start_session()` is unchanged.
+
 ## [0.10.1] - 2026-11-18
 
 ### Fixed
