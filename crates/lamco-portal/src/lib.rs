@@ -157,6 +157,7 @@ pub mod dbus_clipboard;
 
 pub use clipboard::ClipboardManager;
 pub use config::{PortalConfig, PortalConfigBuilder};
+pub use remote_desktop::StartedSession;
 // Re-export D-Bus clipboard bridge types when feature is enabled
 #[cfg(feature = "dbus-clipboard")]
 pub use dbus_clipboard::{DbusClipboardBridge, DbusClipboardEvent};
@@ -415,17 +416,30 @@ impl PortalManager {
 
         // Start the combined session (triggers permission dialog, unless restore token valid)
         // Note: clipboard.request() was already called earlier, immediately after CreateSession
-        let (pipewire_fd, streams, restore_token) =
-            match self.remote_desktop.start_session(&remote_desktop_session).await {
-                Ok(result) => result,
-                Err(e) => {
-                    warn!("Session start failed, closing session: {}", e);
-                    let _ = remote_desktop_session.close().await;
-                    return Err(session_start_error(e));
-                }
-            };
+        let StartedSession {
+            pipewire_fd,
+            streams,
+            restore_token,
+            clipboard_enabled,
+            ..
+        } = match self.remote_desktop.start(&remote_desktop_session).await {
+            Ok(result) => result,
+            Err(e) => {
+                warn!("Session start failed, closing session: {}", e);
+                let _ = remote_desktop_session.close().await;
+                return Err(session_start_error(e));
+            }
+        };
 
         info!("Portal session started successfully");
+        let clipboard_requested = clipboard.is_some();
+        if clipboard_requested && !clipboard_enabled {
+            warn!(
+                "The portal started the session without clipboard access: the clipboard was \
+                 turned off in the permission dialog, or the session was restored from a grant \
+                 made without it"
+            );
+        }
         info!("  PipeWire FD: {:?}", pipewire_fd);
         info!("  Streams: {}", streams.len());
 
@@ -449,7 +463,8 @@ impl PortalManager {
             streams,
             Some(session_id.clone()), // Store session ID for input operations
             remote_desktop_session,   // Pass the actual ashpd session for input injection
-        );
+        )
+        .with_clipboard_enabled(clipboard_requested && clipboard_enabled);
 
         info!("Portal session handle created with {} streams", stream_count);
 

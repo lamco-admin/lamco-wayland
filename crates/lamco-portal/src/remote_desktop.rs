@@ -11,6 +11,23 @@ use ashpd::desktop::remote_desktop::{
 use tracing::{debug, info};
 
 use super::session::StreamInfo;
+
+/// What a started RemoteDesktop session returned.
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct StartedSession {
+    /// PipeWire file descriptor; ownership passes to the caller.
+    pub pipewire_fd: std::os::fd::RawFd,
+    /// One entry per shared stream.
+    pub streams: Vec<StreamInfo>,
+    /// Token for restoring the session next time, if the portal issued one.
+    pub restore_token: Option<String>,
+    /// Whether the portal granted clipboard access. The Clipboard portal refuses every
+    /// call on a session without it ("Clipboard not enabled"), which happens when the
+    /// user turns the clipboard off in the dialog or a session is restored from a grant
+    /// made without it.
+    pub clipboard_enabled: bool,
+}
 use crate::config::PortalConfig;
 use crate::error::{PortalError, Result};
 
@@ -83,6 +100,13 @@ impl RemoteDesktopManager {
         &self,
         session: &ashpd::desktop::Session<RemoteDesktop>,
     ) -> Result<(std::os::fd::RawFd, Vec<StreamInfo>, Option<String>)> {
+        let started = self.start(session).await?;
+        Ok((started.pipewire_fd, started.streams, started.restore_token))
+    }
+
+    /// Start the session, as [`start_session`](Self::start_session) does, and also
+    /// report whether the portal granted clipboard access.
+    pub async fn start(&self, session: &ashpd::desktop::Session<RemoteDesktop>) -> Result<StartedSession> {
         info!("Starting RemoteDesktop session");
 
         let response = self.proxy.start(session, None, StartOptions::default()).await?;
@@ -106,8 +130,8 @@ impl RemoteDesktopManager {
             streams.len()
         );
 
-        // Check if clipboard was actually granted (new in 0.13)
-        if selected.is_clipboard_enabled() {
+        let clipboard_enabled = selected.is_clipboard_enabled();
+        if clipboard_enabled {
             info!("Clipboard access was granted by the portal");
         }
 
@@ -154,7 +178,12 @@ impl RemoteDesktopManager {
 
         info!("FD {} ownership transferred to caller", raw_fd);
 
-        Ok((raw_fd, stream_info, restore_token))
+        Ok(StartedSession {
+            pipewire_fd: raw_fd,
+            streams: stream_info,
+            restore_token,
+            clipboard_enabled,
+        })
     }
 
     /// Inject pointer motion (relative)

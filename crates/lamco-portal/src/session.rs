@@ -98,6 +98,9 @@ pub struct PortalSessionHandle {
 
     /// Active ashpd session (needed for input injection)
     pub session: ashpd::desktop::Session<ashpd::desktop::remote_desktop::RemoteDesktop>,
+
+    /// Whether the portal granted clipboard access for this session.
+    clipboard_enabled: bool,
 }
 
 impl PortalSessionHandle {
@@ -122,7 +125,23 @@ impl PortalSessionHandle {
             streams,
             remote_desktop_session,
             session,
+            clipboard_enabled: false,
         }
+    }
+
+    /// Record whether the portal granted clipboard access (the Start response's
+    /// `clipboard_enabled`). [`PortalManager::create_session`](crate::PortalManager::create_session)
+    /// sets it.
+    #[must_use]
+    pub fn with_clipboard_enabled(mut self, enabled: bool) -> Self {
+        self.clipboard_enabled = enabled;
+        self
+    }
+
+    /// Whether the portal granted clipboard access. The Clipboard portal refuses every
+    /// call on a session without it, so a caller should not use the clipboard then.
+    pub fn clipboard_enabled(&self) -> bool {
+        self.clipboard_enabled
     }
 
     /// Get PipeWire file descriptor as raw fd
