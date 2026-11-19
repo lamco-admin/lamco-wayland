@@ -32,6 +32,10 @@ pub struct StreamInfo {
 
     /// Source type (monitor, window, etc.)
     pub source_type: SourceType,
+
+    /// The node's PipeWire serial, when the portal gave one (ScreenCast interface version 6).
+    /// A stream made from this info targets the node by it (see [`crate::StreamConfig::target_serial`]).
+    pub pipewire_serial: Option<u64>,
 }
 
 /// Source type for streams
@@ -66,6 +70,9 @@ pub struct MonitorInfo {
 
     /// PipeWire node ID
     pub node_id: u32,
+
+    /// The node's PipeWire serial, when the portal gave one
+    pub pipewire_serial: Option<u64>,
 }
 
 impl MonitorInfo {
@@ -78,6 +85,7 @@ impl MonitorInfo {
             size: stream_info.size,
             refresh_rate: 60, // Default
             node_id: stream_info.node_id,
+            pipewire_serial: stream_info.pipewire_serial,
         }
     }
 }
@@ -223,7 +231,8 @@ impl MultiStreamCoordinator {
         // Create stream configuration
         let stream_config = StreamConfig::new(monitor.name.clone())
             .with_resolution(monitor.size.0, monitor.size.1)
-            .with_framerate(monitor.refresh_rate);
+            .with_framerate(monitor.refresh_rate)
+            .with_target_serial(monitor.pipewire_serial);
 
         // Create PipeWire stream via connection
         let stream_id = connection.create_stream(stream_config, monitor.node_id).await?;
@@ -456,6 +465,7 @@ mod tests {
             size: (1920, 1080),
             refresh_rate: 60,
             node_id: 42,
+            pipewire_serial: None,
         };
 
         assert_eq!(info.id, 1);

@@ -5,6 +5,12 @@ All notable changes to lamco-video will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-11-19
+
+### Changed
+- Requires lamco-pipewire 0.10. lamco-video's API takes lamco-pipewire's `VideoFrame`, so the
+  new lamco-pipewire line is a new lamco-video line too. No other change.
+
 ## [0.5.0] - 2026-11-16
 
 ### Changed

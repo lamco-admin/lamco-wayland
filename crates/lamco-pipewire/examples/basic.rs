@@ -65,6 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //         position: stream.position,
     //         size: stream.size,
     //         source_type: SourceType::Monitor,
+    //         pipewire_serial: stream.pipewire_serial,
     //     };
     //     let handle = manager.create_stream(&info).await?;
     //     println!("Created stream: {}", handle.id);
@@ -85,6 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         position: (0, 0),
         size: (1920, 1080),
         source_type: SourceType::Monitor,
+        pipewire_serial: None,
     };
 
     println!("\nDemo StreamInfo:");

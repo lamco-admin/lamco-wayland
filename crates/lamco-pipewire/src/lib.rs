@@ -47,6 +47,7 @@
 //!     position: (0, 0),
 //!     size: (1920, 1080),
 //!     source_type: SourceType::Monitor,
+//!     pipewire_serial: None,
 //! };
 //!
 //! let handle = manager.create_stream(&stream_info).await?;

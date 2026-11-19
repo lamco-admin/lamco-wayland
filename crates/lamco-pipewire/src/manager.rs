@@ -30,6 +30,7 @@
 //!     position: (0, 0),
 //!     size: (1920, 1080),
 //!     source_type: SourceType::Monitor,
+//!     pipewire_serial: None,
 //! };
 //!
 //! let handle = manager.create_stream(&stream_info).await?;
@@ -292,7 +293,8 @@ impl PipeWireManager {
         let stream_config = StreamConfig::new(stream_name)
             .with_resolution(stream_info.size.0, stream_info.size.1)
             .with_dmabuf(self.config.use_dmabuf)
-            .with_buffer_count(self.config.buffer_count);
+            .with_buffer_count(self.config.buffer_count)
+            .with_target_serial(stream_info.pipewire_serial);
 
         // Create frame channel — receiver stored for consumer via frame_receiver()
         // TODO: wire sender to PW thread bridge for automatic frame routing

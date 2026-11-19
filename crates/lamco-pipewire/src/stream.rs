@@ -38,6 +38,13 @@ pub struct StreamConfig {
     /// Pass DMA-BUF FDs directly to consumer instead of mmap+copy.
     /// Requires consumer to support DMA-BUF import (e.g., Vulkan Video).
     pub dmabuf_passthrough: bool,
+
+    /// The node's PipeWire serial (`object.serial`), when the ScreenCast portal gave one
+    /// (`pipewire-serial`, portal interface version 6). The stream then targets the node by
+    /// `target.object` with this serial, which is never reused, instead of by its node id,
+    /// which PipeWire may hand to a new node once the old one is gone. `None` targets the
+    /// node id as before.
+    pub target_serial: Option<u64>,
 }
 
 impl StreamConfig {
@@ -52,6 +59,7 @@ impl StreamConfig {
             buffer_count: 3,
             preferred_format: Some(PixelFormat::BGRA),
             dmabuf_passthrough: false,
+            target_serial: None,
         }
     }
 
@@ -77,6 +85,12 @@ impl StreamConfig {
     /// Set buffer count
     pub fn with_buffer_count(mut self, count: u32) -> Self {
         self.buffer_count = count;
+        self
+    }
+
+    /// Target the node by its PipeWire serial (see [`StreamConfig::target_serial`])
+    pub fn with_target_serial(mut self, serial: Option<u64>) -> Self {
+        self.target_serial = serial;
         self
     }
 }

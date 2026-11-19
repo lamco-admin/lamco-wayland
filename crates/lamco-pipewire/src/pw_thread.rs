@@ -1204,7 +1204,13 @@ fn create_stream_on_thread(
     let (param_pod_bytes, offered_formats_summary) = build_stream_parameters(&config)?;
 
     let stream_name = format!("lamco-pw-{}", stream_id);
-    let node_target = node_id.to_string();
+    // By serial where the portal gave one: a node id can be reused once its node is gone, a
+    // serial never is (PipeWire 0.3.64 resolves target.object by serial or name). node.target
+    // takes the id otherwise; the session manager reads one or the other, not both.
+    let (target_key, node_target) = match config.target_serial {
+        Some(serial) => ("target.object", serial.to_string()),
+        None => ("node.target", node_id.to_string()),
+    };
 
     // Build stream properties per spec
     info!("Building stream properties for stream {}", stream_id);
@@ -1213,7 +1219,7 @@ fn create_stream_on_thread(
     props.insert("media.category", "Capture");
     props.insert("media.role", "Screen");
     props.insert("media.name", stream_name.as_str());
-    props.insert("node.target", node_target.as_str());
+    props.insert(target_key, node_target.as_str());
     props.insert("stream.capture-sink", "true");
 
     info!("Stream properties:");
@@ -1221,7 +1227,16 @@ fn create_stream_on_thread(
     info!(" media.category = Capture");
     info!(" media.role = Screen");
     info!(" media.name = {}", stream_name);
-    info!(" node.target = {} (Portal provided node ID)", node_target);
+    info!(
+        " {} = {} (portal-provided {})",
+        target_key,
+        node_target,
+        if config.target_serial.is_some() {
+            "serial"
+        } else {
+            "node ID"
+        }
+    );
     info!(" stream.capture-sink = true");
 
     // Create the stream

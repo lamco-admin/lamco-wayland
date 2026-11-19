@@ -5,6 +5,21 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-11-19
+
+### Added
+- A stream can target its node by PipeWire serial. `StreamConfig::target_serial` (builder
+  `with_target_serial`), and `StreamInfo::pipewire_serial` and `MonitorInfo::pipewire_serial` for
+  the streams the manager and the coordinator make, carry the serial the ScreenCast portal gives
+  from interface version 6 (`pipewire-serial`). The stream then sets `target.object` to it instead
+  of `node.target` to the node id: a node id can be handed to a new node once the old one is gone,
+  a serial never is. Without a serial nothing changes.
+
+### Changed
+- Breaking: `StreamConfig`, `StreamInfo` and `MonitorInfo` have a new public field, so code that
+  builds them as struct literals adds `target_serial` or `pipewire_serial` (`None` keeps the old
+  behaviour).
+
 ## [0.9.0] - 2026-11-16
 
 ### Added

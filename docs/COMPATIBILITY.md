@@ -13,7 +13,8 @@ expose. Pick the line that matches your target environment.
 
 | Line | `lamco-pipewire` | `lamco-wayland` (meta) | `lamco-video` | `lamco-portal` | PipeWire/SPA bindings | Metadata path | System libpipewire floor |
 |---|---|---|---|---|---|---|---|
-| **0.10.x (current)** | **0.9.0** | **0.10.2** | **0.5.0** | **0.5.2** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** |
+| **0.11.x (current)** | **0.10.0** | **0.11.0** | **0.6.0** | **0.5.2** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** (targeting by serial: 0.3.64, which a portal sending one already has) |
+| 0.10.x (superseded) | 0.9.0 | 0.10.2 | 0.5.0 | 0.5.2 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 |
 | 0.9.x (superseded) | 0.8.7 | 0.9.1 | 0.4.1 | 0.5.0 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 |
 | 0.8.x (superseded: zbus 5, ashpd 0.13) | 0.8.6 | 0.8.6 | 0.4.1 | 0.4.7 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 |
 | 0.7.x — superseded, no longer maintained | 0.7.0 | 0.7.1 | 0.3.1 | 0.4.5 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 |
@@ -144,17 +145,17 @@ See [`../CHANGELOG.md`](../CHANGELOG.md) for the complete per-version history.
 
 ```toml
 # Current line (recommended for new code)
-lamco-pipewire = "0.9"
+lamco-pipewire = "0.10"
 # or the whole stack:
-lamco-wayland  = "0.10"
+lamco-wayland  = "0.11"
 
 # Frozen low-floor line, for older/minimal libpipewire environments
 lamco-pipewire = "0.5"
 lamco-wayland  = "0.5"
 ```
 
-Cargo's caret ranges keep you on the chosen line: `lamco-pipewire = "0.9"` resolves to
-the latest `0.9.z`, `lamco-wayland = "0.10"` to the latest `0.10.z`, and `"0.5"` to the
+Cargo's caret ranges keep you on the chosen line: `lamco-pipewire = "0.10"` resolves to
+the latest `0.10.z`, `lamco-wayland = "0.11"` to the latest `0.11.z`, and `"0.5"` to the
 latest `0.5.z` (frozen at 0.5.13/0.5.12).
 The two lines are **not** semver-compatible with each other, so pin to one
 line deliberately.

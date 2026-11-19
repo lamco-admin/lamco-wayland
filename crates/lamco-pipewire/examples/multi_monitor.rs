@@ -44,6 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             size: (2560, 1440),
             refresh_rate: 144,
             node_id: 100,
+            pipewire_serial: None,
         },
         MonitorInfo {
             id: 1,
@@ -52,6 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             size: (1920, 1080),
             refresh_rate: 60,
             node_id: 101,
+            pipewire_serial: None,
         },
         MonitorInfo {
             id: 2,
@@ -60,6 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             size: (1080, 1920), // Portrait orientation
             refresh_rate: 60,
             node_id: 102,
+            pipewire_serial: None,
         },
     ];
 

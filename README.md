@@ -23,10 +23,10 @@ Rust libraries for Wayland screen capture, XDG Portal integration, and video pro
 ```toml
 [dependencies]
 # Use everything
-lamco-wayland = "0.10"
+lamco-wayland = "0.11"
 
 # Or select what you need
-lamco-wayland = { version = "0.10", default-features = false, features = ["portal"] }
+lamco-wayland = { version = "0.11", default-features = false, features = ["portal"] }
 ```
 
 ## Versions & compatibility
@@ -37,14 +37,15 @@ the line:
 
 | Line | `lamco-wayland` | `lamco-pipewire` | `lamco-portal` | `lamco-video` | PipeWire bindings | libpipewire floor |
 |------|-----------------|------------------|----------------|---------------|-------------------|-------------------|
-| **0.10.x** (current) | **0.10.2** | 0.9.0 | 0.5.2 | 0.5.0 | 0.10 | **0.3.62** |
+| **0.11.x** (current) | **0.11.0** | 0.10.0 | 0.5.2 | 0.6.0 | 0.10 | **0.3.62** |
+| 0.10.x (superseded) | 0.10.2 | 0.9.0 | 0.5.2 | 0.5.0 | 0.10 | 0.3.62 |
 | 0.9.x (superseded) | 0.9.1 | 0.8.7 | 0.5.0 | 0.4.1 | 0.10 | 0.3.62 |
 | 0.8.x (superseded: zbus 5, ashpd 0.13) | 0.8.6 | 0.8.6 | 0.4.7 | 0.4.1 | 0.10 | 0.3.62 |
 | 0.7.x (superseded, no longer maintained) | 0.7.1 | 0.7.0 | 0.4.5 | 0.3.1 | 0.10 | 0.3.62 |
 | 0.5.x (frozen, no longer maintained) | 0.5.13 | 0.5.12 | 0.4.4 | 0.2.0 | 0.10 | 0.3.33 |
 | 0.4.x (legacy) | 0.4.7 | 0.4.5 | 0.4.1 | 0.1.10 | 0.9 | 0.3.33 |
 
-- **New code → `lamco-wayland = "0.10"`** — safe (`unsafe`-free) PipeWire metadata
+- **New code → `lamco-wayland = "0.11"`** — safe (`unsafe`-free) PipeWire metadata
   internals, real cursor pixels, current dependencies; needs system
   **libpipewire ≥ 0.3.62**.
 - **0.5.x is frozen.** It received fixes in parallel with 0.6.x for a while;
