@@ -386,12 +386,15 @@ impl PortalManager {
         // ScreenCast is required to make screen sources available for sharing
         let screencast_proxy = ashpd::desktop::screencast::Screencast::new().await?;
 
+        // No persist_mode or restore_token here: on a RemoteDesktop session they belong to
+        // SelectDevices (above), and xdg-desktop-portal refuses SelectSources carrying either
+        // with "Remote desktop sessions cannot persist" (src/screen-cast.c,
+        // replace_screen_cast_restore_token_with_data). Sending them failed the first attempt,
+        // and a caller retrying without persistence never got a restore token.
         let source_options = ashpd::desktop::screencast::SelectSourcesOptions::default()
             .set_cursor_mode(self.config.cursor_mode)
             .set_sources(self.config.source_type)
-            .set_multiple(self.config.allow_multiple)
-            .set_persist_mode(self.config.persist_mode)
-            .set_restore_token(self.config.restore_token.as_deref());
+            .set_multiple(self.config.allow_multiple);
 
         if let Err(e) = screencast_proxy
             .select_sources(&remote_desktop_session, source_options)
@@ -404,7 +407,11 @@ impl PortalManager {
             return Err(PortalError::session_creation(format!("Source selection: {}", e)));
         }
 
-        info!("Screen sources selected - permission dialog will appear");
+        if self.config.restore_token.is_some() {
+            info!("Screen sources selected - restoring with a token, so no dialog unless the portal refuses it");
+        } else {
+            info!("Screen sources selected - permission dialog will appear");
+        }
 
         // Start the combined session (triggers permission dialog, unless restore token valid)
         // Note: clipboard.request() was already called earlier, immediately after CreateSession
