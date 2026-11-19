@@ -5,6 +5,16 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2026-11-18
+
+### Fixed
+- **lamco-portal 0.5.1:** A RemoteDesktop session now gets a restore token. `PortalManager::create_session` put
+  `persist_mode` and `restore_token` on the session's `ScreenCast.SelectSources` as well as on
+  `RemoteDesktop.SelectDevices`, and xdg-desktop-portal refuses that ("Remote desktop sessions
+  cannot persist"). The first attempt failed, and a caller retrying without persistence never
+  got a token, so the permission dialog came back on every start. Both options now go on
+  `SelectDevices` only, where the portal reads them for a RemoteDesktop session.
+
 ## [0.10.0] - 2026-11-16
 
 ### Added
