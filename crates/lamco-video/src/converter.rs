@@ -381,7 +381,7 @@ impl BitmapConverter {
         let pixel_data = frame.data().ok_or_else(|| {
             ConversionError::InvalidFrame("DMA-BUF frames not supported in bitmap conversion".to_string())
         })?;
-        let frame_hash = self.calculate_frame_hash(pixel_data);
+        let frame_hash = Self::calculate_frame_hash(pixel_data);
 
         // Check if frame has changed
         if frame_hash == self.last_frame_hash {
@@ -439,15 +439,54 @@ impl BitmapConverter {
         Ok(BitmapUpdate { rectangles })
     }
 
-    /// Calculate frame hash for change detection
-    fn calculate_frame_hash(&self, data: &[u8]) -> u64 {
-        // Simple FNV-1a hash, sampling every 64th byte for speed
-        let mut hash: u64 = 0xcbf29ce484222325;
-        for &byte in data.iter().step_by(64) {
-            hash ^= byte as u64;
-            hash = hash.wrapping_mul(0x100000001b3);
+    /// Hash every byte of a frame for change detection.
+    ///
+    /// A frame whose hash matches the last one is dropped, so the hash has to cover the whole
+    /// frame: the sampler it replaces read one byte in 64 and lost most single-pixel updates.
+    ///
+    /// The frame is read as little-endian 64-bit words spread over four independent lanes, so
+    /// the multiplies overlap and the hash runs close to memory bandwidth. Each step
+    /// `(rotl(h, 5) ^ word) * K`, with `K` odd, is a bijection of `h` for a fixed word and of the
+    /// word for a fixed `h`, and so is the final fold of the lanes. A change confined to one word,
+    /// which includes any one changed 32-bit pixel, therefore always changes the hash; wider
+    /// changes collide only by chance, about once in 2^64.
+    fn calculate_frame_hash(data: &[u8]) -> u64 {
+        const K: u64 = 0x517c_c1b7_2722_0a95;
+        const LANES: usize = 4;
+        const BLOCK: usize = LANES * 8;
+
+        fn mix(hash: u64, word: u64) -> u64 {
+            (hash.rotate_left(5) ^ word).wrapping_mul(K)
         }
-        hash
+
+        fn mix_block(lanes: &mut [u64; LANES], block: &[u8; BLOCK]) {
+            let (words, _) = block.as_chunks::<8>();
+            for (lane, word) in lanes.iter_mut().zip(words) {
+                *lane = mix(*lane, u64::from_le_bytes(*word));
+            }
+        }
+
+        let mut lanes: [u64; LANES] = [
+            0x243f_6a88_85a3_08d3,
+            0x1319_8a2e_0370_7344,
+            0xa409_3822_299f_31d0,
+            0x082e_fa98_ec4e_6c89,
+        ];
+
+        let (blocks, tail) = data.as_chunks::<BLOCK>();
+        for block in blocks {
+            mix_block(&mut lanes, block);
+        }
+
+        // Zero-padding the tail keeps a change there a one-word change; mixing in the length
+        // below tells a frame from the same frame with trailing zero bytes added.
+        if !tail.is_empty() {
+            let mut padded = [0u8; BLOCK];
+            padded[..tail.len()].copy_from_slice(tail);
+            mix_block(&mut lanes, &padded);
+        }
+
+        lanes.iter().fold(data.len() as u64, |hash, &lane| mix(hash, lane))
     }
 
     /// Calculate output buffer size
@@ -689,6 +728,69 @@ mod tests {
         }
 
         assert_eq!(converter.buffer_pool.read().free.len(), 1);
+    }
+
+    // oracle: regression lamco-video 0.6.0 calculate_frame_hash, which sampled every 64th byte
+    // and so dropped an update whose only change fell between the samples
+    #[test]
+    fn a_one_pixel_change_between_the_old_samples_is_not_dropped() {
+        const STRIDE: u32 = 64;
+        let mut converter = BitmapConverter::new(16, 4);
+        let before = vec![0x40u8; (STRIDE * 4) as usize];
+        let first = converter.convert_frame(&VideoFrame::with_data(
+            1,
+            16,
+            4,
+            STRIDE,
+            PixelFormat::BGRx,
+            0,
+            before.clone(),
+        ));
+        assert!(first.is_ok_and(|update| !update.rectangles.is_empty()));
+
+        // Pixel (5, 2): byte 148, which the old sampler (bytes 0, 64, 128 and 192) never read.
+        let offset = (2 * STRIDE + 5 * 4) as usize;
+        assert_ne!(offset % 64, 0);
+        let mut after = before;
+        after[offset..offset + 4].copy_from_slice(&[0x11, 0x22, 0x33, 0x40]);
+
+        let update = converter.convert_frame(&VideoFrame::with_data(2, 16, 4, STRIDE, PixelFormat::BGRx, 0, after));
+        let rectangles = update.map(|update| update.rectangles).unwrap_or_default();
+        assert_eq!(rectangles.len(), 1, "the changed frame was dropped");
+        assert_eq!(rectangles[0].data[offset..offset + 3], [0x11, 0x22, 0x33]);
+    }
+
+    // oracle: mutant change detection that never skips a frame
+    #[test]
+    fn an_identical_frame_is_still_skipped() {
+        let mut converter = BitmapConverter::new(16, 4);
+        let pixels = vec![0x40u8; 256];
+        for (frame_id, expected) in [(1, 1), (2, 0)] {
+            let frame = VideoFrame::with_data(frame_id, 16, 4, 64, PixelFormat::BGRx, 0, pixels.clone());
+            let rectangles = converter.convert_frame(&frame).map(|update| update.rectangles.len());
+            assert_eq!(rectangles.ok(), Some(expected), "frame {frame_id}");
+        }
+    }
+
+    // oracle: mutant a hash that skips the bytes after the last full 32-byte block
+    #[test]
+    fn every_byte_of_a_frame_changes_its_hash() {
+        // 100 bytes: three full blocks and a four-byte tail.
+        let base: Vec<u8> = (0..100u8).collect();
+        let base_hash = BitmapConverter::calculate_frame_hash(&base);
+        for offset in 0..base.len() {
+            let mut changed = base.clone();
+            changed[offset] ^= 0x01;
+            assert_ne!(
+                BitmapConverter::calculate_frame_hash(&changed),
+                base_hash,
+                "a change at byte {offset} went unseen"
+            );
+        }
+
+        let mut longer = base.clone();
+        longer.push(0);
+        assert_ne!(BitmapConverter::calculate_frame_hash(&longer), base_hash);
     }
 
     #[test]
