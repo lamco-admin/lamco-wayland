@@ -5,6 +5,17 @@ All notable changes to lamco-video will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - Unreleased
+
+### Fixed
+- `BitmapConverter` no longer drops a frame that changed. It skipped a frame whose hash
+  matched the last one, and the hash read only every 64th byte, so a change confined to the
+  bytes in between (about 94 percent of one-pixel changes)
+  produced an empty update and the client kept the old picture. The hash now covers every
+  byte: any one changed 32-bit pixel always changes it, and a wider change goes unseen only by
+  a chance of about one in 2^64. It costs about 0.4 ms for a 1920x1080 frame, about what
+  copying the frame costs.
+
 ## [0.6.0] - 2026-11-19
 
 ### Changed
