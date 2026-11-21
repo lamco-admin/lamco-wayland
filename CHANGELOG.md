@@ -5,6 +5,15 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.2] - 2026-11-21
+
+### Fixed
+- **lamco-video 0.6.1:** `BitmapConverter` no longer drops a frame that changed. It skipped a
+  frame whose hash matched the last one, and the hash read only every 64th byte, so a change
+  confined to the bytes in between (about 94 percent of one-pixel changes) produced an empty
+  update and the client kept the old picture. The hash now covers every byte, and any one
+  changed 32-bit pixel always changes it.
+
 ## [0.11.1] - 2026-11-21
 
 ### Fixed
