@@ -105,6 +105,13 @@ impl ClipboardManager {
     }
 
     /// Start listening for SelectionOwnerChanged events (local clipboard changes)
+    ///
+    /// The signal is read raw rather than through ashpd's typed stream. xdg-desktop-portal-gnome
+    /// 47 to 49 forwards mutter's `mime-types` as a struct wrapping the array, `(as)`, where the
+    /// portal specification has `as` (xdg-desktop-portal-gnome issue 136, fixed in 50). ashpd's
+    /// stream requires `as` and drops a body that doesn't match without a word, so on RHEL 10 and
+    /// other GNOMEs with that backend the desktop's copies never reached the client.
+    /// The listener takes either shape and says when it can't read one.
     pub async fn start_owner_changed_listener(
         &self,
         event_tx: mpsc::UnboundedSender<Vec<String>>,
@@ -115,21 +122,26 @@ impl ClipboardManager {
 
         tokio::spawn(async move {
             info!("SelectionOwnerChanged listener task starting - attempting to receive stream");
-            let stream_result = clipboard.receive_selection_owner_changed::<RemoteDesktop>().await;
+            // ashpd's Clipboard derefs to the zbus proxy on ashpd's own connection, the one the
+            // session was created on and the portal sends this signal to.
+            let stream_result = clipboard.receive_signal("SelectionOwnerChanged").await;
 
             match stream_result {
-                Ok(stream) => {
+                Ok(mut stream) => {
                     info!("SelectionOwnerChanged stream created successfully - waiting for signals");
-                    let mut stream = Box::pin(stream);
                     let mut event_count = 0;
 
-                    while let Some((_, change)) = stream.next().await {
+                    while let Some(message) = stream.next().await {
+                        let body = message.body();
+                        let Some((is_owner, mime_types)) = owner_change_from_body(&body) else {
+                            warn!(
+                                "SelectionOwnerChanged with a body this listener can't read (signature {:?}); ignored",
+                                body.signature().to_string()
+                            );
+                            continue;
+                        };
                         event_count += 1;
                         info!("SelectionOwnerChanged event #{}: received from Portal", event_count);
-
-                        let is_owner = change.session_is_owner().unwrap_or(false);
-                        let mime_types = change.mime_types();
-
                         info!("   session_is_owner: {}, mime_types: {:?}", is_owner, mime_types);
 
                         if is_owner {
@@ -143,7 +155,7 @@ impl ClipboardManager {
                             mime_types
                         );
 
-                        if event_tx.send(mime_types.to_vec()).is_err() {
+                        if event_tx.send(mime_types).is_err() {
                             info!("SelectionOwnerChanged listener stopping (receiver dropped)");
                             break;
                         }
@@ -316,5 +328,67 @@ impl std::fmt::Debug for ClipboardManager {
         f.debug_struct("PortalClipboardManager")
             .field("clipboard", &"<Portal Clipboard Proxy>")
             .finish()
+    }
+}
+
+/// Reads a SelectionOwnerChanged body, `(o, a{sv})`: whether this session owns the selection
+/// (`session_is_owner`, false when absent) and the MIME types (`mime_types`). The types come as
+/// `as` from a backend that follows the specification and as `(as)` from xdg-desktop-portal-gnome
+/// 47 to 49; both are taken. None when the body isn't `(o, a{sv})` at all.
+fn owner_change_from_body(body: &zbus::message::Body) -> Option<(bool, Vec<String>)> {
+    use std::collections::HashMap;
+    use zbus::{OwnedObjectPath, OwnedVariant};
+
+    let (_session, options): (OwnedObjectPath, HashMap<String, OwnedVariant>) = body.deserialize().ok()?;
+    let is_owner = options
+        .get("session_is_owner")
+        .and_then(|v| bool::try_from(v).ok())
+        .unwrap_or(false);
+    let mime_types = options
+        .get("mime_types")
+        .map(|v| mime_types_from_value(v))
+        .unwrap_or_default();
+    Some((is_owner, mime_types))
+}
+
+/// The strings in `as`, or in a struct whose first field is `as`.
+fn mime_types_from_value(value: &zbus::Variant<'_>) -> Vec<String> {
+    use zbus::Variant as Value;
+    match value {
+        Value::Array(array) => array
+            .iter()
+            .filter_map(|item| match item {
+                Value::Str(s) => Some(s.to_string()),
+                _ => None,
+            })
+            .collect(),
+        Value::Structure(structure) => structure
+            .fields()
+            .first()
+            .map(mime_types_from_value)
+            .unwrap_or_default(),
+        Value::Variant(inner) => mime_types_from_value(inner),
+        _ => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod owner_change_tests {
+    use zbus::Variant as Value;
+
+    use super::mime_types_from_value;
+
+    #[test]
+    fn mime_types_as_the_specification_has_them() {
+        let value = Value::from(vec!["text/plain", "text/html"]);
+        assert_eq!(mime_types_from_value(&value), ["text/plain", "text/html"]);
+    }
+
+    #[test]
+    fn mime_types_wrapped_in_a_struct_as_gnome_47_sends_them() {
+        // A one-field tuple becomes a struct: `(as)`.
+        let value = Value::from((vec!["text/plain", "image/png"],));
+        assert!(matches!(value, Value::Structure(_)));
+        assert_eq!(mime_types_from_value(&value), ["text/plain", "image/png"]);
     }
 }
