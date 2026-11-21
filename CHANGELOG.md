@@ -5,6 +5,16 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.1] - 2026-11-21
+
+### Fixed
+- **lamco-portal 0.5.3:** `SelectionOwnerChanged` is read from the raw signal, so a desktop copy reaches the client on GNOME
+  with xdg-desktop-portal-gnome 47 to 49 (RHEL, AlmaLinux and Rocky 10 among others). That backend
+  sends the MIME types as a struct wrapping the array, `(as)`, where the portal specification has
+  `as` (xdg-desktop-portal-gnome issue 136, fixed in 50), and ashpd's typed stream dropped such a
+  signal without a word. Both shapes are accepted now, and a body that can't be read is logged
+  with its signature.
+
 ## [0.11.0] - 2026-11-19
 
 ### Added
