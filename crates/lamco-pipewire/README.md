@@ -92,14 +92,14 @@ internals:
 
 | Line | Latest | PipeWire/SPA bindings | Metadata internals | libpipewire floor | Cursor bitmap |
 |------|--------|-----------------------|--------------------|-------------------|---------------|
-| **0.10.x** (current) | **0.10.0** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** | ✅ |
+| **0.10.x** (current) | **0.10.1** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** | ✅ |
 | 0.9.x (superseded) | 0.9.0 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 | ✅ |
 | 0.8.x (superseded) | 0.8.7 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 | ✅ |
 | 0.7.x (superseded, no longer maintained) | 0.7.0 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 | ✅ |
 | 0.5.x (frozen, no longer maintained) | 0.5.12 | 0.10 | raw `libspa_sys` FFI | 0.3.33 | — |
 | 0.4.x (legacy) | 0.4.5 | 0.9 | raw `libspa_sys` FFI | 0.3.33 | — |
 
-- **New code → `0.10` (0.10.0):** safe metadata internals, real cursor pixels, streams targeted by PipeWire serial where the portal gives one,
+- **New code → `0.10` (0.10.1):** safe metadata internals, real cursor pixels, streams targeted by PipeWire serial where the portal gives one,
   a virtual microphone source, current deps; needs system
   **libpipewire ≥ 0.3.62** (present on every currently-supported distro).
 - **`0.5` (0.5.12) is frozen.** Same 0.10 bindings and the same DMA-BUF race

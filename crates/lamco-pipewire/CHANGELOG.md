@@ -5,6 +5,13 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2026-11-25
+
+### Changed
+- `nix` 0.32 is accepted as well as 0.30 and 0.31 (`>=0.30, <0.33`), so a build that already
+  carries it doesn't get a second copy. The memory-mapping calls this crate uses are the same in
+  all three.
+
 ## [0.10.0] - 2026-11-19
 
 ### Added

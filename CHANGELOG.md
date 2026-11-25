@@ -5,6 +5,18 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.3] - 2026-11-25
+
+### Added
+- **lamco-portal 0.5.4:** `PortalSessionHandle::granted_devices()` and `StartedSession::devices`
+  give the input devices the portal granted, and the manager warns once when devices were asked
+  for and none were granted. A session started without input, because remote interaction was
+  turned off in the dialog or restored from a grant made without it, can be told from one that
+  can be controlled.
+
+### Changed
+- **lamco-pipewire 0.10.1:** `nix` 0.32 is accepted as well as 0.30 and 0.31.
+
 ## [0.11.2] - 2026-11-21
 
 ### Fixed

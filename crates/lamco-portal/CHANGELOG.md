@@ -5,6 +5,16 @@ All notable changes to lamco-portal will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4] - 2026-11-25
+
+### Added
+- `PortalSessionHandle::granted_devices()` and `StartedSession::devices` give the input devices the
+  portal granted. A session can start with none, when the user turned remote interaction off in
+  the permission dialog or the session was restored from a grant made without it, and the portal
+  then refuses every Notify call ("Session is not allowed to call NotifyPointer methods"). The
+  manager warns once when devices were asked for and none were granted, so a caller can treat the
+  session as view-only before its first key or pointer event fails.
+
 ## [0.5.3] - 2026-11-21
 
 ### Fixed

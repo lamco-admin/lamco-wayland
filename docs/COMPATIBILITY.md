@@ -13,7 +13,7 @@ expose. Pick the line that matches your target environment.
 
 | Line | `lamco-pipewire` | `lamco-wayland` (meta) | `lamco-video` | `lamco-portal` | PipeWire/SPA bindings | Metadata path | System libpipewire floor |
 |---|---|---|---|---|---|---|---|
-| **0.11.x (current)** | **0.10.0** | **0.11.2** | **0.6.1** | **0.5.3** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** (targeting by serial: 0.3.64, which a portal sending one already has) |
+| **0.11.x (current)** | **0.10.1** | **0.11.3** | **0.6.1** | **0.5.4** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** (targeting by serial: 0.3.64, which a portal sending one already has) |
 | 0.10.x (superseded) | 0.9.0 | 0.10.2 | 0.5.0 | 0.5.2 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 |
 | 0.9.x (superseded) | 0.8.7 | 0.9.1 | 0.4.1 | 0.5.0 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 |
 | 0.8.x (superseded: zbus 5, ashpd 0.13) | 0.8.6 | 0.8.6 | 0.4.1 | 0.4.7 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 |
@@ -27,7 +27,7 @@ only requires Rust 1.80; the 1.89 floor comes from zbus 6 and ashpd 0.14, which
 
 ## Which line should I use?
 
-- **New code, or any currently-supported distribution → `0.10.x` (0.10.0).**
+- **New code, or any currently-supported distribution → `0.10.x` (0.10.1).**
   This is the maintained head. Metadata extraction runs entirely through
   libspa 0.10's **safe wrappers** (the `meta.rs` module is `unsafe`-free), it
   exposes the **real cursor image** (`CursorMeta::bitmap`), a **virtual
