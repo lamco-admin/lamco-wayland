@@ -421,6 +421,7 @@ impl PortalManager {
             streams,
             restore_token,
             clipboard_enabled,
+            devices,
             ..
         } = match self.remote_desktop.start(&remote_desktop_session).await {
             Ok(result) => result,
@@ -438,6 +439,13 @@ impl PortalManager {
                 "The portal started the session without clipboard access: the clipboard was \
                  turned off in the permission dialog, or the session was restored from a grant \
                  made without it"
+            );
+        }
+        if !self.config.devices.is_empty() && devices.is_empty() {
+            warn!(
+                "The portal started the session without any input device: remote interaction \
+                 was turned off in the permission dialog, or the session was restored from a \
+                 grant made without it. The session can be watched but not controlled"
             );
         }
         info!("  PipeWire FD: {:?}", pipewire_fd);
@@ -464,7 +472,8 @@ impl PortalManager {
             Some(session_id.clone()), // Store session ID for input operations
             remote_desktop_session,   // Pass the actual ashpd session for input injection
         )
-        .with_clipboard_enabled(clipboard_requested && clipboard_enabled);
+        .with_clipboard_enabled(clipboard_requested && clipboard_enabled)
+        .with_granted_devices(devices);
 
         info!("Portal session handle created with {} streams", stream_count);
 

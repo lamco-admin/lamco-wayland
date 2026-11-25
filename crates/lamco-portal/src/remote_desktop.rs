@@ -27,6 +27,11 @@ pub struct StartedSession {
     /// user turns the clipboard off in the dialog or a session is restored from a grant
     /// made without it.
     pub clipboard_enabled: bool,
+    /// The input devices the portal granted. Empty when the user turned remote interaction
+    /// off in the dialog, or the session was restored from a grant made without it. The
+    /// portal then refuses every Notify call ("Session is not allowed to call NotifyPointer
+    /// methods"), so such a session can only be watched.
+    pub devices: DeviceType,
 }
 use crate::config::PortalConfig;
 use crate::error::{PortalError, Result};
@@ -124,9 +129,10 @@ impl RemoteDesktopManager {
 
         // ashpd 0.13: streams() returns &[Stream] directly, no Option wrapper
         let streams = selected.streams();
+        let devices = selected.devices();
         info!(
             "RemoteDesktop started with {} devices and {} streams",
-            selected.devices().bits(),
+            devices.bits(),
             streams.len()
         );
 
@@ -183,6 +189,7 @@ impl RemoteDesktopManager {
             streams: stream_info,
             restore_token,
             clipboard_enabled,
+            devices,
         })
     }
 

@@ -101,6 +101,9 @@ pub struct PortalSessionHandle {
 
     /// Whether the portal granted clipboard access for this session.
     clipboard_enabled: bool,
+
+    /// The input devices the portal granted, when the Start response was seen.
+    granted_devices: Option<ashpd::desktop::remote_desktop::DeviceType>,
 }
 
 impl PortalSessionHandle {
@@ -126,7 +129,23 @@ impl PortalSessionHandle {
             remote_desktop_session,
             session,
             clipboard_enabled: false,
+            granted_devices: None,
         }
+    }
+
+    /// Record the input devices the portal granted (the Start response's `devices`).
+    /// [`PortalManager::create_session`](crate::PortalManager::create_session) sets it.
+    #[must_use]
+    pub fn with_granted_devices(mut self, devices: ashpd::desktop::remote_desktop::DeviceType) -> Self {
+        self.granted_devices = Some(devices);
+        self
+    }
+
+    /// The input devices the portal granted, or `None` for a handle that wasn't given them.
+    /// An empty set means the session can be watched but not controlled: the portal refuses
+    /// every Notify call on it.
+    pub fn granted_devices(&self) -> Option<ashpd::desktop::remote_desktop::DeviceType> {
+        self.granted_devices
     }
 
     /// Record whether the portal granted clipboard access (the Start response's
