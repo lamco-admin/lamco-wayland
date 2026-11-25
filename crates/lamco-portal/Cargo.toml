@@ -9,7 +9,7 @@ version = "0.5.4"
 # PACKAGE CONFIGURATION (inherited from workspace)
 # ============================================================================
 edition.workspace = true
-rust-version.workspace = true
+rust-version = "1.89"
 license.workspace = true
 homepage = "https://lamco.ai/open-source/lamco-wayland/portal/"
 repository.workspace = true

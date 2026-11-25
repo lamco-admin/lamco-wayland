@@ -158,7 +158,7 @@ Developed by [Lamco Development LLC](https://lamco.ai/open-source/lamco-wayland/
 ## Requirements
 
 - **Linux** with a Wayland compositor
-- **Rust 1.87+** (edition 2024)
+- **Rust 1.95+** (edition 2024); 0.6.1 is the last release that builds on 1.89
 
 ## Related Crates
 

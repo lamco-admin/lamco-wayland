@@ -3,7 +3,7 @@
 # PACKAGE IDENTITY
 # ============================================================================
 name = "lamco-video"
-version = "0.6.1"
+version = "0.6.2"
 
 # ============================================================================
 # PACKAGE CONFIGURATION (inherited from workspace)
@@ -128,7 +128,7 @@ tracing = "0.1"
 thiserror = "2"
 
 # Concurrency
-parking_lot = "0.12"
+parking_lot = "0.13"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["sync", "rt", "time", "macros", "rt-multi-thread"] }

@@ -5,6 +5,13 @@ All notable changes to lamco-video will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-11-25
+
+### Changed
+- `parking_lot` 0.13, whose locks are faster under contention.
+- The minimum Rust version is 1.95, which `parking_lot` 0.13 requires. 0.6.1 is the last release
+  that builds on Rust 1.89.
+
 ## [0.6.1] - 2026-11-21
 
 ### Fixed

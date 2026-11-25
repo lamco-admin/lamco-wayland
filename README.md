@@ -37,7 +37,7 @@ the line:
 
 | Line | `lamco-wayland` | `lamco-pipewire` | `lamco-portal` | `lamco-video` | PipeWire bindings | libpipewire floor |
 |------|-----------------|------------------|----------------|---------------|-------------------|-------------------|
-| **0.11.x** (current) | **0.11.3** | 0.10.1 | 0.5.4 | 0.6.1 | 0.10 | **0.3.62** |
+| **0.11.x** (current) | **0.11.4** | 0.10.2 | 0.5.4 | 0.6.2 | 0.10 | **0.3.62** |
 | 0.10.x (superseded) | 0.10.2 | 0.9.0 | 0.5.2 | 0.5.0 | 0.10 | 0.3.62 |
 | 0.9.x (superseded) | 0.9.1 | 0.8.7 | 0.5.0 | 0.4.1 | 0.10 | 0.3.62 |
 | 0.8.x (superseded: zbus 5, ashpd 0.13) | 0.8.6 | 0.8.6 | 0.4.7 | 0.4.1 | 0.10 | 0.3.62 |
@@ -52,7 +52,9 @@ the line:
   as of the 0.7.0 line it no longer does. Existing consumers on 0.5.x keep
   working, but new fixes and features land only on the current line.
 
-MSRV is **Rust 1.89** (edition 2024) on the current line, as zbus 6 and ashpd 0.14 require. The 0.5.x,
+MSRV on the current line is **Rust 1.95** (edition 2024) for `lamco-pipewire`, `lamco-video` and
+`lamco-wayland`, which parking_lot 0.13 requires, and **Rust 1.89** for `lamco-portal`, which zbus 6
+and ashpd 0.14 require. Each crate asks for what its dependencies need and no more. The 0.5.x,
 0.7.x, 0.8.x, 0.9.x and 0.10.x lines are not semver-compatible with each other — pin to one
 deliberately. Full detail: [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
 

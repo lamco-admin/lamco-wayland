@@ -68,7 +68,7 @@ jobs:
           RUSTDOCFLAGS: -Dwarnings
 
   msrv:
-    name: MSRV (1.89)
+    name: MSRV (1.95, lamco-portal 1.89)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -76,10 +76,15 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y $SYSTEM_DEPS
       - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.95"
+      - uses: dtolnay/rust-toolchain@master
+        with:
           toolchain: "1.89"
       - uses: Swatinem/rust-cache@v2
       - name: Check on MSRV (all features)
-        run: cargo check --workspace --all-features --all-targets
+        run: cargo +1.95 check --workspace --all-features --all-targets
+      - name: Check lamco-portal on its own MSRV
+        run: cargo +1.89 check -p lamco-portal --all-features --all-targets
 
   deny:
     name: Cargo Deny

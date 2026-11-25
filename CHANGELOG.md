@@ -5,6 +5,15 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.4] - 2026-11-25
+
+### Changed
+- **lamco-pipewire 0.10.2 and lamco-video 0.6.2:** `parking_lot` 0.13, whose locks are faster
+  under contention.
+- The minimum Rust version of `lamco-pipewire`, `lamco-video` and `lamco-wayland` is 1.95, which
+  `parking_lot` 0.13 requires. `lamco-portal` doesn't use it and stays at 1.89. `lamco-wayland`
+  0.11.3 is the last release that builds on Rust 1.89.
+
 ## [0.11.3] - 2026-11-25
 
 ### Added

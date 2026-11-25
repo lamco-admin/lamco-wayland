@@ -13,7 +13,7 @@ expose. Pick the line that matches your target environment.
 
 | Line | `lamco-pipewire` | `lamco-wayland` (meta) | `lamco-video` | `lamco-portal` | PipeWire/SPA bindings | Metadata path | System libpipewire floor |
 |---|---|---|---|---|---|---|---|
-| **0.11.x (current)** | **0.10.1** | **0.11.3** | **0.6.1** | **0.5.4** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** (targeting by serial: 0.3.64, which a portal sending one already has) |
+| **0.11.x (current)** | **0.10.2** | **0.11.4** | **0.6.2** | **0.5.4** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** (targeting by serial: 0.3.64, which a portal sending one already has) |
 | 0.10.x (superseded) | 0.9.0 | 0.10.2 | 0.5.0 | 0.5.2 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 |
 | 0.9.x (superseded) | 0.8.7 | 0.9.1 | 0.4.1 | 0.5.0 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 |
 | 0.8.x (superseded: zbus 5, ashpd 0.13) | 0.8.6 | 0.8.6 | 0.4.1 | 0.4.7 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 |
@@ -21,13 +21,17 @@ expose. Pick the line that matches your target environment.
 | 0.5.x — frozen, no longer maintained | 0.5.11 | 0.5.12 | 0.2.0 | 0.4.5 | 0.10 | raw `libspa_sys` FFI | 0.3.33 |
 | 0.4.x — legacy (0.9) | 0.4.5 | 0.4.7 | 0.1.10 | 0.4.1 | 0.9 | raw `libspa_sys` FFI | 0.3.33 |
 
-MSRV for the current line is **Rust 1.89** (edition 2024). PipeWire 0.10 itself
-only requires Rust 1.80; the 1.89 floor comes from zbus 6 and ashpd 0.14, which
-`lamco-portal` 0.5 uses, not from the bindings.
+MSRV for the current line is **Rust 1.95** (edition 2024) for `lamco-pipewire`
+(from 0.10.2), `lamco-video` (from 0.6.2) and `lamco-wayland` (from 0.11.4), and
+**Rust 1.89** for `lamco-portal`. Each crate asks for what its dependencies need:
+PipeWire 0.10 itself only requires Rust 1.80, parking_lot 0.13 requires 1.95, and
+zbus 6 and ashpd 0.14, which `lamco-portal` 0.5 uses, require 1.89. On an older
+toolchain, `lamco-pipewire` 0.10.1, `lamco-video` 0.6.1 and `lamco-wayland` 0.11.3
+are the last releases that build on Rust 1.89.
 
 ## Which line should I use?
 
-- **New code, or any currently-supported distribution → `0.10.x` (0.10.1).**
+- **New code, or any currently-supported distribution → `0.10.x` (0.10.2).**
   This is the maintained head. Metadata extraction runs entirely through
   libspa 0.10's **safe wrappers** (the `meta.rs` module is `unsafe`-free), it
   exposes the **real cursor image** (`CursorMeta::bitmap`), a **virtual
@@ -139,7 +143,7 @@ See [`../CHANGELOG.md`](../CHANGELOG.md) for the complete per-version history.
 | `nix` | 0.30 | 0.31 | 0.31 |
 | `ashpd` (via `lamco-portal`) | 0.13.7 | 0.13.12 | 0.14 |
 | `zbus` (via `lamco-portal`) | 5.x | 5.16 | 6 |
-| Rust MSRV | 1.87 | 1.87 | 1.89 |
+| Rust MSRV | 1.87 | 1.87 | 1.89; 1.95 from `lamco-pipewire` 0.10.2 |
 
 ## Choosing in `Cargo.toml`
 

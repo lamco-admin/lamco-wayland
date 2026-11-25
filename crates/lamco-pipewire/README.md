@@ -92,14 +92,14 @@ internals:
 
 | Line | Latest | PipeWire/SPA bindings | Metadata internals | libpipewire floor | Cursor bitmap |
 |------|--------|-----------------------|--------------------|-------------------|---------------|
-| **0.10.x** (current) | **0.10.1** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** | ✅ |
+| **0.10.x** (current) | **0.10.2** | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | **0.3.62** | ✅ |
 | 0.9.x (superseded) | 0.9.0 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 | ✅ |
 | 0.8.x (superseded) | 0.8.7 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 | ✅ |
 | 0.7.x (superseded, no longer maintained) | 0.7.0 | 0.10 | safe `find_meta` wrappers (`unsafe`-free) | 0.3.62 | ✅ |
 | 0.5.x (frozen, no longer maintained) | 0.5.12 | 0.10 | raw `libspa_sys` FFI | 0.3.33 | — |
 | 0.4.x (legacy) | 0.4.5 | 0.9 | raw `libspa_sys` FFI | 0.3.33 | — |
 
-- **New code → `0.10` (0.10.1):** safe metadata internals, real cursor pixels, streams targeted by PipeWire serial where the portal gives one,
+- **New code → `0.10` (0.10.2):** safe metadata internals, real cursor pixels, streams targeted by PipeWire serial where the portal gives one,
   a virtual microphone source, current deps; needs system
   **libpipewire ≥ 0.3.62** (present on every currently-supported distro).
 - **`0.5` (0.5.12) is frozen.** Same 0.10 bindings and the same DMA-BUF race
@@ -159,7 +159,7 @@ PipeWire's Rust bindings use `Rc<>` and `NonNull<>` internally, making them **no
 - **Linux** with a Wayland compositor
 - **PipeWire** installed and running
 - **PipeWire development libraries**: `libpipewire-0.3-dev` (Debian/Ubuntu) or `pipewire-devel` (Fedora) — **≥ 0.3.62** for the 0.7.x line, **≥ 0.3.33** for the frozen 0.5.x line
-- **Rust 1.87+** (edition 2024)
+- **Rust 1.95+** (edition 2024); 0.10.1 is the last release that builds on 1.89
 
 ## Platform Compatibility
 
