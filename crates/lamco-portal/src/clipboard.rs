@@ -337,6 +337,7 @@ impl std::fmt::Debug for ClipboardManager {
 /// 47 to 49; both are taken. None when the body isn't `(o, a{sv})` at all.
 fn owner_change_from_body(body: &zbus::message::Body) -> Option<(bool, Vec<String>)> {
     use std::collections::HashMap;
+
     use zbus::{OwnedObjectPath, OwnedVariant};
 
     let (_session, options): (OwnedObjectPath, HashMap<String, OwnedVariant>) = body.deserialize().ok()?;

@@ -5,6 +5,14 @@ All notable changes to the lamco-wayland workspace will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.5] - 2026-11-26
+
+### Fixed
+- **lamco-pipewire 0.10.3:** The kernel no longer kills a process that captures the screen from a
+  systemd user service. The capture stream ran its frame callback on PipeWire's real-time thread,
+  where a long frame copy ran into the 200 ms `RLIMIT_RTTIME` limit. The callback now runs on the
+  main loop.
+
 ## [0.11.4] - 2026-11-25
 
 ### Changed

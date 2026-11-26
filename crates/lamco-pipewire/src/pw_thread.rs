@@ -155,9 +155,9 @@ impl FrameSender {
 
 /// A cached mmap base pointer for a DMA-BUF FD.
 ///
-/// Wrapped so the cache can be shared between the PipeWire main-loop thread
-/// (which destroys streams and unmaps) and the realtime data-loop thread
-/// (which reads frames in `process()` under `RT_PROCESS`).
+/// Wrapped so the cache can be held behind a lock that is `Send`: the stream
+/// callbacks that read frames and the code that destroys streams and unmaps
+/// both reach it.
 #[derive(Clone, Copy)]
 struct CachedMmap(NonNull<libc::c_void>);
 
@@ -169,9 +169,9 @@ unsafe impl Send for CachedMmap {}
 
 /// DMA-BUF mmap cache: FD -> (mapped pointer, size).
 ///
-/// `Arc<Mutex<…>>`, not `Rc<RefCell<…>>`: with `RT_PROCESS` the stream's
-/// `process()` callback runs on a separate realtime data-loop thread, so this
-/// cache is shared across threads and every access must be synchronized.
+/// `Arc<Mutex<…>>`, not `Rc<RefCell<…>>`: which thread calls `process()` is
+/// PipeWire's choice (the main loop today, since the stream is connected
+/// without `RT_PROCESS`), so every access stays synchronized.
 type DmaBufCache = StdArc<parking_lot::Mutex<HashMap<RawFd, (CachedMmap, usize)>>>;
 
 /// Commands sent to the PipeWire thread
@@ -769,9 +769,9 @@ fn run_pipewire_main_loop(
     let mut streams: HashMap<u32, ManagedStream> = HashMap::new();
 
     // DMA-BUF mmap cache: Maps FD -> (ptr, size) to avoid remapping every frame
-    // Arc<Mutex<>>: process() runs on a separate realtime data-loop thread under
-    // RT_PROCESS, while stream destroy runs on this main-loop thread, so the
-    // cache is shared across threads and access must be synchronized.
+    // Arc<Mutex<>>: process() and stream destroy both run on this main-loop
+    // thread now that the stream has no RT_PROCESS, and the lock keeps the cache
+    // correct if PipeWire ever calls process() from another thread.
     let dmabuf_mmap_cache: DmaBufCache = StdArc::new(parking_lot::Mutex::new(HashMap::new()));
 
     // Main event loop
@@ -1509,7 +1509,7 @@ fn create_stream_on_thread(
             // This callback is called when a new frame buffer is available
             trace!("process() callback fired for stream {}", stream_id_for_callbacks);
 
-            // Capture stream timing before touching buffers (RT-safe)
+            // Capture stream timing before touching buffers
             let stream_time = crate::stream::get_stream_time(stream);
 
             // Dequeue a buffer via the safe API. The returned `Buffer` requeues
@@ -2150,7 +2150,7 @@ fn create_stream_on_thread(
 
     info!(
         stream_id,
-        node_id, "Connecting stream with flags: AUTOCONNECT | MAP_BUFFERS | RT_PROCESS"
+        node_id, "Connecting stream with flags: AUTOCONNECT | MAP_BUFFERS"
     );
 
     // Not DRIVER: a DRIVER stream only starts graph cycles when something calls
@@ -2159,11 +2159,20 @@ fn create_stream_on_thread(
     // so the flag was inert there. xdg-desktop-portal-cosmic's stream is a passive
     // producer (ALLOC_BUFFERS only): with this consumer elected as driver the
     // graph never cycled and no frame was ever delivered.
+    //
+    // Not RT_PROCESS: that flag has PipeWire call process() on its real-time
+    // data thread, where only real-time-safe calls are allowed. process() maps
+    // DMA-BUFs, copies whole frames, allocates and logs. Where rtkit grants
+    // the thread real-time scheduling (a systemd user service does get it),
+    // RLIMIT_RTTIME applies, PipeWire sets it to 200 ms, and the kernel kills
+    // the process when one stretch on that thread runs longer. The first copy
+    // out of a newly mapped buffer did, on KWin with an Intel GPU. Without the
+    // flag PipeWire calls process() from the main loop, once for each buffer.
     stream
         .connect(
             Direction::Input,
             None, // PW_ID_ANY - let PipeWire use node.target property
-            StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS | StreamFlags::RT_PROCESS,
+            StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS,
             &mut params,
         )
         .map_err(|e| PipeWireError::ConnectionFailed(format!("Stream connect failed: {}", e)))?;

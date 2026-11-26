@@ -157,12 +157,11 @@ pub mod dbus_clipboard;
 
 pub use clipboard::ClipboardManager;
 pub use config::{PortalConfig, PortalConfigBuilder};
-pub use remote_desktop::StartedSession;
 // Re-export D-Bus clipboard bridge types when feature is enabled
 #[cfg(feature = "dbus-clipboard")]
 pub use dbus_clipboard::{DbusClipboardBridge, DbusClipboardEvent};
 pub use error::{PortalError, Result};
-pub use remote_desktop::RemoteDesktopManager;
+pub use remote_desktop::{RemoteDesktopManager, StartedSession};
 pub use screencast::ScreenCastManager;
 pub use session::{PortalSessionHandle, SourceType, StreamInfo};
 

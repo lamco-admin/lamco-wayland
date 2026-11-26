@@ -5,6 +5,20 @@ All notable changes to lamco-pipewire will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.3] - 2026-11-26
+
+### Fixed
+- **The kernel no longer kills a process that captures the screen from a systemd user service.**
+  The capture stream was connected with `RT_PROCESS`, so PipeWire called the frame callback on its
+  real-time data thread. That callback maps DMA-BUFs, copies whole frames, allocates and logs, none
+  of which PipeWire allows there. Where rtkit grants the thread real-time scheduling, which a user
+  service gets and an ssh session doesn't, `RLIMIT_RTTIME` applies. PipeWire sets it to 200 ms, and
+  the kernel sends SIGKILL when one stretch on that thread runs longer. The first copy out of a
+  newly mapped buffer did. It was seen on KWin 6.8 with an Intel GPU, where two of three starts died
+  within a second. The stream is now connected without the flag, so PipeWire calls the callback
+  from the main loop, still once for each buffer. Audio streams keep `RT_PROCESS`. Their callbacks
+  do a small, bounded amount of work for each period.
+
 ## [0.10.2] - 2026-11-25
 
 ### Changed
